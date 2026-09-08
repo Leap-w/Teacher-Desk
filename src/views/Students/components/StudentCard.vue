@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import { AppBadge, AppCard } from '@/components/ui'
-import { familyScopeLabel, formatBoardingLabel, formatSeatLabel } from '@/utils/student'
+import { familyScopeLabel, formatSeatLabel } from '@/utils/student'
 import type { Student } from '@/types'
 import StudentAvatar from './StudentAvatar.vue'
 
@@ -33,7 +33,7 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <p class="dorm">{{ formatBoardingLabel(student) }}</p>
+    <p v-if="student.dormitory" class="dorm">宿舍 · {{ student.dormitory }}</p>
 
     <div v-if="scopeLabel || student.cadreRole || student.tags?.length" class="badges">
       <AppBadge v-if="scopeLabel" variant="neutral">{{ scopeLabel }}</AppBadge>

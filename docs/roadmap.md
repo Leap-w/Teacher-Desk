@@ -1,6 +1,6 @@
 # TeacherDesk 路线图
 
-> 同步自 `docs/开发手册.md` §10（2026-09-08 更新）。两份文档冲突时以开发手册为准。
+> 同步自 `docs/开发手册.md` §10（2026-09-09 更新）。两份文档冲突时以开发手册为准。
 >
 > 后端规划：腾讯云 CloudBase + PostgreSQL。后端接入前所有数据走本地（Pinia + localStorage），`src/services` 预留接口抽象层。
 
@@ -22,7 +22,7 @@
 
 - `stores/student.ts`：Pinia + localStorage 持久化、seed-on-null、load 守卫、软删除（deletedAt）
 - 列表（搜索姓名/学号/宿舍/标签 + 筛选全部/男/女/班委，按学号升序）、卡片网格、详情弹窗、新增/编辑共用表单弹窗
-- 重名区分 `formatStudentDisplayName`、8 名种子学生、UUID（crypto.randomUUID）
+- 重名区分 `formatStudentDisplayName`、种子学生（8→6 名，Phase 2.1 收敛）、UUID（crypto.randomUUID）
 - 表单校验：姓名必填、学号必填且唯一、座位号非负整数、返家范围必选
 
 ## Phase 2 增量（2026-09-08）✅ 学生档案数据基础
@@ -33,9 +33,11 @@
 - Store 学号唯一性兜底（add/update 返回 undefined 拒绝）
 - 卡片返家范围 Badge、表单「家庭信息」区、详情「家庭信息」区
 
-## Phase 2.1 ⏳ 学生档案模型收敛（待办）
+## Phase 2.1 ✅ 学生档案模型收敛（2026-09-09）
 
-- 清理 boarding / 住宿走读遗留：`Student.boarding` 字段、表单住宿选择与宿舍联动、卡片/详情住宿行、`formatBoardingLabel`、mock 走读样本（3 名）
+- 移除 `Student.boarding` 字段与全部住宿 / 走读 UI 遗留（表单选择器与联动、卡片 / 详情住宿行、`formatBoardingLabel`）
+- `normalizeStudent` 升级时剔除历史 localStorage 数据中的 boarding 遗留键；`dormitory` 宿舍字段保留
+- mock 8→6 名：删除走读样本 2 名，1 名（陈思远，拉萨市外）转为住校样本保住市外覆盖；保留两名重名与三类返家范围
 - 依据：全班统一住校（详见开发手册 §2.1）
 
 ## Phase 3 ⏭ 排座 / 座位管理（下一开发阶段）

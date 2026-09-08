@@ -28,11 +28,6 @@ const GENDER_OPTIONS: SelectOption<Gender>[] = [
   { label: '男', value: 'male' },
 ]
 
-const BOARDING_OPTIONS: SelectOption<'boarding' | 'day'>[] = [
-  { label: '住宿', value: 'boarding' },
-  { label: '走读', value: 'day' },
-]
-
 const CADRE_OPTIONS: SelectOption<string>[] = [
   { label: '无', value: '' },
   { label: '班长', value: '班长' },
@@ -49,7 +44,6 @@ interface FormState {
   studentNo: string
   gender: Gender
   seatNumber: string
-  boarding: 'boarding' | 'day'
   dormitory: string
   cadreRole: string
   tags: string
@@ -68,7 +62,6 @@ function blankForm(): FormState {
     studentNo: '',
     gender: 'female',
     seatNumber: '',
-    boarding: 'day',
     dormitory: '',
     cadreRole: '',
     tags: '',
@@ -101,7 +94,6 @@ watch(
       studentNo: props.student.studentNo,
       gender: props.student.gender,
       seatNumber: props.student.seatNumber === undefined ? '' : String(props.student.seatNumber),
-      boarding: props.student.boarding ? 'boarding' : 'day',
       dormitory: props.student.dormitory ?? '',
       cadreRole: props.student.cadreRole ?? '',
       tags: (props.student.tags ?? []).join('，'),
@@ -113,13 +105,6 @@ watch(
       county: props.student.familyLocation?.county ?? '',
       scope: props.student.familyLocation?.scope ?? '',
     })
-  },
-)
-
-watch(
-  () => form.boarding,
-  (mode) => {
-    if (mode === 'day') form.dormitory = ''
   },
 )
 
@@ -157,7 +142,6 @@ function submit() {
     studentNo: form.studentNo.trim(),
     gender: form.gender,
     seatNumber: form.seatNumber.trim() === '' ? undefined : Number(form.seatNumber),
-    boarding: form.boarding === 'boarding',
     dormitory: form.dormitory.trim() || undefined,
     cadreRole: form.cadreRole || undefined,
     tags: form.tags
@@ -206,16 +190,8 @@ function close() {
           <AppInput v-model="form.seatNumber" :error="!!errors.seatNumber" placeholder="如 12" />
         </AppField>
 
-        <AppField label="住宿情况">
-          <AppSelect v-model="form.boarding" :options="BOARDING_OPTIONS" />
-        </AppField>
-
         <AppField label="宿舍">
-          <AppInput
-            v-model="form.dormitory"
-            placeholder="如 3 号楼 412"
-            :disabled="form.boarding === 'day'"
-          />
+          <AppInput v-model="form.dormitory" placeholder="如 3 号楼 412" />
         </AppField>
 
         <AppField label="班委职务">

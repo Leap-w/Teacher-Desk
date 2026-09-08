@@ -33,11 +33,15 @@ export function normalizeStudent(raw: Student): Student {
       scope: isFamilyScope(family.scope) ? family.scope : 'changdu-county',
     }
   }
-  return {
+  const normalized: Student & { boarding?: unknown } = {
     ...raw,
     familyAddress: typeof raw.familyAddress === 'string' ? raw.familyAddress : '',
     familyLocation,
   }
+  // Phase 2.1 收敛：历史 localStorage 中可能残留 boarding 键（全班统一住校，模型已移除），
+  // 升级时一并剔除，保证该键不再随 deep watch 写回持久层
+  delete normalized.boarding
+  return normalized
 }
 
 /** 返家范围中文文案；家庭信息缺失时返回 undefined（由展示层决定占位） */
@@ -61,10 +65,4 @@ export function formatStudentDisplayName(student: Student): string {
 /** 座位展示文案 */
 export function formatSeatLabel(student: Student): string {
   return student.seatNumber !== undefined ? `${student.seatNumber} 号座位` : '未排座'
-}
-
-/** 住宿展示文案 */
-export function formatBoardingLabel(student: Student): string {
-  if (student.boarding) return student.dormitory ? `住宿 · ${student.dormitory}` : '住宿'
-  return '走读'
 }

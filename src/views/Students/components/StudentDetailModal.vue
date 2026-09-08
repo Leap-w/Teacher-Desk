@@ -2,12 +2,7 @@
 import { computed } from 'vue'
 
 import { AppBadge, AppButton, AppModal } from '@/components/ui'
-import {
-  familyScopeLabel,
-  formatBoardingLabel,
-  formatSeatLabel,
-  formatStudentDisplayName,
-} from '@/utils/student'
+import { familyScopeLabel, formatSeatLabel, formatStudentDisplayName } from '@/utils/student'
 import type { Student } from '@/types'
 import StudentAvatar from './StudentAvatar.vue'
 
@@ -77,8 +72,8 @@ function onRemove() {
           <dd>{{ formatSeatLabel(student) }}</dd>
         </div>
         <div class="detail-item">
-          <dt>住宿</dt>
-          <dd>{{ formatBoardingLabel(student) }}</dd>
+          <dt>宿舍</dt>
+          <dd>{{ student.dormitory || '—' }}</dd>
         </div>
         <div class="detail-item">
           <dt>联系电话</dt>

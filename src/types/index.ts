@@ -65,9 +65,7 @@ export interface Student {
   studentNo: string
   gender: Gender
   seatNumber?: number
-  /** 是否住宿 */
-  boarding?: boolean
-  /** 宿舍（展示用，如「3 号楼 412」；后续可迁移为实体 ID） */
+  /** 宿舍（展示用，如「3 号楼 412」；后续可迁移为实体 ID）。全班统一住校，住校状态不入模型 */
   dormitory?: string
   /** 班委职务；留空表示非班委 */
   cadreRole?: string
