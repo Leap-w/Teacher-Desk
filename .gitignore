@@ -1,0 +1,15 @@
+# 依赖
+node_modules
+
+# 构建产物
+dist
+dist-ssr
+dev-dist
+
+# 本地文件
+*.local
+*.log
+.DS_Store
+
+# 编辑器
+.idea

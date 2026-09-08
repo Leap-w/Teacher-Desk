@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vue-tsc *)",
+      "Bash(echo \"type-check exit: $?\")",
+      "Bash(npx eslint *)",
+      "Bash(echo \"eslint exit: $?\")",
+      "Bash(npx prettier *)",
+      "Bash(npm run *)",
+      "Bash(unzip -p \"0参考文件/TeacherDesk V1.0 开发框架与需求文档.docx\" word/document.xml)"
+    ]
+  }
+}

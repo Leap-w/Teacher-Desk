@@ -1,0 +1,102 @@
+import type { Student } from '@/types'
+
+/**
+ * 首次启动的示例数据（模拟后端返回，仅当本地无缓存时使用）。
+ * 刻意包含：两名同名学生、两名班委、男女混合、不同宿舍与返家范围（市区/其他县/市外），
+ * 便于演示重名处理与筛选。
+ */
+export function createSeedStudents(): Student[] {
+  return [
+    {
+      id: 'seed-01',
+      name: '旦增卓玛',
+      studentNo: '20230101',
+      gender: 'female',
+      seatNumber: 1,
+      boarding: true,
+      dormitory: '3 号楼 412',
+      cadreRole: '班长',
+      tags: ['三好学生'],
+      familyAddress: '西藏自治区昌都市卡若区俄洛镇俄洛村 12 号',
+      familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+    },
+    {
+      id: 'seed-02',
+      name: '旦增卓玛',
+      studentNo: '20230102',
+      gender: 'female',
+      seatNumber: 2,
+      boarding: true,
+      dormitory: '5 号楼 208',
+      tags: ['文艺骨干'],
+      familyAddress: '西藏自治区昌都市江达县同普乡格巴村 5 号',
+      familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
+    },
+    {
+      id: 'seed-03',
+      name: '李明',
+      studentNo: '20230103',
+      gender: 'male',
+      seatNumber: 15,
+      boarding: true,
+      dormitory: '5 号楼 208',
+      familyAddress: '西藏自治区昌都市类乌齐县桑多镇桑多村 21 号',
+      familyLocation: { prefecture: '昌都市', county: '类乌齐县', scope: 'changdu-county' },
+    },
+    {
+      id: 'seed-04',
+      name: '王小雨',
+      studentNo: '20230104',
+      gender: 'female',
+      seatNumber: 16,
+      boarding: false,
+      familyAddress: '西藏自治区昌都市卡若区城关镇昌都西路 88 号',
+      familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+    },
+    {
+      id: 'seed-05',
+      name: '张浩然',
+      studentNo: '20230105',
+      gender: 'male',
+      seatNumber: 3,
+      boarding: true,
+      dormitory: '3 号楼 415',
+      cadreRole: '学习委员',
+      tags: ['数学课代表'],
+      familyAddress: '西藏自治区昌都市左贡县旺达镇列达村 9 号',
+      familyLocation: { prefecture: '昌都市', county: '左贡县', scope: 'changdu-county' },
+    },
+    {
+      id: 'seed-06',
+      name: '陈思远',
+      studentNo: '20230106',
+      gender: 'male',
+      seatNumber: 4,
+      boarding: false,
+      familyAddress: '西藏自治区拉萨市城关区八廓街 3 号',
+      familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+    },
+    {
+      id: 'seed-07',
+      name: '刘佳怡',
+      studentNo: '20230107',
+      gender: 'female',
+      seatNumber: 17,
+      boarding: true,
+      dormitory: '5 号楼 210',
+      familyAddress: '西藏自治区昌都市卡若区妥坝乡妥坝村 2 号',
+      familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+    },
+    {
+      id: 'seed-08',
+      name: '赵子轩',
+      studentNo: '20230108',
+      gender: 'male',
+      seatNumber: 5,
+      boarding: false,
+      tags: ['转学生'],
+      familyAddress: '西藏自治区那曲市比如县白嘎乡白嘎村 15 号',
+      familyLocation: { prefecture: '那曲市', county: '比如县', scope: 'outside-changdu' },
+    },
+  ]
+}

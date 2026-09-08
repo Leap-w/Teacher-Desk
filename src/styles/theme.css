@@ -1,0 +1,82 @@
+/**
+ * TeacherDesk 设计变量（Apple 风格 · 松石青主题）
+ * 全部 UI 通过这些变量取值，UnoCSS 主题已与之打通（见 uno.config.ts）。
+ */
+:root {
+  /* ========== 品牌色 ========== */
+  --color-primary: #2f8f83;
+  --color-primary-strong: #25766c;
+  --color-primary-soft: rgba(47, 143, 131, 0.12);
+  --color-secondary: #5aaea2;
+
+  /* ========== 功能色 ========== */
+  --color-success: #34c759;
+  --color-success-strong: #217a3c;
+  --color-success-soft: rgba(52, 199, 89, 0.14);
+  --color-warning: #ff9f0a;
+  --color-warning-strong: #b26a00;
+  --color-warning-soft: rgba(255, 159, 10, 0.14);
+  --color-danger: #ff3b30;
+  --color-danger-strong: #d70015;
+  --color-danger-soft: rgba(255, 59, 48, 0.12);
+
+  /* ========== 中性色 ========== */
+  --bg-main: #f6f8f9;
+  --color-surface: #ffffff;
+  --color-text: #1d1d1f;
+  --color-text-secondary: #6e6e73;
+  --color-text-faint: #a1a1a6;
+  --color-border: rgba(29, 29, 31, 0.08);
+  --color-border-strong: rgba(29, 29, 31, 0.14);
+  --color-border-emphasis: rgba(29, 29, 31, 0.22);
+  --color-fill-disabled: rgba(29, 29, 31, 0.04);
+
+  /* ========== 间距 ========== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* ========== 字号 ========== */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 17px;
+  --text-xl: 22px;
+
+  /* ========== 圆角 ========== */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* ========== 阴影 ========== */
+  --shadow-sm: 0 1px 2px rgba(16, 42, 38, 0.04), 0 4px 16px rgba(16, 42, 38, 0.05);
+  --shadow-md: 0 2px 8px rgba(16, 42, 38, 0.06), 0 12px 32px rgba(16, 42, 38, 0.1);
+  --shadow-lg: 0 8px 24px rgba(16, 42, 38, 0.1), 0 24px 56px rgba(16, 42, 38, 0.16);
+
+  /* ========== 毛玻璃 ========== */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-blur: blur(20px) saturate(180%);
+
+  /* ========== 动效时长 ========== */
+  --duration-fast: 160ms;
+  --duration-normal: 240ms;
+  --duration-slow: 400ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ========== 焦点 ========== */
+  --ring-focus: 0 0 0 3px rgba(47, 143, 131, 0.2);
+  --ring-danger: 0 0 0 3px rgba(255, 59, 48, 0.16);
+
+  /* ========== 遮罩 / 层级 ========== */
+  --overlay-scrim: rgba(20, 40, 36, 0.36);
+  --z-modal: 1000;
+  --z-toast: 1100;
+
+  /* ========== 组合动效（沿用既有组件的过渡写法） ========== */
+  --transition-fast: var(--duration-fast) ease;
+  --transition-base: var(--duration-normal) var(--ease-standard);
+}
