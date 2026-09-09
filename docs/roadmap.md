@@ -40,13 +40,13 @@
 - mock 8→6 名：删除走读样本 2 名，1 名（陈思远，拉萨市外）转为住校样本保住市外覆盖；保留两名重名与三类返家范围
 - 依据：全班统一住校（详见开发手册 §2.1）
 
-## Phase 3 ⏳ 排座 / 座位管理（3A 已完成，3B 为下一小步）
+## Phase 3 ⏳ 排座 / 座位管理（3A / 3B 已完成，3C 为下一小步）
 
 - Phase 3A ✅（2026-09-09，tag v0.3.0-alpha）：固定教室模型（高一9班 · 7 排 × 9 列 · 3-3-3 分列 · 63 座就座 62 · 末排尾座留空）+ `Seat / SeatPlan / SeatChangeLog(预留)` 模型 + `stores/seat.ts`（`teacherdesk:seatPlans` 多方案：开学初 / 新建 / 切换 / 重命名 / 删除历史，当前不可删）+ 双视角可视化网格（老师 / 学生，约 300ms FLIP 翻转，选中跨视角保持）+ 右侧方案管理面板；`seatNumber`(1–62) 按 row-major 座位号对号入座
-- Phase 3B ⏭（下一小步，范围待与用户对齐）：拖拽换座、SeatChangeLog 自动记录、删除学生后的悬空座位清理
-- Phase 3C ⏭：自动排座 / 座位约束（身高 / 视力 / 纪律相邻等）
+- Phase 3B ✅（2026-09-09，tag v0.3.1）：Pointer Events 原生拖拽换座（座位 ↔ 座位交换、座位 → 空位移入，63 号尾座可手动拖入，拖回原位不动作；双视角同一份座位数据即时同步、选中态保持）；`SeatChangeLog` 正式启用（UUID / ISO / 与 SeatPlan 关联 / `studentName` 快照，交换记 2 条、移动记 1 条，`姓名（学号后四位）` + `N排M列` 文案）；「保存本次调整（N）」归档并自动弹「本次调整」摘要（AppModal，共调整 N 人按学生去重）；长按（400ms）信息卡（姓名 / 学号 / 宿舍 / 班委 / 标签 / 返家范围 + 查看详情 / 开始换座，详情复用学生模块 `StudentDetailModal`）；点击换座模式（提示条 + Esc 取消）；删除学生自动释放其全部方案座位（启动清扫 + store 删除监听双保险，不写日志、不留脏引用）；store 新增 `swapSeats / moveStudent / clearSeatByStudent / appendSeatChangeLog / clearCurrentLogs / commitPendingLogs`，旧 localStorage 数据 load 时升级兼容
+- Phase 3C ⏭（下一小步，范围待与用户对齐）：自动排座 / 座位约束（身高 / 视力 / 纪律相邻等）
 - Phase 3D ⏭：座位图导出（PNG / PDF）+ Undo
-- 需求背景与业务规则：班级约 62 人；教室参数唯一来源 `types/classroom.ts`；详见开发手册 §2.4 / §9.2
+- 需求背景与业务规则：班级约 62 人；教室参数唯一来源 `types/classroom.ts`；详见开发手册 §2.4 / §9.2 / §9.3
 
 ## Phase 4 ⏭ 课程表
 

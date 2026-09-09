@@ -2,10 +2,13 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
-import { createSeatPlan, normalizeSeatPlan } from '@/utils/seat'
+import { createId } from '@/utils/id'
+import { createSeatPlan, normalizeSeatPlan, seatPositionShort } from '@/utils/seat'
+import { formatStudentShortName } from '@/utils/student'
 import { useStudentStore } from '@/stores/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
-import type { Seat, SeatPlan } from '@/types/seat'
+import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
+import type { Student } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 
@@ -69,6 +72,12 @@ export const useSeatStore = defineStore('seat', () => {
   /** 教室固定配置（唯一事实来源；组件一律经 store 读取，不另写教室参数） */
   const config = DEFAULT_CLASSROOM_CONFIG
 
+  /**
+   * 学生 store 在 setup 内同步实例化（loadStudents 为同步读取）：
+   * 启动清扫即可拿到完整学生表；后续删除监听也复用该实例。
+   */
+  const studentStore = useStudentStore()
+
   /** 全部座位方案（含历史方案；数组顺序即创建顺序） */
   const plans = ref<SeatPlan[]>(loadSeatPlans())
 
@@ -86,7 +95,7 @@ export const useSeatStore = defineStore('seat', () => {
   /** 当前方案全部座位（63 个，含空位）：同一批 Seat 对象，切换视角只改显示顺序 */
   const currentSeats = computed<Seat[]>(() => currentPlan.value?.seats ?? [])
 
-  /** 已就座数量（按 studentId 计数；学生被删除后可能悬空，Phase 3B 统一清理） */
+  /** 已就座数量（studentId 计数；悬空座位已由启动清扫与删除监听清理，Phase 3B 起不悬空） */
   const occupiedCount = computed(() => currentSeats.value.filter((seat) => seat.studentId).length)
 
   /** 新方案默认名：座位方案 N（取不与现有方案重名的最小正整数） */
@@ -102,6 +111,7 @@ export const useSeatStore = defineStore('seat', () => {
     plans.value = plans.value
       .map((item) => (item.isCurrent ? { ...item, isCurrent: false } : item))
       .concat({ ...plan, isCurrent: true })
+    clearCurrentLogs()
     return { ...plan, isCurrent: true }
   }
 
@@ -110,6 +120,7 @@ export const useSeatStore = defineStore('seat', () => {
     const target = plans.value.find((plan) => plan.id === id)
     if (!target || target.isCurrent) return false
     plans.value = plans.value.map((plan) => ({ ...plan, isCurrent: plan.id === id }))
+    clearCurrentLogs()
     return true
   }
 
@@ -134,15 +145,210 @@ export const useSeatStore = defineStore('seat', () => {
     return true
   }
 
+  /* ========== Phase 3B：换座 / 换座日志 / 学生删除后的座位释放 ========== */
+
+  /** 「本次调整」待提交日志（会话内暂存，不入 localStorage；保存 / 切换方案 / 新建方案后清空） */
+  const pendingLogs = ref<SeatChangeLog[]>([])
+
+  /** 待提交日志条数（页面据此显示「保存本次调整」入口） */
+  const pendingLogsCount = computed(() => pendingLogs.value.length)
+
+  function findActiveStudent(id: string): Student | undefined {
+    return studentStore.activeStudents.find((item) => item.id === id)
+  }
+
+  function seatOf(plan: SeatPlan, seatId: string) {
+    return plan.seats.find((seat) => seat.id === seatId)
+  }
+
+  /**
+   * 追加一条换座记录到「本次调整」（UUID / ISO / 与当前方案绑定，数据层守卫关键字段）。
+   * from / to 为位置短文案（如「2排3列」），由调用方格式化。
+   */
+  function appendSeatChangeLog(entry: Omit<SeatChangeLog, 'id' | 'planId' | 'changedAt'>): boolean {
+    const plan = currentPlan.value
+    if (!plan || !entry.studentId || !entry.studentName || !entry.from || !entry.to) return false
+    pendingLogs.value = [
+      ...pendingLogs.value,
+      {
+        ...entry,
+        id: createId(),
+        planId: plan.id,
+        changedAt: new Date().toISOString(),
+      },
+    ]
+    return true
+  }
+
+  /** 记录一条换座（内部）：学生名快照与位置文案统一在此格式化 */
+  function logSeatChange(student: Student, fromSeat: Seat, toSeat: Seat): void {
+    appendSeatChangeLog({
+      studentId: student.id,
+      studentName: formatStudentShortName(student),
+      from: seatPositionShort(fromSeat.row, fromSeat.col),
+      to: seatPositionShort(toSeat.row, toSeat.col),
+    })
+  }
+
+  /**
+   * 交换两个已就座座位的学生（Seat.id 不变，只交换 studentId）。
+   * 交换成功记两条日志（每名学生一条）；座位不变 / 缺座 / 空源等非法输入返回 false。
+   */
+  function swapSeats(fromId: string, toId: string): boolean {
+    const plan = currentPlan.value
+    if (!plan || fromId === toId) return false
+    const fromSeat = seatOf(plan, fromId)
+    const toSeat = seatOf(plan, toId)
+    if (!fromSeat || !toSeat || !fromSeat.studentId || !toSeat.studentId) return false
+    const studentA = findActiveStudent(fromSeat.studentId)
+    const studentB = findActiveStudent(toSeat.studentId)
+    if (!studentA || !studentB) return false
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) => {
+      if (item.id !== plan.id) return item
+      return {
+        ...item,
+        updatedAt: now,
+        seats: item.seats.map((seat) =>
+          seat.id === fromId
+            ? { ...seat, studentId: toSeat.studentId }
+            : seat.id === toId
+              ? { ...seat, studentId: fromSeat.studentId }
+              : seat,
+        ),
+      }
+    })
+    logSeatChange(studentA, fromSeat, toSeat)
+    logSeatChange(studentB, toSeat, fromSeat)
+    return true
+  }
+
+  /** 把学生从已就座座位移到空位（源必须有学生、目标必须为空）；成功记一条日志 */
+  function moveStudent(fromId: string, toId: string): boolean {
+    const plan = currentPlan.value
+    if (!plan || fromId === toId) return false
+    const fromSeat = seatOf(plan, fromId)
+    const toSeat = seatOf(plan, toId)
+    if (!fromSeat || !toSeat || !fromSeat.studentId || toSeat.studentId) return false
+    const student = findActiveStudent(fromSeat.studentId)
+    if (!student) return false
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) => {
+      if (item.id !== plan.id) return item
+      return {
+        ...item,
+        updatedAt: now,
+        seats: item.seats.map((seat) =>
+          seat.id === fromId
+            ? { ...seat, studentId: undefined }
+            : seat.id === toId
+              ? { ...seat, studentId: fromSeat.studentId }
+              : seat,
+        ),
+      }
+    })
+    logSeatChange(student, fromSeat, toSeat)
+    return true
+  }
+
+  /**
+   * 学生被删除后释放其在全部方案中的座位（自动释放、不写换座日志），
+   * 并剔除其「本次调整」待提交记录；历史 changeLogs 留档不改写。返回释放的座位总数。
+   */
+  function clearSeatByStudent(studentId: string): number {
+    if (!studentId) return 0
+    let released = 0
+    let touched = false
+    const next = plans.value.map((item) => {
+      const now = new Date().toISOString()
+      let planTouched = false
+      const seats = item.seats.map((seat) => {
+        if (seat.studentId !== studentId) return seat
+        planTouched = true
+        released += 1
+        return { ...seat, studentId: undefined }
+      })
+      if (!planTouched) return item
+      touched = true
+      return { ...item, updatedAt: now, seats }
+    })
+    if (touched) {
+      plans.value = next
+      pendingLogs.value = pendingLogs.value.filter((log) => log.studentId !== studentId)
+    }
+    return released
+  }
+
+  /** 启动清扫：student store 已在本 setup 同步加载完成，据此释放历史遗留的悬空 studentId */
+  function sweepDanglingSeats(): void {
+    let touched = false
+    const next = plans.value.map((item) => {
+      let planTouched = false
+      const seats = item.seats.map((seat) => {
+        if (!seat.studentId || activeStudentIds.has(seat.studentId)) return seat
+        planTouched = true
+        return { ...seat, studentId: undefined }
+      })
+      if (!planTouched) return item
+      touched = true
+      return { ...item, updatedAt: new Date().toISOString(), seats }
+    })
+    if (touched) plans.value = next
+  }
+
+  /** 已加载的活跃学生 id 快照：与后续活跃列表对比，检测「学生被删除」事件 */
+  const activeStudentIds = new Set(studentStore.activeStudents.map((item) => item.id))
+  sweepDanglingSeats()
+
+  /** 学生被删除 → 自动释放其在全部方案中的座位（含当前方案，双视角即时可见空位「＋」） */
+  watch(
+    () => studentStore.activeStudents.map((item) => item.id),
+    (ids) => {
+      const next = new Set(ids)
+      for (const id of activeStudentIds) {
+        if (!next.has(id)) clearSeatByStudent(id)
+      }
+      activeStudentIds.clear()
+      for (const id of next) activeStudentIds.add(id)
+    },
+  )
+
+  /** 把「本次调整」归档进当前方案 changeLogs 并清空待提交；返回刚归档的记录（供摘要展示） */
+  function commitPendingLogs(): SeatChangeLog[] {
+    const plan = currentPlan.value
+    if (!plan || pendingLogs.value.length === 0) return []
+    const committed = pendingLogs.value
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) =>
+      item.id === plan.id
+        ? { ...item, updatedAt: now, changeLogs: [...item.changeLogs, ...committed] }
+        : item,
+    )
+    pendingLogs.value = []
+    return committed
+  }
+
+  /** 清空「本次调整」待提交记录（保存后 / 切换方案 / 新建方案时调用） */
+  function clearCurrentLogs(): void {
+    pendingLogs.value = []
+  }
+
   return {
     config,
     plans,
     currentPlan,
     currentSeats,
     occupiedCount,
+    pendingLogsCount,
     createPlan,
     switchPlan,
     renamePlan,
     removePlan,
+    swapSeats,
+    moveStudent,
+    clearSeatByStudent,
+    appendSeatChangeLog,
+    clearCurrentLogs,
+    commitPendingLogs,
   }
 })

@@ -67,6 +67,16 @@ export function formatSeatLabel(student: Student): string {
   return student.seatNumber !== undefined ? `${student.seatNumber} 号座位` : '未排座'
 }
 
+/**
+ * 换座场景的学生短名：姓名（学号后四位），如「旦增卓玛（0101）」。
+ * 与 formatStudentDisplayName 的区别：不携带座位号——换座 / 日志发生瞬间座位号即刻失真。
+ * 用于换座 toast、SeatChangeLog 快照与「本次调整」摘要（重名可凭后四位区分）；学号后四位缺失时仅姓名。
+ */
+export function formatStudentShortName(student: Pick<Student, 'name' | 'studentNo'>): string {
+  const lastFour = student.studentNo.slice(-4)
+  return lastFour ? `${student.name}（${lastFour}）` : student.name
+}
+
 /** 座位强调类别：只复用学生档案既有字段；高个由「高个」标签表达（档案暂无独立身高字段） */
 export type SeatAccent = 'cadre' | 'tall' | 'tag'
 

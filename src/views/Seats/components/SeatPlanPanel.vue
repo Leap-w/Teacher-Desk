@@ -26,7 +26,7 @@ const draft = ref('')
 
 const cardSubtitle = computed(() => `共 ${props.plans.length} 个方案`)
 
-/** 某方案的就座人数（含已删除学生的悬空座位；Phase 3B 统一清理） */
+/** 某方案的就座人数（Phase 3B 起无悬空座位：学生删除时 seat store 已自动释放） */
 function occupiedOf(plan: SeatPlan): number {
   return plan.seats.filter((seat) => seat.studentId).length
 }
@@ -173,8 +173,8 @@ function submitRename(planId: string, event?: KeyboardEvent) {
     </EmptyState>
 
     <p class="plan-hint">
-      方案仅保存在本机浏览器；学生「座位号」调整后，新方案自动按 1–62 号就座，末位尾座（第 63
-      号）固定留空。当前方案不可删除。
+      方案仅保存在本机浏览器。新建方案时学生按档案座位号自动就座 1–62 号（第 63
+      号尾座默认留空，可手动拖入）；拖拽换座只改当前方案，不改学生档案。当前方案不可删除。
     </p>
   </AppCard>
 </template>

@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { AppButton, AppCard, AppModal, AppSelect, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
 import { useSeatStore } from '@/stores/seat'
-import type { SeatPlan } from '@/types/seat'
+import { seatPositionLong } from '@/utils/seat'
+import { formatStudentDisplayName, formatStudentShortName } from '@/utils/student'
+import StudentDetailModal from '@/views/Students/components/StudentDetailModal.vue'
+import type { SeatChangeLog, SeatPlan } from '@/types/seat'
+import type { Student } from '@/types'
 import SeatClassroom from './components/SeatClassroom.vue'
 import SeatPlanPanel from './components/SeatPlanPanel.vue'
 
@@ -37,6 +41,15 @@ const studentMap = computed(
   () => new Map(studentStore.activeStudents.map((item) => [item.id, item])),
 )
 
+/** 当前方案座位查表（编排层判断交换 / 移动与取位置用） */
+const seatsById = computed(() => new Map(seatStore.currentSeats.map((seat) => [seat.id, seat])))
+
+/** 座位上的学生；空位 / 学生已删除返回 undefined */
+function seatStudent(seatId: string): Student | undefined {
+  const seat = seatsById.value.get(seatId)
+  return seat?.studentId ? studentMap.value.get(seat.studentId) : undefined
+}
+
 const planOptions = computed(() =>
   plans.value.map((plan) => ({ value: plan.id, label: plan.name })),
 )
@@ -52,18 +65,24 @@ const currentPlanId = computed<string>({
   get: () => seatStore.currentPlan?.id ?? '',
   set: (id: string) => {
     if (!id || id === seatStore.currentPlan?.id) return
+    const hadPending = seatStore.pendingLogsCount > 0
     if (!seatStore.switchPlan(id)) {
       toast.danger('切换失败：该方案不存在，请刷新后重试')
       return
     }
     selectedSeatId.value = undefined
+    cancelPicker()
+    if (hadPending) toast.info('已切换方案：未保存的「本次调整」记录已清空')
   },
 })
 
 /** 新建方案：自动命名并切换为当前；学生按 seatNumber 自动就座 */
 function createPlan() {
+  const hadPending = seatStore.pendingLogsCount > 0
   const plan = seatStore.createPlan()
   selectedSeatId.value = undefined
+  cancelPicker()
+  if (hadPending) toast.info('已新建方案：未保存的「本次调整」记录已清空')
   toast.success(`已新建方案「${plan.name}」并切换为当前`)
 }
 
@@ -92,9 +111,151 @@ function confirmRemove() {
   toast.success(`已删除方案「${target.name}」`)
 }
 
-/** 点击座位：选中 / 再次点击取消选中（选中态跨视角保持，Phase 3B 在此选座） */
+/* ========== Phase 3B：换座动作（拖拽落下与点击换座共用） ========== */
+
+function changeFailed() {
+  toast.danger('换座失败：数据已变化，请刷新后重试')
+}
+
+/**
+ * 执行一次换座：两座均有学生 = 交换（各记一条日志）；源有学生且目标为空 = 移动（记一条）。
+ * 源为空 / 拖回原位等情况在此静默返回（不提示、不记录）。
+ */
+function applySeatChange(fromId: string, toId: string) {
+  const fromSeat = seatsById.value.get(fromId)
+  const toSeat = seatsById.value.get(toId)
+  if (!fromSeat || !toSeat) return
+  const fromStudent = seatStudent(fromId)
+  const toStudent = seatStudent(toId)
+  if (!fromStudent) return
+  if (toStudent) {
+    if (!seatStore.swapSeats(fromId, toId)) {
+      changeFailed()
+      return
+    }
+    toast.success(
+      `已交换：${formatStudentShortName(fromStudent)} ↔ ${formatStudentShortName(toStudent)}`,
+    )
+    return
+  }
+  if (!seatStore.moveStudent(fromId, toId)) {
+    changeFailed()
+    return
+  }
+  toast.success(
+    `已移动：${formatStudentShortName(fromStudent)} → ${seatPositionLong(toSeat.row, toSeat.col)}`,
+  )
+}
+
+/** 普通点击座位：选中 / 再次点击取消选中（选中态跨视角保持） */
 function onPickSeat(seatId: string) {
   selectedSeatId.value = selectedSeatId.value === seatId ? undefined : seatId
+}
+
+/* ========== Phase 3B：点击换座模式（长按卡「开始换座」触发） ========== */
+
+const pickerFrom = ref<string | undefined>(undefined)
+
+const pickerLabel = computed(() => {
+  const student = pickerFrom.value ? seatStudent(pickerFrom.value) : undefined
+  return student ? formatStudentShortName(student) : ''
+})
+
+function startPicker(seatId: string) {
+  if (!seatStudent(seatId)) return
+  pickerFrom.value = seatId
+  selectedSeatId.value = seatId
+}
+
+function cancelPicker() {
+  pickerFrom.value = undefined
+}
+
+/** 换座模式下点击座位：目标 = 源 → 取消；否则按交换 / 移动执行一次并退出模式 */
+function onPickerTarget(targetId: string) {
+  if (targetId === pickerFrom.value) {
+    cancelPicker()
+    return
+  }
+  const fromId = pickerFrom.value
+  cancelPicker()
+  if (fromId) applySeatChange(fromId, targetId)
+}
+
+/** 座位点击分发：换座模式下交给 picker，普通模式维持选中语义 */
+function handleSeatClick(seatId: string) {
+  if (pickerFrom.value) {
+    onPickerTarget(seatId)
+    return
+  }
+  onPickSeat(seatId)
+}
+
+function onWindowKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && pickerFrom.value) cancelPicker()
+}
+
+onMounted(() => window.addEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
+
+/* ========== Phase 3B：长按信息卡 → 查看详情 / 学生删除 ========== */
+
+const detailStudent = ref<Student | undefined>(undefined)
+const detailOpen = ref(false)
+
+function openStudentDetail(seatId: string) {
+  const student = seatStudent(seatId)
+  if (!student) return
+  detailStudent.value = student
+  detailOpen.value = true
+}
+
+/** 学生模块详情弹窗的「编辑」在排座页不提供入口：引导回学生档案页 */
+function onDetailEdit() {
+  toast.info('编辑学生信息请前往「学生档案」页')
+}
+
+const removingStudent = ref<Student | undefined>(undefined)
+const confirmStudentRemoveOpen = ref(false)
+
+/** 长按卡 → 查看详情 → 删除：确认后删除，座位由 seat store 自动释放（本方案内双视角即时变空位） */
+function askRemoveStudent(student: Student) {
+  detailOpen.value = false
+  removingStudent.value = student
+  confirmStudentRemoveOpen.value = true
+}
+
+function confirmRemoveStudent() {
+  const target = removingStudent.value
+  removingStudent.value = undefined
+  confirmStudentRemoveOpen.value = false
+  if (!target) return
+  if (!studentStore.removeStudent(target.id)) {
+    toast.danger('删除失败：该学生不存在')
+    return
+  }
+  detailStudent.value = undefined
+  cancelPicker()
+  toast.success(`已从学生列表中移除 ${formatStudentDisplayName(target)}`)
+}
+
+/* ========== Phase 3B：保存本次调整 → 摘要 ========== */
+
+const hasPending = computed(() => seatStore.pendingLogsCount > 0)
+const summaryOpen = ref(false)
+const summaryEntries = ref<SeatChangeLog[]>([])
+
+/** 摘要「共调整 N 人」按去重学生计数（同一学生多次调整不重复计） */
+const summaryTotal = computed(
+  () => new Set(summaryEntries.value.map((entry) => entry.studentId)).size,
+)
+
+/** 保存「本次调整」：归档进当前方案 changeLogs，并按待提交记录弹摘要 */
+function saveAdjustments() {
+  const committed = seatStore.commitPendingLogs()
+  if (committed.length === 0) return
+  summaryEntries.value = committed
+  summaryOpen.value = true
 }
 </script>
 
@@ -105,7 +266,17 @@ function onPickSeat(seatId: string) {
         <h1 class="page-title">座位管理</h1>
         <p class="page-subtitle">{{ roomSummary }}</p>
       </div>
-      <AppButton @click="createPlan">＋ 新建方案</AppButton>
+      <div class="toolbar-actions">
+        <AppButton
+          v-if="hasPending"
+          variant="secondary"
+          title="把本次调整记录归档到当前方案"
+          @click="saveAdjustments"
+        >
+          保存本次调整（{{ seatStore.pendingLogsCount }}）
+        </AppButton>
+        <AppButton @click="createPlan">＋ 新建方案</AppButton>
+      </div>
     </header>
 
     <div class="toolbar-row">
@@ -146,6 +317,11 @@ function onPickSeat(seatId: string) {
       </ul>
     </div>
 
+    <!-- 点击换座模式提示条 -->
+    <div v-if="pickerFrom" class="picker-hint" role="status">
+      正在与「{{ pickerLabel }}」换座——点击已就座座位交换、点击空位移入；点击原座位或按 Esc 取消
+    </div>
+
     <div class="seats-layout">
       <AppCard padding="none" class="room-card">
         <SeatClassroom
@@ -155,7 +331,11 @@ function onPickSeat(seatId: string) {
           :students="studentMap"
           :view="view"
           :selected-id="selectedSeatId"
-          @select="onPickSeat"
+          :pick-source-id="pickerFrom"
+          @select="handleSeatClick"
+          @change="applySeatChange"
+          @quick-detail="openStudentDetail"
+          @quick-swap="startPicker"
         />
         <EmptyState
           v-else
@@ -189,6 +369,40 @@ function onPickSeat(seatId: string) {
         <AppButton variant="danger" @click="confirmRemove">删除方案</AppButton>
       </template>
     </AppModal>
+
+    <!-- 长按卡「查看详情」：复用学生模块详情弹窗（未改学生 UI；编辑/删除在页面编排层处理） -->
+    <StudentDetailModal
+      v-model="detailOpen"
+      :student="detailStudent"
+      @edit="onDetailEdit"
+      @remove="askRemoveStudent"
+    />
+
+    <AppModal v-model="confirmStudentRemoveOpen" title="移除学生" :width="380">
+      <p class="confirm-text">
+        确定从学生列表中移除
+        <strong>{{ removingStudent ? formatStudentDisplayName(removingStudent) : '' }}</strong>
+        吗？此操作无法撤销。该学生在全部座位方案中的座位将被释放为空位。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="confirmStudentRemoveOpen = false">取消</AppButton>
+        <AppButton variant="danger" @click="confirmRemoveStudent">从学生列表中移除</AppButton>
+      </template>
+    </AppModal>
+
+    <!-- 保存本次调整后的自动摘要 -->
+    <AppModal v-model="summaryOpen" title="本次调整" :width="420">
+      <div class="summary-list">
+        <p v-for="entry in summaryEntries" :key="entry.id" class="summary-entry">
+          <span class="summary-name">{{ entry.studentName }}</span>
+          <span class="summary-move">{{ entry.from }} → {{ entry.to }}</span>
+        </p>
+      </div>
+      <p class="summary-total">共调整 {{ summaryTotal }} 人。</p>
+      <template #footer>
+        <AppButton @click="summaryOpen = false">完成</AppButton>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -203,6 +417,12 @@ function onPickSeat(seatId: string) {
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .page-title {
@@ -312,6 +532,18 @@ function onPickSeat(seatId: string) {
   background: var(--color-warning);
 }
 
+/* 点击换座模式提示条 */
+.picker-hint {
+  margin-bottom: var(--space-3);
+  padding: 8px 14px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  font-size: var(--text-sm);
+  color: var(--color-primary-strong);
+  text-align: center;
+}
+
 .seats-layout {
   display: flex;
   align-items: flex-start;
@@ -350,5 +582,39 @@ function onPickSeat(seatId: string) {
 
 .confirm-text strong {
   color: var(--color-text);
+}
+
+/* 保存本次调整后的摘要 */
+.summary-list {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.summary-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-fill-disabled);
+}
+
+.summary-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.summary-move {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.summary-total {
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 </style>
