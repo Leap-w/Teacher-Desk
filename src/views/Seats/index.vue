@@ -1,17 +1,38 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { AppButton, AppCard, AppModal, AppSelect, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
 import { useSeatStore } from '@/stores/seat'
-import { seatPositionLong } from '@/utils/seat'
+import { useConstraintStore } from '@/stores/constraint'
+import { seatPositionLong, compareSeatPlans } from '@/utils/seat'
+import { checkSeatConstraints } from '@/utils/constraint'
+import type { ConstraintIssue } from '@/utils/constraint'
+import {
+  exportDateLabel,
+  exportDateStamp,
+  renderExportNode,
+  downloadPng,
+  createPdf,
+  embedPdfImage,
+  A4_HEIGHT_MM,
+} from '@/utils/seatExport'
+import type { SeatExportKind } from '@/utils/seatExport'
 import { formatStudentDisplayName, formatStudentShortName } from '@/utils/student'
 import StudentDetailModal from '@/views/Students/components/StudentDetailModal.vue'
-import type { SeatChangeLog, SeatPlan } from '@/types/seat'
+import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
 import type { Student } from '@/types'
 import SeatClassroom from './components/SeatClassroom.vue'
 import SeatPlanPanel from './components/SeatPlanPanel.vue'
+import SeatSearch from './components/SeatSearch.vue'
+import ConstraintPanel from './components/ConstraintPanel.vue'
+import ConstraintEditModal from './components/ConstraintEditModal.vue'
+import ConstraintManageModal from './components/ConstraintManageModal.vue'
+import SeatExportDialog from './components/SeatExportDialog.vue'
+import SeatExportGraphic from './components/SeatExportGraphic.vue'
+import SeatExportSummary from './components/SeatExportSummary.vue'
+import SeatCompareModal from './components/SeatCompareModal.vue'
 
 type SeatView = 'teacher' | 'student'
 
@@ -24,6 +45,7 @@ const ACCENT_LEGEND = [
 
 const seatStore = useSeatStore()
 const studentStore = useStudentStore()
+const constraintStore = useConstraintStore()
 const toast = useToast()
 
 /** 教室参数唯一来源：store.config（即 DEFAULT_CLASSROOM_CONFIG），页面不另写教室数字 */
@@ -41,8 +63,8 @@ const studentMap = computed(
   () => new Map(studentStore.activeStudents.map((item) => [item.id, item])),
 )
 
-/** 当前方案座位查表（编排层判断交换 / 移动与取位置用） */
-const seatsById = computed(() => new Map(seatStore.currentSeats.map((seat) => [seat.id, seat])))
+/** 当前方案座位查表（编排层判断交换 / 移动与取位置用；方案对比查看时以 B 方案为准） */
+const seatsById = computed(() => new Map(displaySeats.value.map((seat) => [seat.id, seat])))
 
 /** 座位上的学生；空位 / 学生已删除返回 undefined */
 function seatStudent(seatId: string): Student | undefined {
@@ -192,11 +214,20 @@ function handleSeatClick(seatId: string) {
 }
 
 function onWindowKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && pickerFrom.value) cancelPicker()
+  if (event.key !== 'Escape') return
+  if (pickerFrom.value) {
+    cancelPicker()
+    return
+  }
+  // 对比弹窗打开时 Esc 归弹窗（关闭它），不额外退出对比视图
+  if (comparePair.value && !compareOpen.value) exitCompare()
 }
 
 onMounted(() => window.addEventListener('keydown', onWindowKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onWindowKeydown)
+  if (flashTimer !== undefined) window.clearTimeout(flashTimer)
+})
 
 /* ========== Phase 3B：长按信息卡 → 查看详情 / 学生删除 ========== */
 
@@ -257,6 +288,277 @@ function saveAdjustments() {
   summaryEntries.value = committed
   summaryOpen.value = true
 }
+
+/* ========== Phase 3C：方案对比查看（只读高亮模式） ========== */
+
+const compareOpen = ref(false)
+/** 对比选中的方案对（A = 基准，B = 对照 = 座位图展示方）；清除 = 退出对比 */
+const comparePair = ref<{ planAId: string; planBId: string } | undefined>(undefined)
+/** 对比弹窗内的方案选择（重开时保留上次选择） */
+const compareSelA = ref('')
+const compareSelB = ref('')
+
+const compareActive = computed(() => Boolean(comparePair.value))
+const comparePlanA = computed(() =>
+  plans.value.find((plan) => plan.id === comparePair.value?.planAId),
+)
+const comparePlanB = computed(() =>
+  plans.value.find((plan) => plan.id === comparePair.value?.planBId),
+)
+
+/** 座位图展示的座位：对比查看时展示 B 方案；平时为当前方案（当前方案不存在回退空数组） */
+const displaySeats = computed<Seat[]>(() => {
+  if (comparePair.value) {
+    const planB = comparePlanB.value
+    if (planB) return planB.seats
+  }
+  return seatStore.currentSeats
+})
+
+const compareResult = computed(() => {
+  const pair = comparePair.value
+  if (!pair) return undefined
+  const planA = comparePlanA.value
+  const planB = comparePlanB.value
+  if (!planA || !planB) return undefined
+  return compareSeatPlans(planA, planB, studentMap.value)
+})
+
+/** 变化高亮集合（只含 id）；座位图黄色描边用 */
+const changedStudentIds = computed(() => compareResult.value?.changedStudentIds)
+
+function applyCompare(pair: { planAId: string; planBId: string }) {
+  compareSelA.value = pair.planAId
+  compareSelB.value = pair.planBId
+  comparePair.value = pair
+  compareOpen.value = false
+  selectedSeatId.value = undefined
+  cancelPicker()
+  toast.success('已切换对比查看：黄色描边 = 相对基准方案调整了座位的学生')
+}
+
+/** 退出对比：回到当前方案常规编辑（数据从未被修改，直接还原视图） */
+function exitCompare() {
+  comparePair.value = undefined
+  selectedSeatId.value = undefined
+  cancelPicker()
+}
+
+/** 手动切换当前方案（含新建/删除）时退出对比，避免展示与「当前方案」脱节 */
+watch(
+  () => seatStore.currentPlan?.id,
+  () => {
+    comparePair.value = undefined
+  },
+)
+
+/** 对比对象方案被删除 → 自动退出对比（避免停留在无 B 方案的只读视图） */
+watch(plans, (list) => {
+  const pair = comparePair.value
+  if (!pair) return
+  const hasA = list.some((plan) => plan.id === pair.planAId)
+  const hasB = list.some((plan) => plan.id === pair.planBId)
+  if (!hasA || !hasB) comparePair.value = undefined
+})
+
+/** 空位判空（展示方案中无学生） */
+function isSeatEmpty(seatId: string): boolean {
+  return !seatStudent(seatId)
+}
+
+/* ========== Phase 3C：学生定位（搜索 / 约束定位共用：滚动 + 闪烁 + 信息卡） ========== */
+
+const classroomRef = ref<InstanceType<typeof SeatClassroom>>()
+/** 正在闪烁定位的座位（3 次由 CSS 动画完成，随后由定时器清空以便重放） */
+const flashSeatIds = ref<Set<string>>(new Set())
+let flashTimer: number | undefined
+
+function flashSeats(seatIds: string[]) {
+  const ids = [...new Set(seatIds)]
+  if (ids.length === 0) return
+  if (flashTimer !== undefined) window.clearTimeout(flashTimer)
+  flashSeatIds.value = new Set(ids)
+  flashTimer = window.setTimeout(() => {
+    flashSeatIds.value = new Set()
+    flashTimer = undefined
+  }, 1750)
+}
+
+/** 学生 → 所在展示座位 id（未就座返回 undefined） */
+function seatIdOfStudent(studentId: string): string | undefined {
+  return displaySeats.value.find((seat) => seat.studentId === studentId)?.id
+}
+
+/** 定位学生：滚动 + 闪烁 + 信息卡；未就座只提示 */
+function locateStudent(student: Student) {
+  const seatId = seatIdOfStudent(student.id)
+  if (!seatId) {
+    toast.info(`${formatStudentShortName(student)} 当前未就座，请先安排座位`)
+    return
+  }
+  flashSeats([seatId])
+  classroomRef.value?.revealSeat(seatId)
+  // 等平滑滚动到位再弹卡，锚点取座位中心
+  window.setTimeout(() => classroomRef.value?.openQuickCard(seatId), 420)
+}
+
+/** 搜索候选的「当前位置」文案（座位页顶部的定位搜索框） */
+function searchPositionOf(studentId: string): string | undefined {
+  const seatId = seatIdOfStudent(studentId)
+  if (!seatId) return undefined
+  const seat = seatsById.value.get(seatId)
+  return seat ? seatPositionLong(seat.row, seat.col) : undefined
+}
+
+/** 约束检查行点击定位：涉及座位全部闪烁，滚动到第一个座位 */
+function locateIssue(issue: ConstraintIssue) {
+  flashSeats(issue.seatIds)
+  const first = issue.seatIds[0]
+  if (!first) return
+  classroomRef.value?.revealSeat(first)
+  // 有已就座学生才弹信息卡（约束行涉及的都是已就座者）
+  const seated = issue.seatIds.find((id) => !isSeatEmpty(id))
+  if (seated) window.setTimeout(() => classroomRef.value?.openQuickCard(seated), 420)
+}
+
+/* ========== Phase 3C：约束检查（只读）与约束管理 ========== */
+
+const editConstraintOpen = ref(false)
+/** 从信息卡进入时为卡主预设学生 A；约束面板「添加约束」为空（自行选择） */
+const editConstraintPreset = ref<Student | undefined>(undefined)
+const manageConstraintOpen = ref(false)
+
+/** 实时检查结果（computed：约束 / 座位 / 学生任一变化即重算，零手工刷新） */
+const constraintIssues = computed(() =>
+  checkSeatConstraints({
+    constraints: constraintStore.items,
+    seats: displaySeats.value,
+    students: studentMap.value,
+  }),
+)
+
+function openAddConstraint() {
+  editConstraintPreset.value = undefined
+  editConstraintOpen.value = true
+}
+
+/** 信息卡「＋ 座位约束」：以卡主为约束主体学生 A */
+function openConstraintForSeat(seatId: string) {
+  const student = seatStudent(seatId)
+  if (!student) return
+  editConstraintPreset.value = student
+  editConstraintOpen.value = true
+}
+
+/* ========== Phase 3C：导出（PNG / PDF；离屏静态图渲染，不触碰页面状态） ========== */
+
+const exportOpen = ref(false)
+const exportBusy = ref<SeatExportKind | null>(null)
+const compareBusy = ref(false)
+/** 导出日期文案（每次导出开始固定，保证标题 / 副标题 / 文件名同一天） */
+const exportedDateText = ref(exportDateLabel())
+
+/** 离屏导出节点（html-to-image 抓取目标；双视角实例常驻挂载） */
+const exportTeacherEl = ref<HTMLElement>()
+const exportStudentEl = ref<HTMLElement>()
+const compareNormalEl = ref<HTMLElement>()
+const compareChangedEl = ref<HTMLElement>()
+const compareSummaryEl = ref<HTMLElement>()
+
+/** 导出用大标题 / 副标题（与规范一致：标题 = 班级名 + 座位表，副标题附方案名 + 日期 + 视角） */
+const exportTitle = computed(() => `${config.name} 座位表`)
+const exportSubtitle = (viewLabel?: string) =>
+  `方案：${seatStore.currentPlan?.name ?? '—'} · ${exportedDateText.value}${
+    viewLabel ? ` · ${viewLabel}` : ''
+  }`
+
+const compareSubtitle = computed(() => {
+  if (!comparePlanB.value) return ''
+  return `方案：${comparePlanB.value.name} · ${exportedDateText.value} · 老师视角`
+})
+
+const compareSummarySubtitle = computed(() => {
+  if (!comparePlanA.value || !comparePlanB.value) return ''
+  return `${comparePlanA.value.name} → ${comparePlanB.value.name} · ${exportedDateText.value}`
+})
+
+/** 等一次渲染帧（画布内文字 / 排版稳定后快照） */
+async function captureNode(node: HTMLElement | undefined): Promise<HTMLCanvasElement> {
+  if (!node) throw new Error('导出节点未就绪')
+  await nextTick()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  return renderExportNode(node)
+}
+
+function baseFilename(): string {
+  const planName = seatStore.currentPlan?.name ?? '座位'
+  return `${config.name}-座位表-${planName}-${exportDateStamp()}`
+}
+
+async function runExport(kind: SeatExportKind) {
+  if (exportBusy.value || !seatStore.currentPlan) return
+  exportBusy.value = kind
+  exportedDateText.value = exportDateLabel()
+  try {
+    const base = baseFilename()
+    if (kind === 'png-teacher' || kind === 'png-student') {
+      const isTeacher = kind === 'png-teacher'
+      const node = isTeacher ? exportTeacherEl.value : exportStudentEl.value
+      const canvas = await captureNode(node)
+      downloadPng(canvas, `${base}-${isTeacher ? '老师视角' : '学生视角'}.png`)
+    } else if (kind === 'pdf-teacher') {
+      const pdf = createPdf()
+      const canvas = await captureNode(exportTeacherEl.value)
+      embedPdfImage(pdf, canvas, { y: 10 })
+      pdf.save(`${base}-老师视角.pdf`)
+    } else {
+      // 双视角 PDF：同一 A4 页上、下半各放一张图
+      const pdf = createPdf()
+      const budget = (A4_HEIGHT_MM - 26) / 2
+      let y = 10
+      const studentCanvas = await captureNode(exportStudentEl.value)
+      y += embedPdfImage(pdf, studentCanvas, { y, maxHeight: budget })
+      y += 6
+      const teacherCanvas = await captureNode(exportTeacherEl.value)
+      embedPdfImage(pdf, teacherCanvas, { y, maxHeight: A4_HEIGHT_MM - 20 - y })
+      pdf.save(`${base}-双视角.pdf`)
+    }
+    toast.success('已导出座位图')
+  } catch (error) {
+    console.error('[seat export] 导出失败：', error)
+    toast.danger('导出失败：请刷新后重试')
+  } finally {
+    exportBusy.value = null
+  }
+}
+
+/** 对比 PDF：第 1 页 = B 方案全图，第 2 页 = 变化摘要，第 3 页 = 变化高亮图 */
+async function runCompareExport() {
+  if (compareBusy.value || !compareResult.value) return
+  const planA = comparePlanA.value
+  const planB = comparePlanB.value
+  if (!planA || !planB) return
+  compareBusy.value = true
+  exportedDateText.value = exportDateLabel()
+  try {
+    const pdf = createPdf()
+    const normal = await captureNode(compareNormalEl.value)
+    embedPdfImage(pdf, normal, { y: 10 })
+    const summary = await captureNode(compareSummaryEl.value)
+    pdf.addPage()
+    embedPdfImage(pdf, summary, { y: 10 })
+    const changed = await captureNode(compareChangedEl.value)
+    pdf.addPage()
+    embedPdfImage(pdf, changed, { y: 10 })
+    pdf.save(`${config.name}-座位对比-${planA.name}-${planB.name}-${exportDateStamp()}.pdf`)
+    toast.success('已导出方案对比 PDF（3 页）')
+  } catch (error) {
+    console.error('[seat export] 对比导出失败：', error)
+    toast.danger('导出失败：请刷新后重试')
+  } finally {
+    compareBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -275,7 +577,24 @@ function saveAdjustments() {
         >
           保存本次调整（{{ seatStore.pendingLogsCount }}）
         </AppButton>
-        <AppButton @click="createPlan">＋ 新建方案</AppButton>
+        <AppButton
+          v-if="!compareActive"
+          variant="secondary"
+          :disabled="plans.length < 2"
+          title="对比两份方案的座位差异（只读查看）"
+          @click="compareOpen = true"
+        >
+          方案对比
+        </AppButton>
+        <AppButton
+          v-if="!compareActive"
+          :disabled="!seatStore.currentPlan"
+          title="导出当前方案座位图为图片 / PDF"
+          @click="exportOpen = true"
+        >
+          导出座位图
+        </AppButton>
+        <AppButton variant="ghost" @click="createPlan">＋ 新建方案</AppButton>
       </div>
     </header>
 
@@ -309,6 +628,13 @@ function saveAdjustments() {
         />
       </div>
 
+      <!-- Phase 3C：学生定位（姓名 / 学号后四位） -->
+      <SeatSearch
+        :students="studentStore.activeStudents"
+        :position-of="searchPositionOf"
+        @locate="locateStudent"
+      />
+
       <ul class="legend" aria-label="座位标记图例">
         <li v-for="item in ACCENT_LEGEND" :key="item.key" class="legend-item">
           <i class="swatch" :class="[item.cls, { 'is-dot': item.dot }]" aria-hidden="true"></i>
@@ -322,20 +648,40 @@ function saveAdjustments() {
       正在与「{{ pickerLabel }}」换座——点击已就座座位交换、点击空位移入；点击原座位或按 Esc 取消
     </div>
 
+    <!-- Phase 3C：方案对比查看提示条（变化黄色描边 · 只读） -->
+    <div v-if="compareActive" class="compare-hint" role="status">
+      <span class="compare-hint-text">
+        对比查看：<strong>{{ comparePlanA?.name }}</strong> →
+        <strong>{{ comparePlanB?.name }}</strong>
+        · 黄色描边 = 相对基准方案变化的学生 · 只读
+      </span>
+      <span class="compare-hint-actions">
+        <AppButton size="sm" variant="ghost" @click="exitCompare">退出对比</AppButton>
+        <AppButton size="sm" :disabled="compareBusy" @click="runCompareExport">
+          导出对比 PDF{{ compareBusy ? '…' : '' }}
+        </AppButton>
+      </span>
+    </div>
+
     <div class="seats-layout">
       <AppCard padding="none" class="room-card">
         <SeatClassroom
           v-if="seatStore.currentPlan"
+          ref="classroomRef"
           :config="config"
-          :seats="seatStore.currentSeats"
+          :seats="displaySeats"
           :students="studentMap"
           :view="view"
           :selected-id="selectedSeatId"
           :pick-source-id="pickerFrom"
+          :flash-seat-ids="flashSeatIds"
+          :changed-student-ids="changedStudentIds"
+          :interactive="!compareActive"
           @select="handleSeatClick"
           @change="applySeatChange"
           @quick-detail="openStudentDetail"
           @quick-swap="startPicker"
+          @quick-constraint="openConstraintForSeat"
         />
         <EmptyState
           v-else
@@ -347,16 +693,106 @@ function saveAdjustments() {
         </EmptyState>
       </AppCard>
 
-      <SeatPlanPanel
-        class="plan-panel"
-        :plans="plans"
-        :occupied-seats="config.occupiedSeats"
-        @create="createPlan"
-        @select="currentPlanId = $event"
-        @rename="handleRename"
-        @remove="askRemove"
-      />
+      <aside class="side-col">
+        <ConstraintPanel
+          :issues="constraintIssues"
+          :total-constraints="constraintStore.items.length"
+          @locate="locateIssue"
+          @add="openAddConstraint"
+          @manage="manageConstraintOpen = true"
+        />
+        <SeatPlanPanel
+          class="plan-panel"
+          :plans="plans"
+          :occupied-seats="config.occupiedSeats"
+          @create="createPlan"
+          @select="currentPlanId = $event"
+          @rename="handleRename"
+          @remove="askRemove"
+        />
+      </aside>
     </div>
+
+    <!-- ========== Phase 3C：离屏导出渲染区（双视角实例常驻；对比页在对比查看时挂载） ========== -->
+    <div class="export-stage" aria-hidden="true">
+      <div ref="exportTeacherEl" class="stage-node">
+        <SeatExportGraphic
+          v-if="seatStore.currentPlan"
+          :config="config"
+          :seats="seatStore.currentSeats"
+          :students="studentMap"
+          view="teacher"
+          :title="exportTitle"
+          :subtitle="exportSubtitle('老师视角')"
+        />
+      </div>
+      <div ref="exportStudentEl" class="stage-node">
+        <SeatExportGraphic
+          v-if="seatStore.currentPlan"
+          :config="config"
+          :seats="seatStore.currentSeats"
+          :students="studentMap"
+          view="student"
+          :title="exportTitle"
+          :subtitle="exportSubtitle('学生视角')"
+        />
+      </div>
+      <template v-if="compareActive">
+        <div ref="compareNormalEl" class="stage-node">
+          <SeatExportGraphic
+            v-if="comparePlanB"
+            :config="config"
+            :seats="comparePlanB.seats"
+            :students="studentMap"
+            view="teacher"
+            :title="exportTitle"
+            :subtitle="compareSubtitle"
+          />
+        </div>
+        <div ref="compareChangedEl" class="stage-node">
+          <SeatExportGraphic
+            v-if="comparePlanB && compareResult"
+            :config="config"
+            :seats="comparePlanB.seats"
+            :students="studentMap"
+            view="teacher"
+            :title="exportTitle"
+            :subtitle="compareSubtitle"
+            :changed-student-ids="compareResult.changedStudentIds"
+            :highlight-note="`黄色描边：相对「${comparePlanA?.name}」调整了座位的学生`"
+          />
+        </div>
+        <div ref="compareSummaryEl" class="stage-node">
+          <SeatExportSummary
+            v-if="compareResult"
+            :title="`${config.name} 座位表 · 方案对比`"
+            :subtitle="compareSummarySubtitle"
+            :entries="compareResult.entries"
+            :total="compareResult.total"
+          />
+        </div>
+      </template>
+    </div>
+
+    <!-- Phase 3C：导出面板 -->
+    <SeatExportDialog
+      v-model="exportOpen"
+      :plan-name="seatStore.currentPlan?.name ?? ''"
+      :busy="exportBusy"
+      @request="runExport"
+    />
+
+    <!-- Phase 3C：方案对比弹窗（选择 A/B，展示结果明细） -->
+    <SeatCompareModal
+      v-model="compareOpen"
+      :plans="plans"
+      :students="studentMap"
+      :preset-a="compareSelA"
+      :preset-b="compareSelB"
+      v-model:plan-a-id="compareSelA"
+      v-model:plan-b-id="compareSelB"
+      @apply="applyCompare"
+    />
 
     <AppModal v-model="confirmOpen" title="删除座位方案" :width="380">
       <p class="confirm-text">
@@ -403,6 +839,14 @@ function saveAdjustments() {
         <AppButton @click="summaryOpen = false">完成</AppButton>
       </template>
     </AppModal>
+
+    <!-- Phase 3C：座位约束 添加 / 管理 -->
+    <ConstraintEditModal
+      v-model="editConstraintOpen"
+      :preset-student="editConstraintPreset"
+      :students="studentStore.activeStudents"
+    />
+    <ConstraintManageModal v-model="manageConstraintOpen" :students="studentStore.activeStudents" />
   </div>
 </template>
 
@@ -544,6 +988,32 @@ function saveAdjustments() {
   text-align: center;
 }
 
+/* 方案对比查看提示条（Phase 3C） */
+.compare-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: 8px 14px;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.compare-hint strong {
+  color: var(--color-warning-strong);
+}
+
+.compare-hint-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .seats-layout {
   display: flex;
   align-items: flex-start;
@@ -555,9 +1025,31 @@ function saveAdjustments() {
   min-width: 0;
 }
 
-.plan-panel {
+/* 右侧栏：约束检查 + 方案列表（Phase 3C 起） */
+.side-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
   width: 272px;
   flex-shrink: 0;
+}
+
+.plan-panel {
+  width: 100%;
+}
+
+/* 离屏导出渲染区：常驻但不占位 / 不产生滚动条（左上极远负坐标），供 html-to-image 抓取 */
+.export-stage {
+  position: fixed;
+  left: -10000px;
+  top: -4000px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.stage-node {
+  width: max-content;
+  margin-bottom: 40px;
 }
 
 @media (max-width: 960px) {
@@ -565,7 +1057,7 @@ function saveAdjustments() {
     flex-direction: column;
   }
 
-  .plan-panel {
+  .side-col {
     width: 100%;
   }
 

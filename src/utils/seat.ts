@@ -1,4 +1,5 @@
 import { createId } from '@/utils/id'
+import { formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatBlock, SeatChangeLog, SeatPlan } from '@/types/seat'
@@ -181,4 +182,68 @@ export function normalizeSeatPlan(
     seats: buildSeatGrid(preserved, config),
     changeLogs,
   }
+}
+
+/* ========== Phase 3C：列块中文名 / 方案对比 ========== */
+
+/** 列块中文名（对比结果 / 约束消息 / 统计展示共用）：left｜center｜right → 左区｜中区｜右区 */
+export const SEAT_BLOCK_LABELS: Record<SeatBlock, string> = {
+  left: '左区',
+  center: '中区',
+  right: '右区',
+}
+
+export function seatBlockLabel(block: SeatBlock): string {
+  return SEAT_BLOCK_LABELS[block]
+}
+
+/** 方案对比单条结果：某学生在两份方案中的就座位置差异（只读快照，不引用两方案之外的数据） */
+export interface SeatCompareEntry {
+  studentId: string
+  /** 姓名快照（姓名（学号后四位）），展示不再回头查学生表 */
+  name: string
+  /** 方案 A 中的座位；该学生未就座时为 undefined */
+  fromSeat?: Seat
+  /** 方案 B（对比基准，通常为当前方案）中的座位 */
+  toSeat: Seat
+}
+
+export interface SeatCompareResult {
+  /** 座位发生变化的学生数（共调整 N 人） */
+  total: number
+  entries: SeatCompareEntry[]
+  /** 方案 B 中「发生变化的学生」id 集合（座位图 / 导出图高亮用；只含集合，不复制学生对象） */
+  changedStudentIds: Set<string>
+}
+
+/**
+ * 对比两份方案的座位差异：同一学生两方案座位不同（含只在一方就座）即计入。
+ * 学生名以快照形式落入 entries；changedStudentIds 只存 id，不重复创建任何 Student。
+ */
+export function compareSeatPlans(
+  planA: SeatPlan,
+  planB: SeatPlan,
+  students: ReadonlyMap<string, Student>,
+): SeatCompareResult {
+  const seatOfA = new Map<string, Seat>()
+  for (const seat of planA.seats) {
+    if (seat.studentId && !seatOfA.has(seat.studentId)) seatOfA.set(seat.studentId, seat)
+  }
+  const entries: SeatCompareEntry[] = []
+  const changedStudentIds = new Set<string>()
+  for (const seat of planB.seats) {
+    if (!seat.studentId) continue
+    const from = seatOfA.get(seat.studentId)
+    if (from && from.id === seat.id) continue
+    const student = students.get(seat.studentId)
+    changedStudentIds.add(seat.studentId)
+    entries.push({
+      studentId: seat.studentId,
+      name: student ? formatStudentShortName(student) : '已删除学生',
+      fromSeat: from,
+      toSeat: seat,
+    })
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+  return { total: entries.length, entries, changedStudentIds }
 }

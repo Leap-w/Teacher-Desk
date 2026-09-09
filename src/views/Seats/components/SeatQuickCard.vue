@@ -5,9 +5,9 @@ import { AppButton } from '@/components/ui'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 
-/** 卡片预估尺寸（定位越界保护用） */
+/** 卡片预估尺寸（定位越界保护用；含「座位约束」整行按钮后高度增加） */
 const CARD_WIDTH = 232
-const CARD_HEIGHT = 252
+const CARD_HEIGHT = 292
 const MARGIN = 12
 
 interface Props {
@@ -24,6 +24,8 @@ const emit = defineEmits<{
   close: []
   detail: [seatId: string]
   swap: [seatId: string]
+  /** 为当前座位学生添加座位约束（不能同桌 / 不能相邻） */
+  constraint: [seatId: string]
 }>()
 
 const root = ref<HTMLElement>()
@@ -119,8 +121,18 @@ onBeforeUnmount(() => {
       </dl>
 
       <footer class="quick-actions">
-        <AppButton size="sm" variant="ghost" @click="emit('detail', seatId)">查看详情</AppButton>
-        <AppButton size="sm" @click="emit('swap', seatId)">开始换座</AppButton>
+        <div class="quick-actions-row">
+          <AppButton size="sm" variant="ghost" @click="emit('detail', seatId)">查看详情</AppButton>
+          <AppButton size="sm" @click="emit('swap', seatId)">开始换座</AppButton>
+        </div>
+        <button
+          class="quick-constraint"
+          type="button"
+          title="添加座位约束（不能同桌 / 不能相邻）"
+          @click="emit('constraint', seatId)"
+        >
+          ＋ 座位约束
+        </button>
       </footer>
     </div>
   </Teleport>
@@ -207,8 +219,40 @@ onBeforeUnmount(() => {
 
 .quick-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.quick-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.quick-constraint {
+  width: 100%;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 5px 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.quick-constraint:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.quick-constraint:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 </style>

@@ -24,11 +24,20 @@ interface Props {
   selectedId?: string
   /** “点击换座”模式的源座位 id（长按卡「开始换座」触发）；空 = 未在换座模式 */
   pickSourceId?: string
+  /** 需闪烁定位的座位 id 集合（学生定位 / 约束检查定位用；约 3 次由 CSS 动画完成） */
+  flashSeatIds?: Set<string>
+  /** 方案对比变化高亮：座位上的学生 id 在此集合内 → 琥珀色描边（不覆盖强调标记） */
+  changedStudentIds?: Set<string>
+  /** 只读模式（方案对比查看中）：禁止拖拽 / 长按弹卡，普通点击选中保留 */
+  interactive?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   selectedId: undefined,
   pickSourceId: undefined,
+  flashSeatIds: undefined,
+  changedStudentIds: undefined,
+  interactive: true,
 })
 
 const emit = defineEmits<{
@@ -37,7 +46,12 @@ const emit = defineEmits<{
   change: [fromId: string, toId: string]
   quickDetail: [seatId: string]
   quickSwap: [seatId: string]
+  /** 信息卡「座位约束」：打开为当前学生添加约束的弹窗 */
+  quickConstraint: [seatId: string]
 }>()
+
+/** 组件根节点（定位滚动 / 信息卡锚点换算用） */
+const classroomRoot = ref<HTMLElement>()
 
 /** 排布单元：视角只改变这些单元的上下顺序，不重建座位数据 */
 type RoomItem =
@@ -112,6 +126,8 @@ function seatClass(seat: Seat): Record<string, boolean> {
     'is-pick-source': props.pickSourceId === seat.id,
     'is-drop-target': dropCandidate.value === seat.id,
     'is-drag-source': drag.value?.fromId === seat.id,
+    'is-flashing': props.flashSeatIds?.has(seat.id) ?? false,
+    'is-changed': seat.studentId ? (props.changedStudentIds?.has(seat.studentId) ?? false) : false,
     'is-cadre': accent === 'cadre',
     'is-tall': accent === 'tall',
     'is-tag': accent === 'tag',
@@ -196,6 +212,7 @@ function cancelGesture() {
 }
 
 function onSeatPointerDown(seat: Seat, event: PointerEvent) {
+  if (!props.interactive) return // 只读模式（方案对比查看中）：拖拽 / 长按全部停用
   if (gesture) return // 多点触控 / 手势进行中，忽略后续指针
   suppressClick = false
   gesture = {
@@ -297,10 +314,48 @@ function onQuickSwap(seatId: string) {
   closeQuickCard()
   emit('quickSwap', seatId)
 }
+
+function onQuickConstraint(seatId: string) {
+  closeQuickCard()
+  emit('quickConstraint', seatId)
+}
+
+/* ========== Phase 3C：对外暴露的定位能力（学生搜索 / 约束检查点击定位） ========== */
+
+/** 取某座位在页面中的元素（用于滚动与卡锚点） */
+function seatElement(seatId: string): HTMLElement | undefined {
+  const holder = classroomRoot.value?.querySelector<HTMLElement>(`[data-seat-id="${seatId}"]`)
+  return holder ?? undefined
+}
+
+/** 滚动到可见区域（跨 .room-scroll 与页面两级滚动），座位不存在返回 false */
+function revealSeat(seatId: string): boolean {
+  const element = seatElement(seatId)
+  if (!element) return false
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  return true
+}
+
+/** 以座位为中心弹出信息卡（搜索定位用）；只读模式 / 空位 / 缺座返回 false */
+function openQuickCard(seatId: string): boolean {
+  if (!props.interactive) return false
+  const element = seatElement(seatId)
+  const seat = seatsById.value.get(seatId)
+  if (!element || !seat || !occupantOf(seat)) return false
+  const rect = element.getBoundingClientRect()
+  quickSeat.value = {
+    seatId,
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  }
+  return true
+}
+
+defineExpose({ revealSeat, openQuickCard })
 </script>
 
 <template>
-  <div class="seat-classroom" :class="{ 'is-dragging': drag }">
+  <div ref="classroomRoot" class="seat-classroom" :class="{ 'is-dragging': drag }">
     <div class="room-scroll">
       <div class="room">
         <span class="windows" aria-hidden="true">
@@ -370,6 +425,7 @@ function onQuickSwap(seatId: string) {
       @close="closeQuickCard"
       @detail="onQuickDetail"
       @swap="onQuickSwap"
+      @constraint="onQuickConstraint"
     />
 
     <p class="room-note">
@@ -557,6 +613,30 @@ function onQuickSwap(seatId: string) {
 .seat:focus-visible {
   outline: none;
   box-shadow: var(--ring-focus);
+}
+
+/* Phase 3C：对比变化高亮 = 琥珀描边（先于选中态声明，选中环仍可覆盖；不碰强调顶条/角点） */
+.seat.is-changed {
+  border-color: var(--color-warning-strong);
+  box-shadow: 0 0 0 2px var(--color-warning-soft);
+}
+
+/* Phase 3C：定位闪烁（动画 3 次约 1.5s，页面定时移除类以支持重放） */
+.seat.is-flashing {
+  animation: seat-flash 0.5s ease-in-out 3;
+}
+
+@keyframes seat-flash {
+  0%,
+  100% {
+    border-color: var(--color-border);
+    box-shadow: none;
+  }
+
+  45% {
+    border-color: var(--color-warning-strong);
+    box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.55);
+  }
 }
 
 .seat.is-selected {
