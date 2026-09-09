@@ -65,6 +65,7 @@
   --duration-fast: 160ms;
   --duration-normal: 240ms;
   --duration-slow: 400ms;
+  --duration-flip: 300ms; /* 排座双视角翻转专用（需求约定约 300ms） */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ========== 焦点 ========== */

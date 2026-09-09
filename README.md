@@ -13,10 +13,13 @@
 | Phase 2      | 学生档案 MVP（模型 / Store / 列表 / 详情 / 表单）        | ✅     |
 | Phase 2 增量 | 家庭地址、家庭所在地、返家范围（数据基础）               | ✅     |
 | Phase 2.1    | 学生档案模型收敛：清理 boarding 遗留（统一住校）         | ✅     |
-| Phase 3      | 排座 / 座位管理                                          | 规划中 |
+| Phase 3A     | 座位管理：教室模型 + 可视化网格 + 多方案（v0.3.0-alpha） | ✅     |
+| Phase 3B–D   | 拖拽换座 / 自动排座与约束 / 导出与 Undo                  | 规划中 |
 | Phase 4+     | 课程表 / 请假 / 值日 / 周末管理 / 仪表盘 / 后端 / Widget | 规划中 |
 
-学生档案已完成：搜索与筛选、重名学生区分、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）。数据当前保存在浏览器 localStorage，后端尚未接入。
+学生档案已完成：搜索与筛选、重名学生区分、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）。
+
+座位管理（Phase 3A）已完成：固定教室模型（高一9班 · 7 排 × 9 列 · 3-3-3 分列 · 63 座就座 62 · 末排尾座留空）、老师 / 学生双视角可视化网格（约 300ms 翻转动画，选中跨视角保持）、班委 / 高个 / 标签强调标记、多座位方案管理（开学初 / 新建 / 切换 / 重命名 / 删除历史）。拖拽换座与自动排座等 Phase 3B–3D 未开始。数据当前保存在浏览器 localStorage，后端尚未接入。
 
 ## 技术栈
 
@@ -81,11 +84,11 @@ TeacherDesk/
 │   ├── constants/      # Toast 时长与堆栈上限
 │   ├── router/         # 路由（侧边导航由此驱动）
 │   ├── services/       # mock 种子数据 + api 占位（后端接入预留）
-│   ├── stores/         # app（占位同步）/ student（学生领域）
+│   ├── stores/         # app（占位同步）/ student（学生领域）/ seat（排座领域）
 │   ├── styles/         # theme.css 设计变量 + 全局样式
-│   ├── types/          # 全部共享类型
-│   ├── utils/          # date / id / student 工具
-│   ├── views/          # Home / Students（唯一完成模块）/ Seats / Schedule / Leave / Duty / Toolbox
+│   ├── types/          # classroom / seat + index（UI 与学生业务类型）
+│   ├── utils/          # date / id / student / seat 工具
+│   ├── views/          # Home / Students / Seats（完成模块）/ Schedule / Leave / Duty / Toolbox
 │   ├── App.vue
 │   └── main.ts
 └── package.json

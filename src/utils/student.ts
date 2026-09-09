@@ -66,3 +66,17 @@ export function formatStudentDisplayName(student: Student): string {
 export function formatSeatLabel(student: Student): string {
   return student.seatNumber !== undefined ? `${student.seatNumber} 号座位` : '未排座'
 }
+
+/** 座位强调类别：只复用学生档案既有字段；高个由「高个」标签表达（档案暂无独立身高字段） */
+export type SeatAccent = 'cadre' | 'tall' | 'tag'
+
+/**
+ * 座位图上的强调标记：班委 > 高个 > 其他标签（优先级递减）；均无则不强调。
+ * 颜色映射见 views/Seats 页面图例（一律取自 theme.css，不新增主题色）。
+ */
+export function seatAccentOf(student: Student): SeatAccent | undefined {
+  if (student.cadreRole) return 'cadre'
+  if (student.tags?.includes('高个')) return 'tall'
+  if (student.tags?.length) return 'tag'
+  return undefined
+}
