@@ -1,3 +1,5 @@
+import type { Component } from 'vue'
+
 /* ========== 通用 UI 类型 ========== */
 
 /** 下拉选项 */
@@ -30,11 +32,14 @@ export interface NavItem {
   icon: string
 }
 
-/** 首页仪表盘卡片 */
+/**
+ * 首页仪表盘卡片（Phase 4 起只剩两张「规划中」占位卡：
+ * 今日课程与今日待办已由 DashboardLessonCard / DashboardTodoCard 真实实现）
+ */
 export interface DashboardCard {
-  key: 'schedule' | 'todo' | 'leave' | 'class'
+  key: 'leave' | 'class'
   title: string
-  icon: string
+  icon: Component
   description: string
 }
 

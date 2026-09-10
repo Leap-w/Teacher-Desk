@@ -17,7 +17,9 @@
 | Phase 3B     | 拖拽换座 + 换座日志 / 调整摘要 + 长按信息卡（v0.3.1）                    | ✅     |
 | Phase 3C     | 教室工具：导出 PNG/PDF + 学生定位 + 约束检查 / 约束 + 方案对比（v0.4.0） | ✅     |
 | Phase 3D     | 自动排座：约束求解 + 生成新方案 / 换一种排法 + 撤销（v0.5.0）            | ✅     |
-| Phase 4+     | 课程表 / 请假 / 值日 / 周末管理 / 仪表盘 / 后端 / Widget                 | 规划中 |
+| Phase 4      | 工作台：今日课程 / 今日待办 / 快捷入口 / 本周课时（v0.6.0）              | ✅     |
+| Phase 4.1    | 课程表：周视图 + 课程编辑                                                | 规划中 |
+| Phase 5+     | 请假 / 值日 / 周末管理 / 后端 / Widget                                   | 规划中 |
 
 学生档案已完成：搜索与筛选、重名学生区分、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）。
 
@@ -26,6 +28,8 @@
 拖拽换座（Phase 3B）已完成：Pointer Events 原生拖拽（交换 / 移入空位，63 号尾座可手动拖入，落回原位不动作，双视角即时同步）、换座日志 SeatChangeLog（交换 2 条 / 移动 1 条，姓名快照 + 位置短文案）、「保存本次调整」归档并自动生成「本次调整」摘要、长按（0.4s）信息卡（查看详情 / 开始换座，详情复用学生模块弹窗）、删除学生自动释放其全部座位。
 
 教室工具（Phase 3C）已完成：一键导出座位图（PNG 老师 / 学生视角；PDF 老师视角单页 / 双视角同页，A4 打印尺寸，标题自动附方案名与导出日期）、学生定位（姓名 / 学号后四位搜索 → 滚动 + 座位闪烁 + 信息卡，重名列出候选）、教室固定标识（讲台 / 前门 / 后门 / 窗户随视角自动翻转）、Constraint Checker 约束检查（不能同桌 / 不能相邻冲突、高个坐前排、班委集中，只检查不自动调整，逐行点击定位）、座位约束基础版（长按座位信息卡添加，管理弹窗启停 / 删除）、方案对比（A/B 方案差异清单 + 变化学生黄色描边只读查看 + 3 页对比 PDF）。
+
+工作台（Phase 4）已完成：首页升级为班主任每天打开的**默认工作台**（手机优先，PC 自适应最大宽度约 960px 居中）。**今日课程**（新增 `stores/timetable.ts`，自动识别今天星期几、只显示今天的课、按节次升序显示「第N节 + 科目 + 班级 + 地点」，右上角「今天 星期X」，无课显示「今天暂无课程」）、**今日待办**（点击即完成 / 取消、完成划线、刷新后保持，右上角「已完成 N / M」，种子 班会准备 / 检查卫生 / 批改作业）、**快捷入口**（学生档案 / 座位管理 / 家校沟通（规划中）/ 我的课表，图标统一 Ionicons，手机 2×2、PC 4 列）、**本周课时统计**（从课表自动统计，「较上周 ——」为占位）、**今日日期头部**（不写死日期，30 秒刷新）。课表数据当前为本地种子（12 条 / 周），课表编辑与周视图见 Phase 4.1。
 
 自动排座（Phase 3D）已完成：**约束求解**——硬约束（不能同桌 / 不能相邻）必满足，无法满足则不生成方案并逐条说明冲突；软规则（坐后排 / 坐前排 / 同区块，取值域约束的三个预留规则位）尽量满足，未满足的部分由约束检查面板逐条提示；「高个」标签自动获得低权重后排偏好（显式规则优先）。生成结果落为**新方案**（原方案原样保留，可对比 / 可随时切回），支持「换一种排法」（换种子重排，沿用同一方案名不堆积）与「撤销」（切回原方案并删除新方案）。同一输入与种子结果确定（种子随机数 + 贪心 + 局部搜索，无外部依赖）。数据当前保存在浏览器 localStorage，后端尚未接入。
 
@@ -38,6 +42,7 @@
 | 路由       | Vue Router 4                                   |
 | 状态管理   | Pinia 3                                        |
 | 原子化 CSS | UnoCSS（presetWind3，主题对接 theme.css 变量） |
+| 图标       | @vicons/ionicons5（Ionicons，按需引入）        |
 | PWA        | vite-plugin-pwa（autoUpdate）                  |
 | 代码规范   | ESLint 9（flat）+ Prettier 3                   |
 
@@ -81,7 +86,7 @@ toast.danger('同步失败，请重试')
 
 ```
 TeacherDesk/
-├── docs/               # 开发手册（交接主文档）+ 路线图
+├── docs/               # 开发手册（交接主文档）+ 路线图 + 更新日志（CHANGELOG）
 ├── public/             # PWA SVG 图标占位（favicon / icon / icon-maskable）
 ├── src/
 │   ├── components/
@@ -91,12 +96,14 @@ TeacherDesk/
 │   ├── config/         # appConfig（存储键前缀等）
 │   ├── constants/      # Toast 时长与堆栈上限
 │   ├── router/         # 路由（侧边导航由此驱动）
-│   ├── services/       # mock 种子数据 + api 占位（后端接入预留）
-│   ├── stores/         # app（占位同步）/ student（学生领域）/ seat（排座领域）/ constraint（座位约束）
+│   ├── services/       # mock 种子数据（学生 / 课表 / 待办）+ api 占位（后端接入预留）
+│   ├── stores/         # app（占位同步）/ student（学生）/ seat（排座）/ constraint（座位约束）
+│   │                   #   / timetable（课表）/ dashboard（今日待办）
 │   ├── styles/         # theme.css 设计变量 + 全局样式
-│   ├── types/          # classroom / seat / constraint + index（UI 与学生业务类型）
+│   ├── types/          # classroom / seat / constraint / timetable / dashboard + index
 │   ├── utils/          # date / id / student / seat / constraint（检查器）/ seatArrange（自动排座）
-│   ├── views/          # Home / Students / Seats（完成模块）/ Schedule / Leave / Duty / Toolbox
+│   │                   #   / timetable（星期与节次）
+│   ├── views/          # Home（工作台）/ Students / Seats（完成模块）/ Schedule / Leave / Duty / Toolbox
 │   ├── App.vue
 │   └── main.ts
 └── package.json

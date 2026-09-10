@@ -1,4 +1,6 @@
 import type { Student } from '@/types'
+import type { Todo } from '@/types/dashboard'
+import type { Lesson } from '@/types/timetable'
 
 /**
  * 首次启动的示例数据（模拟后端返回，仅当本地无缓存时使用）。
@@ -72,5 +74,120 @@ export function createSeedStudents(): Student[] {
       familyAddress: '西藏自治区昌都市卡若区妥坝乡妥坝村 2 号',
       familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
     },
+  ]
+}
+
+/**
+ * 首次启动的示例课表（Phase 4 的今日课程卡片与本周课时统计都用它）。
+ * 场景：高一9班班主任，教本班与高一7班的数学，兼任本班班会课 —— 共 12 节 / 周，
+ * 周末无课（用于验证「今天暂无课程」的空态）。真实课程表编辑见开发手册 §9.6「未实现」。
+ */
+export function createSeedLessons(): Lesson[] {
+  return [
+    {
+      id: 'lesson-01',
+      weekday: 1,
+      period: 1,
+      subject: '数学',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-02',
+      weekday: 1,
+      period: 3,
+      subject: '数学',
+      className: '高一7班',
+      location: 'A 栋 305',
+    },
+    {
+      id: 'lesson-03',
+      weekday: 1,
+      period: 7,
+      subject: '班会',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-04',
+      weekday: 2,
+      period: 2,
+      subject: '数学',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-05',
+      weekday: 2,
+      period: 4,
+      subject: '数学',
+      className: '高一7班',
+      location: 'A 栋 305',
+    },
+    {
+      id: 'lesson-06',
+      weekday: 3,
+      period: 1,
+      subject: '数学',
+      className: '高一7班',
+      location: 'A 栋 305',
+    },
+    {
+      id: 'lesson-07',
+      weekday: 3,
+      period: 3,
+      subject: '数学',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-08',
+      weekday: 4,
+      period: 2,
+      subject: '数学',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-09',
+      weekday: 4,
+      period: 5,
+      subject: '数学',
+      className: '高一7班',
+      location: 'A 栋 305',
+    },
+    {
+      id: 'lesson-10',
+      weekday: 5,
+      period: 1,
+      subject: '数学',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+    {
+      id: 'lesson-11',
+      weekday: 5,
+      period: 3,
+      subject: '数学',
+      className: '高一7班',
+      location: 'A 栋 305',
+    },
+    {
+      id: 'lesson-12',
+      weekday: 5,
+      period: 6,
+      subject: '班会',
+      className: '高一9班',
+      location: 'A 栋 302',
+    },
+  ]
+}
+
+/** 首次启动的示例待办（Phase 4 的今日待办卡片；勾选状态由 dashboard store 持久化） */
+export function createSeedTodos(): Todo[] {
+  return [
+    { id: 'todo-01', text: '班会准备', done: false },
+    { id: 'todo-02', text: '检查卫生', done: false },
+    { id: 'todo-03', text: '批改作业', done: false },
   ]
 }
