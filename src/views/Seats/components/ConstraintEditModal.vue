@@ -4,12 +4,14 @@ import { computed, ref, watch } from 'vue'
 import { AppButton, AppModal, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useConstraintStore } from '@/stores/constraint'
+import { CONSTRAINT_TYPE_LABELS, isPairConstraintType } from '@/utils/constraint'
 import { formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 import type { SeatConstraintType } from '@/types/constraint'
 
 /**
- * 添加座位约束弹窗（基础版）：选类型（不能同桌 / 不能相邻）+ 选第二位学生 → 生成一条约束。
+ * 添加座位约束弹窗：选类型（不能同桌 / 不能相邻 / 坐后排 / 坐前排 / 同区块）+ 选学生 → 生成一条约束。
+ * 双人型（isPairConstraintType）需选第二位学生 B；坐后排 / 坐前排只作用于主体学生 A。
  * 可由信息卡（预设学生 A = 卡主）或约束面板（无预设，自行选 A / B）打开。
  */
 
@@ -30,9 +32,22 @@ const emit = defineEmits<{
 const toast = useToast()
 const constraintStore = useConstraintStore()
 
-const TYPE_DESCRIPTIONS: Record<'no-deskmate' | 'no-adjacent', string> = {
+/** 类型展示顺序（标签取共享的 CONSTRAINT_TYPE_LABELS，避免两处维护） */
+const TYPE_ORDER: readonly SeatConstraintType[] = [
+  'no-deskmate',
+  'no-adjacent',
+  'back-row',
+  'front-row',
+  'same-block',
+]
+
+/** 各类型的一句话说明（硬约束 = 必须满足，软规则 = 自动排座尽量满足） */
+const TYPE_DESCRIPTIONS: Record<SeatConstraintType, string> = {
   'no-deskmate': '两人不得坐在同一桌',
   'no-adjacent': '两人不得左右 / 前后相邻',
+  'back-row': '尽量安排在第 5–7 排',
+  'front-row': '尽量安排在第 1–2 排',
+  'same-block': '两人尽量在同一列块',
 }
 
 const constraintType = ref<SeatConstraintType>('no-deskmate')
@@ -72,10 +87,14 @@ watch(studentAId, (id) => {
   if (studentBId.value === id) studentBId.value = ''
 })
 
-/** 校验：A/B 必选且互异（预设时 A 固定） */
+/** 当前类型是否需要第二位学生（判定与 store / 求解器同源） */
+const needsStudentB = computed(() => isPairConstraintType(constraintType.value))
+
+/** 校验：A 必选；双人型还需 B 且与 A 互异（预设时 A 固定为卡主） */
 const canSubmit = computed(() => {
-  if (!studentAId.value || !studentBId.value) return false
-  return studentAId.value !== studentBId.value
+  if (!studentAId.value) return false
+  if (!needsStudentB.value) return true
+  return Boolean(studentBId.value) && studentBId.value !== studentAId.value
 })
 
 function close() {
@@ -86,22 +105,21 @@ function submit() {
   if (!canSubmit.value) return
   const created = constraintStore.add({
     studentA: studentAId.value,
-    studentB: studentBId.value,
+    // 单人型不携带学生 B（同一学生 + 同类型的规则不因 B 字段残留而重复）
+    studentB: needsStudentB.value ? studentBId.value : undefined,
     type: constraintType.value,
   })
   if (!created) {
-    toast.info('该约束已存在（同一对学生的同类型约束）')
+    toast.info('该约束已存在，未重复添加')
     return
   }
   toast.success(`已添加约束「${typeLabel(constraintType.value)}」`)
   close()
 }
 
-/** 类型标签（本弹窗只出现手工录入的两类） */
+/** 类型标签（取共享常量，与列表 / 检查消息同源） */
 function typeLabel(type: SeatConstraintType): string {
-  if (type === 'no-deskmate') return '不能同桌'
-  if (type === 'no-adjacent') return '不能相邻'
-  return type
+  return CONSTRAINT_TYPE_LABELS[type]
 }
 </script>
 
@@ -112,19 +130,23 @@ function typeLabel(type: SeatConstraintType): string {
         <span class="edit-label">约束类型</span>
         <div class="edit-types" role="radiogroup" aria-label="约束类型">
           <button
-            v-for="type in ['no-deskmate', 'no-adjacent']"
+            v-for="type in TYPE_ORDER"
             :key="type"
             type="button"
             role="radio"
             :aria-checked="constraintType === type"
             class="edit-type"
             :class="{ 'is-active': constraintType === type }"
-            @click="constraintType = type as SeatConstraintType"
+            @click="constraintType = type"
           >
-            <strong>{{ typeLabel(type as SeatConstraintType) }}</strong>
-            <small>{{ TYPE_DESCRIPTIONS[type as 'no-deskmate' | 'no-adjacent'] }}</small>
+            <strong>{{ typeLabel(type) }}</strong>
+            <small>{{ TYPE_DESCRIPTIONS[type] }}</small>
           </button>
         </div>
+        <p class="edit-hint">
+          「不能同桌 / 不能相邻」是自动排座的硬约束；「坐后排 / 坐前排 /
+          同区块」是软规则（尽量满足）。
+        </p>
       </div>
 
       <div class="edit-field">
@@ -139,7 +161,7 @@ function typeLabel(type: SeatConstraintType): string {
         />
       </div>
 
-      <div class="edit-field">
+      <div v-if="needsStudentB" class="edit-field">
         <span class="edit-label">学生 B（另一位学生）</span>
         <AppSelect
           v-model="studentBId"
@@ -182,10 +204,21 @@ function typeLabel(type: SeatConstraintType): string {
   color: var(--color-text);
 }
 
+.edit-hint {
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--color-text-faint);
+}
+
 .edit-types {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-2);
+}
+
+/* 5 个类型位：末项（同区块）独占整行，避免右侧留空 */
+.edit-type:last-child {
+  grid-column: 1 / -1;
 }
 
 .edit-type {

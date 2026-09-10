@@ -8,6 +8,7 @@ import { useSeatStore } from '@/stores/seat'
 import { useConstraintStore } from '@/stores/constraint'
 import { seatPositionLong, compareSeatPlans } from '@/utils/seat'
 import { checkSeatConstraints } from '@/utils/constraint'
+import { arrangeSeats } from '@/utils/seatArrange'
 import type { ConstraintIssue } from '@/utils/constraint'
 import {
   exportDateLabel,
@@ -33,6 +34,7 @@ import SeatExportDialog from './components/SeatExportDialog.vue'
 import SeatExportGraphic from './components/SeatExportGraphic.vue'
 import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
+import SeatArrangeModal from './components/SeatArrangeModal.vue'
 
 type SeatView = 'teacher' | 'student'
 
@@ -450,6 +452,178 @@ function openConstraintForSeat(seatId: string) {
   editConstraintOpen.value = true
 }
 
+/* ========== Phase 3D：自动排座（生成新方案 / 换一种排法 / 撤销） ========== */
+
+const arrangeOpen = ref(false)
+/** 上一次求解的硬约束冲突（弹窗展示；求解成功或重新打开弹窗时清空） */
+const arrangeConflicts = ref<string[]>([])
+/** 排法种子：同种子同结果，「换一种排法」= 递增种子 */
+const arrangeSeed = ref(1)
+
+/** 自动排座结果（页面级状态，不跨刷新）：结果条与撤销 / 换一种排法的唯一依据 */
+interface ArrangeOutcome {
+  planId: string
+  /** 生成前的当前方案（撤销时切回它） */
+  prevPlanId: string
+  /** 生成（或上次换排法）后立刻读回的方案 updatedAt：与当前值不符即视为已被编辑 */
+  createdUpdatedAt: string
+  /** 未满足的软规则条数（取检查器的 rules 分组，口径与约束面板一致） */
+  unmet: number
+}
+
+const arrangeResult = ref<ArrangeOutcome | undefined>(undefined)
+
+/** 自动排座方案及其原方案（方案被删除后结果条自动收起） */
+const arrangePlan = computed(() =>
+  arrangeResult.value
+    ? plans.value.find((plan) => plan.id === arrangeResult.value?.planId)
+    : undefined,
+)
+const arrangePrevPlan = computed(() =>
+  arrangeResult.value
+    ? plans.value.find((plan) => plan.id === arrangeResult.value?.prevPlanId)
+    : undefined,
+)
+
+/**
+ * 结果条操作是否仍可用：方案仍是当前（未被手动切换）且未被编辑（updatedAt 未变）。
+ * 重命名方案、删除学生触发的座位释放 / 启动清扫都会改写 updatedAt → 入口隐藏；
+ * 保守但安全（宁可少给撤销入口，也不误删教师后续的改动）。
+ */
+const arrangeIntact = computed(() => {
+  const plan = arrangePlan.value
+  const outcome = arrangeResult.value
+  if (!plan || !outcome) return false
+  return plan.isCurrent && plan.updatedAt === outcome.createdUpdatedAt
+})
+
+/** 未满足的软规则条数（与约束面板同源：检查器的 rules 分组） */
+function unmetRuleCount(): number {
+  return constraintIssues.value.filter((issue) => issue.group === 'rules').length
+}
+
+/**
+ * 结果条展示的未满足软规则条数：方案仍可用时取实时值（教师此后增删软规则，结果条与
+ * 约束面板同步变化），方案已被编辑 / 切换时退回生成时的快照（此时实时值属于别的方案）。
+ */
+const arrangeUnmet = computed(() =>
+  arrangeIntact.value ? unmetRuleCount() : (arrangeResult.value?.unmet ?? 0),
+)
+
+/** 清空座位闪烁（旧方案的闪烁座位 id 与新方案同名，排座后立即复位） */
+function clearFlash() {
+  if (flashTimer !== undefined) {
+    window.clearTimeout(flashTimer)
+    flashTimer = undefined
+  }
+  flashSeatIds.value = new Set()
+}
+
+/** 打开自动排座弹窗：清掉上一次的冲突结论 */
+function openArrange() {
+  arrangeConflicts.value = []
+  arrangeOpen.value = true
+}
+
+/** 求解一次并同步冲突提示（纯计算，不落库） */
+function solveArrange() {
+  const result = arrangeSeats({
+    students: studentStore.activeStudents,
+    constraints: constraintStore.items,
+    config,
+    seed: arrangeSeed.value,
+  })
+  arrangeConflicts.value = result.ok ? [] : result.conflicts
+  return result
+}
+
+/** 「自动排座」：求解成功则生成新方案（原方案原样保留，可对比 / 随时切回）；无解只报告冲突 */
+function generateArrange() {
+  const prevPlanId = seatStore.currentPlan?.id ?? ''
+  // 每次生成换种子：同一输入下重复点「生成方案」也得到不同排法（同种子同结果是求解器的性质）
+  arrangeSeed.value += 1
+  const result = solveArrange()
+  if (!result.ok) return
+  const hadPending = seatStore.pendingLogsCount > 0
+  const created = seatStore.createPlanFromSeats(result.seats)
+  // 落库后从 plans 读回（createPlanFromSeats 返回的是副本），撤销基线取读回对象的 updatedAt
+  const stored = plans.value.find((plan) => plan.id === created.id)
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  arrangeOpen.value = false
+  arrangeResult.value = {
+    planId: created.id,
+    prevPlanId,
+    createdUpdatedAt: stored?.updatedAt ?? created.updatedAt,
+    unmet: unmetRuleCount(),
+  }
+  if (hadPending) toast.info('已生成自动排座方案：未保存的「本次调整」记录已清空')
+  const unplaced = result.unplacedStudentIds.length
+  toast.success(
+    unplaced > 0
+      ? `已生成「${created.name}」：${unplaced} 名学生超出可排座位，未安排`
+      : `已生成「${created.name}」并切换为当前`,
+  )
+}
+
+/** 换一种排法：换种子重排并替换自动排座方案的座位（沿用同一方案与名称，不堆积方案） */
+function rerollArrange() {
+  const outcome = arrangeResult.value
+  const plan = arrangePlan.value
+  if (!outcome || !plan || !arrangeIntact.value) return
+  arrangeSeed.value += 1
+  const result = solveArrange()
+  if (!result.ok) {
+    toast.danger('换一种排法失败：硬约束无法同时满足')
+    return
+  }
+  const hadPending = seatStore.pendingLogsCount > 0
+  if (!seatStore.replacePlanSeats(plan.id, result.seats)) {
+    toast.danger('换一种排法失败：方案已变化，请刷新后重试')
+    return
+  }
+  const stored = plans.value.find((item) => item.id === plan.id)
+  outcome.createdUpdatedAt = stored?.updatedAt ?? outcome.createdUpdatedAt
+  outcome.unmet = unmetRuleCount()
+  selectedSeatId.value = undefined
+  clearFlash()
+  if (hadPending) toast.info('已重新排座：未保存的「本次调整」记录已清空')
+  toast.success('已换一种排法')
+}
+
+/**
+ * 撤销自动排座：切回原方案 → 删除自动排座方案（只复用既有 store API，不做通用撤销栈）。
+ * switchPlan 对「目标不存在」与「已是当前」都返回 false，故以切换后的当前方案 id 判定结果，
+ * 不把返回值 false 当作失败。
+ */
+function undoArrange() {
+  const outcome = arrangeResult.value
+  const prevPlan = arrangePrevPlan.value
+  if (!outcome || !arrangeIntact.value) return
+  if (!prevPlan) {
+    toast.danger('原方案已不存在，无法撤销自动排座')
+    arrangeResult.value = undefined
+    return
+  }
+  const hadPending = seatStore.pendingLogsCount > 0
+  seatStore.switchPlan(outcome.prevPlanId)
+  if (seatStore.currentPlan?.id !== outcome.prevPlanId) {
+    toast.danger('原方案已不存在，无法撤销自动排座')
+    return
+  }
+  if (!seatStore.removePlan(outcome.planId)) {
+    toast.danger('撤销失败：请手动删除该自动排座方案')
+    return
+  }
+  arrangeResult.value = undefined
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  if (hadPending) toast.info('已撤销自动排座：未保存的「本次调整」记录已清空')
+  toast.success(`已撤销自动排座，已切回「${prevPlan.name}」`)
+}
+
 /* ========== Phase 3C：导出（PNG / PDF；离屏静态图渲染，不触碰页面状态） ========== */
 
 const exportOpen = ref(false)
@@ -580,6 +754,15 @@ async function runCompareExport() {
         <AppButton
           v-if="!compareActive"
           variant="secondary"
+          :disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
+          title="按约束与规则自动生成一份新方案"
+          @click="openArrange"
+        >
+          自动排座
+        </AppButton>
+        <AppButton
+          v-if="!compareActive"
+          variant="secondary"
           :disabled="plans.length < 2"
           title="对比两份方案的座位差异（只读查看）"
           @click="compareOpen = true"
@@ -660,6 +843,30 @@ async function runCompareExport() {
         <AppButton size="sm" :disabled="compareBusy" @click="runCompareExport">
           导出对比 PDF{{ compareBusy ? '…' : '' }}
         </AppButton>
+      </span>
+    </div>
+
+    <!-- Phase 3D：自动排座结果条（换一种排法 / 撤销；方案被切换或编辑后关闭入口） -->
+    <div v-if="arrangeResult && arrangePlan && !compareActive" class="arrange-hint" role="status">
+      <span class="arrange-hint-text">
+        已生成「<strong>{{ arrangePlan.name }}</strong
+        >」· 未满足软规则 <strong>{{ arrangeUnmet }}</strong> 条<template v-if="!arrangeIntact">
+          · 该方案已被编辑或切换，撤销与换一种排法已关闭</template
+        >
+      </span>
+      <span class="arrange-hint-actions">
+        <AppButton v-if="arrangeIntact" size="sm" variant="ghost" @click="rerollArrange">
+          换一种排法
+        </AppButton>
+        <AppButton
+          v-if="arrangeIntact && arrangePrevPlan"
+          size="sm"
+          variant="ghost"
+          @click="undoArrange"
+        >
+          撤销
+        </AppButton>
+        <AppButton size="sm" @click="arrangeResult = undefined">关闭</AppButton>
       </span>
     </div>
 
@@ -847,6 +1054,16 @@ async function runCompareExport() {
       :students="studentStore.activeStudents"
     />
     <ConstraintManageModal v-model="manageConstraintOpen" :students="studentStore.activeStudents" />
+
+    <!-- Phase 3D：自动排座（生成新方案；求解与落库都在本页编排，弹窗只做确认与冲突展示） -->
+    <SeatArrangeModal
+      v-model="arrangeOpen"
+      :students="studentStore.activeStudents"
+      :constraints="constraintStore.items"
+      :config="config"
+      :conflicts="arrangeConflicts"
+      @generate="generateArrange"
+    />
   </div>
 </template>
 
@@ -1009,6 +1226,32 @@ async function runCompareExport() {
 }
 
 .compare-hint-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 自动排座结果条（Phase 3D） */
+.arrange-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: 8px 14px;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.arrange-hint strong {
+  color: var(--color-primary-strong);
+}
+
+.arrange-hint-actions {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);

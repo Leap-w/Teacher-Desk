@@ -25,6 +25,7 @@ const emit = defineEmits<{
 /** 分组渲染顺序与各自的无问题文案 */
 const GROUPS: Array<{ key: ConstraintGroup; ok: string }> = [
   { key: 'relation', ok: CONSTRAINT_OK_LINES.relation },
+  { key: 'rules', ok: CONSTRAINT_OK_LINES.rules },
   { key: 'tall', ok: CONSTRAINT_OK_LINES.tall },
   { key: 'cadre', ok: CONSTRAINT_OK_LINES.cadre },
 ]
@@ -65,7 +66,8 @@ function issuesOf(group: ConstraintGroup, issues: ConstraintIssue[]): Constraint
     </ul>
 
     <p v-if="totalConstraints === 0" class="constraint-tip">
-      还没有座位约束。长按已就座座位 →「＋ 座位约束」添加「不能同桌 / 不能相邻」。
+      还没有座位约束。长按已就座座位 →「＋ 座位约束」添加「不能同桌 /
+      不能相邻」（自动排座的硬约束）或「坐后排 / 坐前排 / 同区块」（软规则）。
     </p>
 
     <footer class="constraint-actions">

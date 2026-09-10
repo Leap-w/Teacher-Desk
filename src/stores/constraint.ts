@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createId } from '@/utils/id'
+import { isPairConstraintType } from '@/utils/constraint'
 import { useStudentStore } from '@/stores/student'
 import type { SeatConstraint, SeatConstraintType } from '@/types/constraint'
 
@@ -79,8 +80,9 @@ export const useConstraintStore = defineStore('constraint', () => {
   )
 
   /**
-   * 新增一条约束：关系型必须提供互异的第二位学生；与既有约束（同一对学生 + 同类型，不计方向）
-   * 重复时返回 null（由调用方提示「已存在」）。成功返回新建条目（含 id）。
+   * 新增一条约束：双人型（不能同桌 / 不能相邻 / 同区块）必须提供互异的第二位学生；
+   * 与既有约束（同一对学生 + 同类型，不计方向）重复时返回 null（由调用方提示「已存在」）。
+   * 成功返回新建条目（含 id）。
    */
   function add(input: {
     studentA: string
@@ -89,7 +91,7 @@ export const useConstraintStore = defineStore('constraint', () => {
     reason?: string
   }): SeatConstraint | null {
     if (!input.studentA) return null
-    const isPair = input.type === 'no-deskmate' || input.type === 'no-adjacent'
+    const isPair = isPairConstraintType(input.type)
     if (isPair && (!input.studentB || input.studentB === input.studentA)) return null
     const studentB = input.studentB
     const duplicate = items.value.some(

@@ -24,7 +24,7 @@ const emit = defineEmits<{
   close: []
   detail: [seatId: string]
   swap: [seatId: string]
-  /** 为当前座位学生添加座位约束（不能同桌 / 不能相邻） */
+  /** 为当前座位学生添加座位约束（双人型硬约束 / 单人型软规则） */
   constraint: [seatId: string]
 }>()
 
@@ -128,7 +128,7 @@ onBeforeUnmount(() => {
         <button
           class="quick-constraint"
           type="button"
-          title="添加座位约束（不能同桌 / 不能相邻）"
+          title="添加座位约束（不能同桌 / 不能相邻 / 坐后排 / 坐前排 / 同区块）"
           @click="emit('constraint', seatId)"
         >
           ＋ 座位约束

@@ -8,27 +8,40 @@ import type { Student } from '@/types'
 export const CONSTRAINT_TYPE_LABELS: Record<SeatConstraintType, string> = {
   'no-deskmate': '不能同桌',
   'no-adjacent': '不能相邻',
-  'back-row': '坐后排（规则预留）',
-  'front-row': '坐前排（规则预留）',
-  'same-block': '同区块（规则预留）',
+  'back-row': '坐后排',
+  'front-row': '坐前排',
+  'same-block': '同区块',
 }
 
-/** 本阶段可手工录入的约束类型（关系型；其余类型位 3C 检查派生与后续自动排座） */
-export const MANUAL_CONSTRAINT_TYPES: readonly SeatConstraintType[] = ['no-deskmate', 'no-adjacent']
+/** 关系型（硬）约束类型：自动排座必须满足，违反即冲突（Phase 3D 起） */
+export const HARD_CONSTRAINT_TYPES: readonly SeatConstraintType[] = ['no-deskmate', 'no-adjacent']
+
+/** 需要第二位学生的类型；back-row / front-row 只作用于主体学生 A */
+const PAIR_CONSTRAINT_TYPES: readonly SeatConstraintType[] = [
+  'no-deskmate',
+  'no-adjacent',
+  'same-block',
+]
+
+/** 该类型是否必须提供第二位学生（录入校验、检查与自动排座共用一套判定） */
+export function isPairConstraintType(type: SeatConstraintType): boolean {
+  return PAIR_CONSTRAINT_TYPES.includes(type)
+}
 
 /* ========== Constraint Checker（只检查，不自动改座位） ========== */
 
 /** 检查分组（面板按此顺序渲染，组内无问题则显示 ✓ 行） */
-export type ConstraintGroup = 'relation' | 'tall' | 'cadre'
+export type ConstraintGroup = 'relation' | 'rules' | 'tall' | 'cadre'
 
 /** 各分组无问题时的 ✓ 文案 */
 export const CONSTRAINT_OK_LINES: Record<ConstraintGroup, string> = {
   relation: '无同桌 / 相邻冲突',
+  rules: '坐后排 / 坐前排 / 同区块规则均已满足',
   tall: '无高个学生坐前排',
   cadre: '班委分布正常',
 }
 
-/** 严重度：conflict = 违反手工约束（红）；warn = 倾向性提醒（琥珀） */
+/** 严重度：conflict = 违反手工硬约束（红）；warn = 倾向性提醒（琥珀） */
 export type ConstraintSeverity = 'conflict' | 'warn'
 
 export interface ConstraintIssue {
@@ -47,21 +60,24 @@ export interface ConstraintIssue {
 const TALL_TAG = '高个'
 /** 视为前排的排数（第 1–2 排靠近讲台） */
 const FRONT_ROW_LIMIT = 2
+/** 视为后排的起始排数（第 5–7 排）；back-row 规则满足线，自动排座同样引用 */
+export const BACK_ROW_MIN = 5
 
 /** 同桌判定：同一行、同一列块内的左右紧邻两座 */
-function areDeskmates(a: Seat, b: Seat): boolean {
+export function areDeskmates(a: Seat, b: Seat): boolean {
   return a.row === b.row && a.block === b.block && Math.abs(a.col - b.col) === 1
 }
 
 /** 相邻判定：左右前后（同一格网的 4 邻域，跨排 / 跨列块均计入） */
-function areAdjacent(a: Seat, b: Seat): boolean {
+export function areAdjacent(a: Seat, b: Seat): boolean {
   return Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1
 }
 
 /**
- * 对当前方案执行四类检查（纯函数，实时调用，不做任何座位调整）：
- * 1. 不能同桌（no-deskmate 约束）2. 不能相邻（no-adjacent 约束）
- * 3. 高个学生坐前排（1–2 排）提醒 4. 班委全部集中同一区块提醒。
+ * 对当前方案执行五类检查（纯函数，实时调用，不做任何座位调整）：
+ * 1. 不能同桌（no-deskmate 硬约束）2. 不能相邻（no-adjacent 硬约束）
+ * 3. 坐后排 / 坐前排 / 同区块（规则型软规则，未满足仅提醒，Phase 3D 起）
+ * 4. 高个学生坐前排（1–2 排）提醒 5. 班委全部集中同一区块提醒。
  * 只统计当前方案中「双方都就座」的关系；学生已删除 / 未就座则自然不产生问题。
  */
 export function checkSeatConstraints(ctx: {
@@ -82,10 +98,10 @@ export function checkSeatConstraints(ctx: {
     return student ? formatStudentShortName(student) : '已删除学生'
   }
 
-  /** 1+2：手工录入的关系型约束 */
+  /** 1+2：手工录入的关系型硬约束（违反 = conflict） */
   for (const constraint of ctx.constraints) {
     if (!constraint.enabled) continue
-    if (constraint.type !== 'no-deskmate' && constraint.type !== 'no-adjacent') continue
+    if (!HARD_CONSTRAINT_TYPES.includes(constraint.type)) continue
     const studentB = constraint.studentB
     if (!studentB || studentB === constraint.studentA) continue
     const seatA = studentSeat.get(constraint.studentA)
@@ -108,7 +124,51 @@ export function checkSeatConstraints(ctx: {
     })
   }
 
-  /** 3：高个学生坐前排（按排聚合为一条消息，点按定位该排全部高个学生） */
+  /** 3：规则型软约束未满足（只提醒；自动排座会尽量满足它们） */
+  for (const constraint of ctx.constraints) {
+    if (!constraint.enabled) continue
+    if (HARD_CONSTRAINT_TYPES.includes(constraint.type)) continue
+    const seatA = studentSeat.get(constraint.studentA)
+    if (!seatA) continue // 未就座则无从判定（与关系型一致）
+    if (constraint.type === 'back-row' && seatA.row < BACK_ROW_MIN) {
+      issues.push({
+        key: constraint.id,
+        group: 'rules',
+        severity: 'warn',
+        message: `${nameOf(constraint.studentA)} 应坐后排，当前在第 ${seatA.row} 排`,
+        seatIds: [seatA.id],
+        studentIds: [constraint.studentA],
+      })
+      continue
+    }
+    if (constraint.type === 'front-row' && seatA.row > FRONT_ROW_LIMIT) {
+      issues.push({
+        key: constraint.id,
+        group: 'rules',
+        severity: 'warn',
+        message: `${nameOf(constraint.studentA)} 应坐前排，当前在第 ${seatA.row} 排`,
+        seatIds: [seatA.id],
+        studentIds: [constraint.studentA],
+      })
+      continue
+    }
+    if (constraint.type === 'same-block') {
+      const studentB = constraint.studentB
+      if (!studentB || studentB === constraint.studentA) continue
+      const seatB = studentSeat.get(studentB)
+      if (!seatB || seatB.block === seatA.block) continue
+      issues.push({
+        key: constraint.id,
+        group: 'rules',
+        severity: 'warn',
+        message: `${nameOf(constraint.studentA)} 与 ${nameOf(studentB)} 应同区块，当前 ${seatBlockLabel(seatA.block)} / ${seatBlockLabel(seatB.block)}`,
+        seatIds: [seatA.id, seatB.id],
+        studentIds: [constraint.studentA, studentB],
+      })
+    }
+  }
+
+  /** 4：高个学生坐前排（按排聚合为一条消息，点按定位该排全部高个学生） */
   const tallByRow = new Map<number, string[]>()
   for (const [studentId, seat] of studentSeat) {
     const student = ctx.students.get(studentId)
@@ -129,7 +189,7 @@ export function checkSeatConstraints(ctx: {
     })
   }
 
-  /** 4：班委全部集中在同一区块（≥2 位班委就座时才提示） */
+  /** 5：班委全部集中在同一区块（≥2 位班委就座时才提示） */
   const cadreByBlock = new Map<SeatBlock, string[]>()
   for (const [studentId, seat] of studentSeat) {
     const student = ctx.students.get(studentId)

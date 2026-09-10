@@ -16,13 +16,18 @@ export function seatOrdinal(
   col: number,
   config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): number {
+  // 注：config 参数一律显式标注 ClassroomConfig——默认值是不可变字面量，
+  // 不标注会被推断成字面量类型，导致调用方无法传入其他 ClassroomConfig
   return (row - 1) * config.cols + col
 }
 
 const BLOCK_KEYS: readonly SeatBlock[] = ['left', 'center', 'right']
 
 /** 列号 → 列块：按 config.blocks 的累计宽度自动切分（左 3｜中 3｜右 3） */
-export function blockOfCol(col: number, config = DEFAULT_CLASSROOM_CONFIG): SeatBlock {
+export function blockOfCol(
+  col: number,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
+): SeatBlock {
   let offset = 0
   for (let i = 0; i < config.blocks.length && i < BLOCK_KEYS.length; i++) {
     offset += config.blocks[i]
@@ -36,7 +41,7 @@ export function createSeat(
   row: number,
   col: number,
   studentId?: string,
-  config = DEFAULT_CLASSROOM_CONFIG,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): Seat {
   return { id: seatIdOf(row, col), row, col, block: blockOfCol(col, config), studentId }
 }
@@ -57,7 +62,7 @@ export function seatPositionShort(row: number, col: number): string {
  */
 export function buildOccupantMap(
   students: Array<Pick<Student, 'id' | 'studentNo' | 'seatNumber'>>,
-  config = DEFAULT_CLASSROOM_CONFIG,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): Map<number, string> {
   const occupants = new Map<number, string>()
   const valid = students
@@ -79,7 +84,7 @@ export function buildOccupantMap(
 /** 按教室配置生成完整座位网格（rows × cols）；occupants 以座位号为键 */
 export function buildSeatGrid(
   occupants: Map<number, string> = new Map(),
-  config = DEFAULT_CLASSROOM_CONFIG,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): Seat[] {
   const seats: Seat[] = []
   for (let row = 1; row <= config.rows; row++) {
@@ -94,7 +99,7 @@ export function buildSeatGrid(
 export function createSeatPlan(
   name: string,
   students: Array<Pick<Student, 'id' | 'studentNo' | 'seatNumber'>>,
-  config = DEFAULT_CLASSROOM_CONFIG,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): SeatPlan {
   const now = new Date().toISOString()
   return {
@@ -118,7 +123,7 @@ export function createSeatPlan(
  */
 export function normalizeSeatPlan(
   raw: Partial<SeatPlan>,
-  config = DEFAULT_CLASSROOM_CONFIG,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): SeatPlan {
   const planId = typeof raw.id === 'string' && raw.id ? raw.id : createId()
   const preserved = new Map<number, string>()

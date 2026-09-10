@@ -35,7 +35,7 @@ const nameOf = computed(() => {
   }
 })
 
-/** 关系型约束显示「A 与 B」，规则型预留显示主体 */
+/** 双人型约束显示「A 与 B」，单人型（坐后排 / 坐前排）只显示主体 */
 function pairText(item: SeatConstraint): string {
   if (item.studentB) return `${nameOf.value(item.studentA)} 与 ${nameOf.value(item.studentB)}`
   return nameOf.value(item.studentA)
@@ -59,7 +59,8 @@ function close() {
     @update:model-value="close"
   >
     <p v-if="constraintStore.items.length === 0" class="manage-empty">
-      暂无约束。添加「不能同桌 / 不能相邻」后，右侧「约束检查」会实时提示座位冲突。
+      暂无约束。添加「不能同桌 / 不能相邻」（自动排座的硬约束）或「坐后排 / 坐前排 /
+      同区块」（软规则）后，右侧「约束检查」会实时提示座位冲突与未满足的规则。
     </p>
 
     <ul v-else class="manage-list">
@@ -70,7 +71,7 @@ function close() {
             <span class="manage-names">{{ pairText(item) }}</span>
           </div>
           <p v-if="item.reason" class="manage-reason">{{ item.reason }}</p>
-          <p v-if="!item.enabled" class="manage-disabled-tip">已停用，不参与检查</p>
+          <p v-if="!item.enabled" class="manage-disabled-tip">已停用，不参与检查与自动排座</p>
         </div>
 
         <div class="manage-actions">

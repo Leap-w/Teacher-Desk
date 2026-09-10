@@ -3,14 +3,51 @@ import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createId } from '@/utils/id'
-import { createSeatPlan, normalizeSeatPlan, seatPositionShort } from '@/utils/seat'
+import {
+  buildSeatGrid,
+  createSeatPlan,
+  normalizeSeatPlan,
+  seatOrdinal,
+  seatPositionShort,
+} from '@/utils/seat'
 import { formatStudentShortName } from '@/utils/student'
 import { useStudentStore } from '@/stores/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
+import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
 import type { Student } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
+
+/**
+ * 求解器结果 → 座位号映射（createPlanFromSeats / replacePlanSeats 共用）。
+ * **不信任传入的座位数组**：按行列重算座位号（与传入的 id / 顺序无关），
+ * 同一学生只保留序号最小的座位，末排尾座固定留空（§2.4）。
+ */
+function occupantsFromSeats(
+  seats: Array<Pick<Seat, 'row' | 'col' | 'studentId'>>,
+  config: ClassroomConfig,
+): Map<number, string> {
+  const candidates: Array<{ ordinal: number; studentId: string }> = []
+  for (const seat of seats) {
+    if (!seat.studentId) continue
+    const { row, col } = seat
+    if (!Number.isInteger(row) || row < 1 || row > config.rows) continue
+    if (!Number.isInteger(col) || col < 1 || col > config.cols) continue
+    candidates.push({ ordinal: seatOrdinal(row, col, config), studentId: seat.studentId })
+  }
+  // 按座位号升序去重：结果与传入数组的顺序无关（同一学生只保留序号最小者）
+  candidates.sort((a, b) => a.ordinal - b.ordinal)
+  const occupants = new Map<number, string>()
+  const placed = new Set<string>()
+  for (const item of candidates) {
+    if (item.ordinal === config.totalSeats) continue
+    if (placed.has(item.studentId)) continue
+    placed.add(item.studentId)
+    occupants.set(item.ordinal, item.studentId)
+  }
+  return occupants
+}
 
 /** 活跃学生的最小档案投影（供自动就座；只依赖既有字段，学生仍只经由 student store 写入） */
 function studentProfiles() {
@@ -113,6 +150,60 @@ export const useSeatStore = defineStore('seat', () => {
       .concat({ ...plan, isCurrent: true })
     clearCurrentLogs()
     return { ...plan, isCurrent: true }
+  }
+
+  /** 自动排座方案默认名：自动排座 N（与「座位方案 N」同样的最小不重名序号） */
+  function nextArrangeName(): string {
+    let n = 1
+    while (plans.value.some((plan) => plan.name === `自动排座 ${n}`)) n++
+    return `自动排座 ${n}`
+  }
+
+  /**
+   * 用求解器结果新建方案并切换为当前（Phase 3D）。
+   * 座位经 occupantsFromSeats 清洗后由 buildSeatGrid 整表重建（恒 rows × cols 座，id / block 由行列重算）。
+   * 与 createPlan 的差别：不经 buildOccupantMap（不是按学生档案 seatNumber 就座）。
+   */
+  function createPlanFromSeats(
+    seats: Array<Pick<Seat, 'row' | 'col' | 'studentId'>>,
+    name?: string,
+  ): SeatPlan {
+    const now = new Date().toISOString()
+    const plan: SeatPlan = {
+      id: createId(),
+      name: name?.trim() || nextArrangeName(),
+      createdAt: now,
+      updatedAt: now,
+      isCurrent: true,
+      seats: buildSeatGrid(occupantsFromSeats(seats, config), config),
+      changeLogs: [],
+    }
+    plans.value = plans.value
+      .map((item) => (item.isCurrent ? { ...item, isCurrent: false } : item))
+      .concat(plan)
+    clearCurrentLogs()
+    return { ...plan }
+  }
+
+  /**
+   * 用求解器结果替换既有方案的座位（Phase 3D「换一种排法」；方案名与 changeLogs 历史不变）。
+   * 与其余方案编辑一致更新 updatedAt；目标为当前方案时清空「本次调整」待提交记录
+   * （待提交记录描述的是替换前的排法）。方案不存在返回 false。
+   */
+  function replacePlanSeats(
+    planId: string,
+    seats: Array<Pick<Seat, 'row' | 'col' | 'studentId'>>,
+  ): boolean {
+    const target = plans.value.find((plan) => plan.id === planId)
+    if (!target) return false
+    const nextSeats = buildSeatGrid(occupantsFromSeats(seats, config), config)
+    plans.value = plans.value.map((plan) =>
+      plan.id === planId
+        ? { ...plan, updatedAt: new Date().toISOString(), seats: nextSeats }
+        : plan,
+    )
+    if (target.isCurrent) clearCurrentLogs()
+    return true
   }
 
   /** 切换当前方案；目标不存在或已是当前时返回 false */
@@ -341,6 +432,8 @@ export const useSeatStore = defineStore('seat', () => {
     occupiedCount,
     pendingLogsCount,
     createPlan,
+    createPlanFromSeats,
+    replacePlanSeats,
     switchPlan,
     renamePlan,
     removePlan,
