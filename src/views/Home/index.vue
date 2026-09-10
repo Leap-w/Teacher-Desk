@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { DocumentTextOutline, SchoolOutline } from '@vicons/ionicons5'
+import { useRouter } from 'vue-router'
+import { SchoolOutline } from '@vicons/ionicons5'
 
 import { AppCard, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useDashboardStore } from '@/stores/dashboard'
+import { useLeaveStore } from '@/stores/leave'
 import { useTimetableStore } from '@/stores/timetable'
 import DashboardHeader from './components/DashboardHeader.vue'
+import DashboardLeaveCard from './components/DashboardLeaveCard.vue'
 import DashboardLessonCard from './components/DashboardLessonCard.vue'
 import DashboardLessonStats from './components/DashboardLessonStats.vue'
 import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
@@ -14,7 +17,9 @@ import DashboardTodoCard from './components/DashboardTodoCard.vue'
 import type { DashboardCard } from '@/types'
 
 const toast = useToast()
+const router = useRouter()
 const dashboardStore = useDashboardStore()
+const leaveStore = useLeaveStore()
 const timetableStore = useTimetableStore()
 
 /**
@@ -27,14 +32,8 @@ function toggleTodo(id: string): void {
   if (!dashboardStore.toggle(id)) toast.warning('待办状态更新失败，请刷新后重试')
 }
 
-/** 尚未实现的两张占位卡片（Phase 4 保留，点击不跳转） */
+/** 尚未实现的占位卡片（点击不跳转）：请假审批已在 Phase 5 转为真实卡片 */
 const plannedCards: DashboardCard[] = [
-  {
-    key: 'leave',
-    title: '请假审批',
-    icon: DocumentTextOutline,
-    description: '学生请假申请提交后，可在此快速查看与审批。',
-  },
   {
     key: 'class',
     title: '班级概况',
@@ -61,6 +60,12 @@ const plannedCards: DashboardCard[] = [
 
       <div class="cell-bottom">
         <DashboardLessonStats :count="timetableStore.weekLessonCount" />
+
+        <DashboardLeaveCard
+          :pending="leaveStore.pendingLeaves"
+          :month-count="leaveStore.monthLeaveCount"
+          @open="router.push('/leave')"
+        />
 
         <AppCard v-for="card in plannedCards" :key="card.key" :title="card.title">
           <template #actions>

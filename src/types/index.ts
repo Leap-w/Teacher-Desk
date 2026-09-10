@@ -33,11 +33,12 @@ export interface NavItem {
 }
 
 /**
- * 首页仪表盘卡片（Phase 4 起只剩两张「规划中」占位卡：
- * 今日课程与今日待办已由 DashboardLessonCard / DashboardTodoCard 真实实现）
+ * 首页仪表盘「规划中」占位卡（截至 Phase 5 只剩「班级概况」一张：
+ * 今日课程、今日待办已由 DashboardLessonCard / DashboardTodoCard 实现，
+ * 请假审批由 DashboardLeaveCard 实现——它们数据化后不再走这个通用形状）
  */
 export interface DashboardCard {
-  key: 'leave' | 'class'
+  key: 'class'
   title: string
   icon: Component
   description: string
@@ -116,21 +117,4 @@ export interface TodoItem {
   dueDate?: string
 }
 
-/** 请假类型 */
-export type LeaveType = 'sick' | 'personal' | 'other'
-
-/** 请假状态 */
-export type LeaveStatus = 'pending' | 'approved' | 'rejected'
-
-/** 请假记录 */
-export interface LeaveRecord {
-  id: string
-  studentId: string
-  type: LeaveType
-  /** 请假开始 / 结束（ISO 日期时间） */
-  startAt: string
-  endAt: string
-  reason: string
-  status: LeaveStatus
-  createdAt: string
-}
+/* 请假 / 离校模型见 `types/leave.ts`（Phase 5 起为独立领域文件，不再放在本文件） */

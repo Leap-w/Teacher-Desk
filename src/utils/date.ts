@@ -35,6 +35,24 @@ export function formatWeekdayLabel(date: Date): string {
   return WEEKDAY_LABELS[weekdayOf(date)]
 }
 
+/**
+ * 本地日期 → 日期键 `YYYY-MM-DD`（请假 / 离校登记等按「天」记录的数据用）。
+ * 不用 `toISOString()`：那是 UTC，东八区凌晨会被算成前一天。
+ */
+export function formatDateKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** 日期键加减天数（返回新的日期键；跨月 / 跨年交给 Date 处理） */
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split('-').map(Number)
+  const date = new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1)
+  date.setDate(date.getDate() + days)
+  return formatDateKey(date)
+}
+
 /** 根据时间返回问候语 */
 export function greetingByHour(date: Date): string {
   const hour = date.getHours()

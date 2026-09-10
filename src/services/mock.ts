@@ -1,5 +1,7 @@
+import { addDaysToDateKey, formatDateKey } from '@/utils/date'
 import type { Student } from '@/types'
 import type { Todo } from '@/types/dashboard'
+import type { LeaveRecord } from '@/types/leave'
 import type { Lesson } from '@/types/timetable'
 
 /**
@@ -214,5 +216,58 @@ export function createSeedTodos(): Todo[] {
     { id: 'todo-01', text: '班会准备', done: false },
     { id: 'todo-02', text: '检查卫生', done: false },
     { id: 'todo-03', text: '批改作业', done: false },
+  ]
+}
+
+/**
+ * 首次启动的示例请假记录：覆盖三种状态——待处理（明天一天）、
+ * 已批准且已登记离校（今天上午起，尚未返校）、已驳回（今天下午半天），
+ * 便于演示审批流转与离校 / 返校登记。
+ *
+ * 日期相对「首次启动那天」生成，**不写死日期**：写死的示例几天后就成了过期记录。
+ * 有意包含一名重名学生（seed-01 是两名「旦增卓玛」之一），验证快照带学号后四位。
+ */
+export function createSeedLeaves(): LeaveRecord[] {
+  const today = formatDateKey(new Date())
+  const tomorrow = addDaysToDateKey(today, 1)
+  const now = new Date().toISOString()
+  return [
+    {
+      id: 'leave-01',
+      studentId: 'seed-07',
+      studentName: '刘佳怡（0107）',
+      type: 'personal',
+      start: { date: tomorrow, half: 'am' },
+      end: { date: tomorrow, half: 'pm' },
+      reason: '家中有事，需回家一趟',
+      status: 'pending',
+      createdAt: now,
+    },
+    {
+      id: 'leave-02',
+      studentId: 'seed-06',
+      studentName: '陈思远（0106）',
+      type: 'sick',
+      start: { date: today, half: 'am' },
+      end: { date: tomorrow, half: 'pm' },
+      reason: '发烧，需回家休息',
+      status: 'approved',
+      createdAt: now,
+      decidedAt: now,
+      leftSchool: { date: today, half: 'am' },
+    },
+    {
+      id: 'leave-03',
+      studentId: 'seed-01',
+      studentName: '旦增卓玛（0101）',
+      type: 'personal',
+      start: { date: today, half: 'pm' },
+      end: { date: today, half: 'pm' },
+      reason: '临时外出',
+      status: 'rejected',
+      createdAt: now,
+      decidedAt: now,
+      decisionNote: '请说明具体事由后重新提交',
+    },
   ]
 }
