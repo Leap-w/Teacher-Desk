@@ -78,9 +78,10 @@ export function createSeedStudents(): Student[] {
 }
 
 /**
- * 首次启动的示例课表（Phase 4 的今日课程卡片与本周课时统计都用它）。
+ * 首次启动的示例课表（工作台「今日课程」与 `/schedule` 周课表共用）。
  * 场景：高一9班班主任，教本班与高一7班的数学，兼任本班班会课 —— 共 12 节 / 周，
- * 周末无课（用于验证「今天暂无课程」的空态）。真实课程表编辑见开发手册 §9.6「未实现」。
+ * 周末无课（用于验证「今天暂无课程」的空态）。
+ * 有意不种「代课」记录：「代课」是对他人缺勤的事实描述，应由教师自己录入。
  */
 export function createSeedLessons(): Lesson[] {
   return [
@@ -89,7 +90,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 1,
       period: 1,
       subject: '数学',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -97,7 +100,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 1,
       period: 3,
       subject: '数学',
+      classId: 'class-高一7班',
       className: '高一7班',
+      teacher: '我',
       location: 'A 栋 305',
     },
     {
@@ -105,7 +110,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 1,
       period: 7,
       subject: '班会',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -113,7 +120,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 2,
       period: 2,
       subject: '数学',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -121,7 +130,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 2,
       period: 4,
       subject: '数学',
+      classId: 'class-高一7班',
       className: '高一7班',
+      teacher: '我',
       location: 'A 栋 305',
     },
     {
@@ -129,7 +140,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 3,
       period: 1,
       subject: '数学',
+      classId: 'class-高一7班',
       className: '高一7班',
+      teacher: '我',
       location: 'A 栋 305',
     },
     {
@@ -137,7 +150,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 3,
       period: 3,
       subject: '数学',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -145,7 +160,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 4,
       period: 2,
       subject: '数学',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -153,7 +170,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 4,
       period: 5,
       subject: '数学',
+      classId: 'class-高一7班',
       className: '高一7班',
+      teacher: '我',
       location: 'A 栋 305',
     },
     {
@@ -161,7 +180,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 5,
       period: 1,
       subject: '数学',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
     {
@@ -169,7 +190,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 5,
       period: 3,
       subject: '数学',
+      classId: 'class-高一7班',
       className: '高一7班',
+      teacher: '我',
       location: 'A 栋 305',
     },
     {
@@ -177,7 +200,9 @@ export function createSeedLessons(): Lesson[] {
       weekday: 5,
       period: 6,
       subject: '班会',
+      classId: 'class-高一9班',
       className: '高一9班',
+      teacher: '我',
       location: 'A 栋 302',
     },
   ]

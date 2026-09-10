@@ -6,6 +6,50 @@
 
 ---
 
+## v0.7.0 —— Phase 4.1 / Phase 5 课程中心（Timetable）（2026-09-10，commit `feat: phase-5 timetable center`）
+
+课表从「工作台的只读数据源」升级为**可编辑的课程中心**；`/schedule` 由占位页升级为真实页面。
+
+> 编号：路线图（开发手册 §10）中本阶段为 **Phase 4.1**，交付口径称 **Phase 5**，两者同指本次交付。
+
+### 新增
+
+- **周课表页面** `/schedule`：手机（<760px）星期切换条 + 分日列表（空态「星期X没有课」+「＋ 添加课程」）；PC（≥760px）完整周视图（行 = 8 个节次，列 = 周一~周五；**录入了周末课时自动追加周六 / 周日列**，今天所在列主色高亮 + 「今天」标签）；页头「我的课表 · 本周共 N 节课 · ＋ 新增课程」；空格子可点击直接在该时段新增（预填星期 / 节次）。
+- **课程编辑**：新增自研 `AppDrawer`（右侧抽屉）+ `AppSwitch`，表单含星期 / 节次 / 科目 / 班级（下拉选择已录入班级，或「其他（手动输入）」）/ 任课教师（默认「我」）/ 地点 / 临时代课开关；**时段冲突校验**（一位教师同一节次只能在一个班上课，提示「该时间已有课程：X（Y）」，编辑时排除自身）；删除需二次确认（AppModal）。
+- **临时代课**：打开「临时代课」的课程在课表上显示「代课」徽标 + 暖色卡片 + 警示色左边框，无障碍名称同步带上「（代课）」；示例课表有意不含代课记录（代课是对他人缺勤的事实描述，由教师自己录入）。
+- **工作台联动**：删除 Dashboard 内部 mock，今日课程 / 「今天 星期X」/ 本周课时全部改读 `timetableStore`；课表增删改后工作台即时同步。
+- **共享时钟**：`useToday` 改为全应用共享的 `useNow()`（懒创建 + 单个 30 秒定时器），工作台头部、今日课程与课表「今天」同源，跨零点一起翻篇。
+- **课程模型二合一**：`Lesson` 扩为 `{ id, weekday, period, subject, classId, className, teacher, location?, isTemporary? }`（+ `LessonInput`），成为**全项目唯一课程模型**；`utils/timetable.ts` 新增 `classIdOf` / `findSlotConflict` / `weekendWeekdaysOf` / `LESSON_PERIODS(1–8)` / `WEEKDAY_COLUMNS(1–5)` / 星期短标签。
+- **UI Kit 公共设施** `components/ui/layers.ts`：滚动锁计数 + 层级栈 + 焦点陷阱，供 AppModal 与 AppDrawer 共用。
+
+### 变化
+
+- **存储键迁移**：`teacherdesk:timetable:lessons` → **`teacherdesk:timetable`**（首次加载自动迁移：补 `classId` / `teacher` 后写新键并删旧键；旧键损坏则保留现场、本次用示例课表）。新键损坏（非 JSON / 非数组）**降级为空课表**，不再重置为示例数据——课表可编辑后，重播种子会覆盖教师的真实课表。
+- `stores/timetable.ts` 由只读变可写：新增 `addLesson` / `updateLesson` / `removeLesson`（`undefined` = 被拒、`false` = 不存在）+ `todayWeekday` / `todayLabel` / `todayLessons` / `weekendWeekdays` / `classNames` / `slotConflict`；改了班级名而未带 `classId` 时自动重新派生。
+- `services/mock.ts` 示例课表补 `classId` / `className` / `teacher: '我'` / 地点（仍为 12 条 / 周）。
+- `AppModal` 改用共享的滚动锁与层级栈：在已打开的抽屉上弹确认框，关闭确认框不再提前解锁页面滚动，一次 Esc 不再连关两层。
+
+### 修复（交付前独立审查，12 项全部修复；无高 / 中危项）
+
+- **写入被拒不再吞掉已填内容**：原先抽屉提交后无条件关闭，保存被 store 拒绝（如另一个标签页已删掉该课）时教师刚填的东西一起消失；改为由页面**写入成功后**才关抽屉，失败时内容留着可改。校验失败还会弹 toast 报首个错误——手机上面单滚动后，出错字段可能在视口外，只有内联提示等于没反馈。
+- **迁移不再悄悄删数据**：旧键里有不合法条目时，原先会把它们丢弃后连旧键一起删掉；改为**有条目被丢弃就不删旧键**并告警（迁移是单向的，删了再也找不回原文），新键路径同样补丢弃告警。
+- **`classId` 与班级名一一对应**：`classIdOf` 原先折叠空白，`高一9班` 与 `高一 9班` 会共用一个 id（下拉里两个班级名、一个身份），与 §9.7 取舍 ④ 相反；改为只做首尾 `trim`，并在写入校验里要求 `classId` 必须等于班级名的派生结果。
+- 非法入参（`undefined` 字段）由**抛异常**改为**拒绝写入**（`typeof` 严格判定，同 load 口径）；节次上限单一来源（`MAX_LESSON_PERIOD` 由 `LESSON_PERIODS` 末项派生，删掉 store 里另算的一份）。
+- 无障碍：周视图课程卡的无障碍名称补上**星期 + 节次**（原来读屏软件分不出「周一第 2 节」与「周四第 2 节」），分日切换条补 `aria-pressed`（原来只有视觉高亮）。
+- 清理：硬编码 hover 色改用新增的 `--color-primary-soft-strong` / `--color-warning-soft-strong`（`AppButton` 同值替换，无视觉变化）；`759px / 760px` 之间的 0.02px 断点缝隙改为 `759.98px`；移除不可达的 `@submit.prevent="submit"`（回车保存未接线，见开发手册 §9.8）；交付前自检临时文件已删除。详见开发手册 §8「Phase 5 交付前审查」。
+
+### 未实现（本阶段边界）
+
+调课 / 停课 / 单双周 / 学期周次与起止日期、按日期的一次性调整、课表导入导出与打印、节假日跳过、班级实体（班级名即标识）、学生视角课表、代课的审批与归档、**跨标签页 / 浏览器与已安装 PWA 之间的课表同步**（各持整份数组、后写覆盖先写，与既有三个 store 同款，见开发手册 §9.8）、课程抽屉的回车保存。
+
+### 验证
+
+- prettier --check / vue-tsc --noEmit / eslint / build 四项全通过；PWA **35 个 precache 条目**（Phase 4 为 30，+5：课表页与其组件 chunk）。
+- 数据层运行时自检 **74 项** + SSR 渲染验证 **43 项**全过（独立审查修复后复跑；修复前为 61 / 42 项，同样全过）。
+- 未修改 Student / SeatPlan / Constraint 三个 store，未新增路由与一级导航，未触碰 PWA manifest / 图标 / 缓存策略。
+
+---
+
 ## v0.6.0 —— Phase 4 工作台（Dashboard）（2026-09-10，commit `feat: phase-4 dashboard`）
 
 首页从「四张建设中卡片」升级为班主任每天打开的**默认工作台**（手机优先，PC 自适应最大宽度 960px 居中）。

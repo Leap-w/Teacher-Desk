@@ -88,7 +88,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 }
 
 .is-secondary:hover:not(:disabled) {
-  background: rgba(47, 143, 131, 0.18);
+  background: var(--color-primary-soft-strong);
 }
 
 .is-ghost {

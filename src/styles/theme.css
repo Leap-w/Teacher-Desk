@@ -7,6 +7,8 @@
   --color-primary: #2f8f83;
   --color-primary-strong: #25766c;
   --color-primary-soft: rgba(47, 143, 131, 0.12);
+  /* 加深一档的浅色底：hover 用（原先散落在组件里的同值 rgba） */
+  --color-primary-soft-strong: rgba(47, 143, 131, 0.18);
   --color-secondary: #5aaea2;
 
   /* ========== 功能色 ========== */
@@ -16,6 +18,7 @@
   --color-warning: #ff9f0a;
   --color-warning-strong: #b26a00;
   --color-warning-soft: rgba(255, 159, 10, 0.14);
+  --color-warning-soft-strong: rgba(255, 149, 0, 0.18);
   --color-danger: #ff3b30;
   --color-danger-strong: #d70015;
   --color-danger-soft: rgba(255, 59, 48, 0.12);

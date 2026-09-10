@@ -1,6 +1,8 @@
 # TeacherDesk 路线图
 
-> 同步自 `docs/开发手册.md` §10（2026-09-10 Phase 4 交付后更新）。两份文档冲突时以开发手册为准。
+> 同步自 `docs/开发手册.md` §10（2026-09-10 Phase 4.1 / Phase 5 课程中心交付后更新）。两份文档冲突时以开发手册为准。
+>
+> **编号说明**：课程中心在本表中编号 **Phase 4.1**，交付时需求方口径称 **Phase 5**（tag `v0.7.0`），两者指同一次交付；本表编号不变，其后的「Phase 5 请假管理」仍是下一个未开工阶段。
 >
 > 后端规划：腾讯云 CloudBase + PostgreSQL。后端接入前所有数据走本地（Pinia + localStorage），`src/services` 预留接口抽象层。
 >
@@ -63,13 +65,21 @@
 - 约束：不修改 Student / SeatPlan / Constraint 三个 store，不新增路由与一级导航，不触碰 PWA manifest / 图标 / 缓存策略；数据流仍为「Pinia → localStorage」
 - 验证：四项验证全通过；PWA 30 个 precache 条目（Phase 3D 为 29，+1）；数据层运行时自检 29 项 + 边界自检 16 项全过
 
-## Phase 4.1 ⏭ 课程表（下一小步，范围待与用户对齐）
+## Phase 4.1 ✅ 课程中心（Timetable）（2026-09-10，tag v0.7.0）
 
-- 周视图课表（行 = 节次，列 = 星期），`/schedule` 由占位页升级为真实页面
-- 课程编辑（科目、任课教师、教室），数据落到 `stores/timetable.ts`（当前为只读 mock）
-- 与工作台联动：今日课程卡片 / 本周课时统计自动跟随课表变化（当前数据源已就绪）
+> 交付口径称「Phase 5 课程中心」；范围由需求方 2026-09-10 界定。规则依据见开发手册 §2.6，实现记录见 §9.7。
 
-## Phase 5 ⏭ 请假 / 离校管理
+- **课程数据模型收敛**：`types/timetable.ts` 的 `Lesson` 扩为 `{ id, weekday 1–7, period 1–8, subject, classId, className, teacher, location?, isTemporary? }` + `LessonInput`——**全项目唯一课程模型**，工作台与 `/schedule` 共用，不再有第二套结构或第二份 mock
+- **Store**：`stores/timetable.ts` 存储键迁移到 `teacherdesk:timetable`（旧键 `teacherdesk:timetable:lessons` 自动迁移：补 `classId` / `teacher` 后写新键并删旧键；旧键损坏则保留现场、先用示例课表）；新增 `addLesson` / `updateLesson` / `removeLesson`（返回值契约同 student）+ `todayWeekday` / `todayLabel` / `todayLessons` / `weekendWeekdays` / `classNames` / `slotConflict`；**新键损坏降级为空课表**（不重播种子，避免覆盖真实课表）
+- **周课表页面**（`/schedule` 由占位页升级）：手机（<760px）星期切换条 + 分日列表；PC（≥760px）完整周视图（行 = 8 个节次、列 = 周一~周五，**有周末课时自动追加周六 / 周日列**）；页头「本周共 N 节课」；空格子可点选新增（预填星期 / 节次）
+- **课程编辑**：自研 `AppDrawer` 抽屉表单（星期 / 节次 / 科目 / 班级（下拉 + 自定义）/ 任课教师 / 地点 / 临时代课开关），校验含**时段冲突**（一位教师同一节次只能在一个班，提示占用课程）；删除走 `AppModal` 二次确认；代课课程在卡片上标「代课」徽标 + 暖色底
+- **工作台联动**：删除 Dashboard 内部 mock，今日课程 / 今天标签 / 本周课时改读同一 store；`useToday` 改为**全应用共享时钟**（`useNow()`，单定时器），跨零点日期与课程同源翻篇
+- **UI Kit 扩充**：新增 `AppDrawer` / `AppSwitch`，并抽出 `ui/layers.ts`（滚动锁计数 + 层级栈 + 焦点陷阱）供 AppModal 与 AppDrawer 共用——抽屉上弹确认框不再提前解锁滚动、一次 Esc 不再连关两层
+- 约束：不修改 Student / SeatPlan / Constraint 三个 store，不新增路由与一级导航，不触碰 PWA manifest / 图标 / 缓存策略；数据流仍为「Pinia → localStorage」
+- 验证：四项验证全通过；PWA 35 个 precache 条目（Phase 4 为 30，+5）；数据层运行时自检 **74 项** + SSR 渲染验证 **43 项**全过；交付前独立审查 12 项修复（保存被拒不吞已填内容、迁移不再悄悄删旧键、`classId` 与班级名一一对应、无障碍名称补星期节次等，详见开发手册 §8）
+- 明确未做：调课 / 停课 / 单双周 / 学期周次、按日期的一次性调整、课表导入导出与打印、节假日跳过、班级实体、学生视角课表、代课的审批与归档
+
+## Phase 5 ⏭ 请假 / 离校管理（下一开发小步）
 
 - 请假申请（类型、时段、原因）
 - 审批流程与状态流转（AppBadge 展示状态）

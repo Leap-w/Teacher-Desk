@@ -3,12 +3,9 @@ import { computed } from 'vue'
 import { DocumentTextOutline, SchoolOutline } from '@vicons/ionicons5'
 
 import { AppCard, EmptyState } from '@/components/ui'
-import { useToday } from '@/composables/useToday'
 import { useToast } from '@/composables/useToast'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useTimetableStore } from '@/stores/timetable'
-import { formatWeekdayLabel } from '@/utils/date'
-import { weekdayOf } from '@/utils/timetable'
 import DashboardHeader from './components/DashboardHeader.vue'
 import DashboardLessonCard from './components/DashboardLessonCard.vue'
 import DashboardLessonStats from './components/DashboardLessonStats.vue'
@@ -16,21 +13,15 @@ import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
 import DashboardTodoCard from './components/DashboardTodoCard.vue'
 import type { DashboardCard } from '@/types'
 
-const { now } = useToday()
 const toast = useToast()
 const dashboardStore = useDashboardStore()
 const timetableStore = useTimetableStore()
 
 /**
- * 「今天」在页面层解析：store 只认 weekday 不认日期，保持纯粹。
- * `now` 每 30 秒刷新（useToday），跨零点后今日课程会自动切到新的一天。
+ * 「今天」由 timetable store 经**共享时钟**解析（Phase 5 起，全应用一个 30 秒定时器）：
+ * 今日课程、星期标签、头部日期同源，跨零点一起翻篇，不会互相错开一天。
  */
-const todayWeekday = computed(() => weekdayOf(now.value))
-const weekdayLabel = computed(() => formatWeekdayLabel(now.value))
-const isWeekend = computed(() => todayWeekday.value >= 6)
-
-/** 今日课程：按节次升序，周末通常为空数组 → 卡片显示空态 */
-const todayLessons = computed(() => timetableStore.lessonsOf(todayWeekday.value))
+const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
 
 function toggleTodo(id: string): void {
   if (!dashboardStore.toggle(id)) toast.warning('待办状态更新失败，请刷新后重试')
@@ -59,8 +50,8 @@ const plannedCards: DashboardCard[] = [
 
     <div class="dash-grid">
       <DashboardLessonCard
-        :lessons="todayLessons"
-        :weekday-label="weekdayLabel"
+        :lessons="timetableStore.todayLessons"
+        :weekday-label="timetableStore.todayLabel"
         :weekend="isWeekend"
       />
 
