@@ -221,6 +221,28 @@ export interface SeatCompareResult {
   changedStudentIds: Set<string>
 }
 
+/** 位置文案：第2排第3列；未就座显示「未就座」 */
+function positionText(seat: Seat | undefined): string {
+  return seat ? seatPositionLong(seat.row, seat.col) : '未就座'
+}
+
+/**
+ * 位置变化行：「第2排第3列 → 第4排第2列」（原先未就座显示「未就座 → …」）。
+ * 页面内对比弹窗与对比 PDF（SeatExportSummary）**共用这一份**——两处各写一份就会漂移，
+ * 教师会看到弹窗与打印出来的 PDF 对同一次换座说法不一致（§11.1 单一来源）。
+ */
+export function seatChangeMoveLine(entry: SeatCompareEntry): string {
+  return `${positionText(entry.fromSeat)} → ${positionText(entry.toSeat)}`
+}
+
+/** 区块变化行（仅跨区时返回，同区 / 原先未就座返回 undefined）：左区 → 中区 */
+export function seatChangeZoneLine(entry: SeatCompareEntry): string | undefined {
+  const from = entry.fromSeat?.block
+  const to = entry.toSeat?.block
+  if (!from || !to || from === to) return undefined
+  return `${seatBlockLabel(from)} → ${seatBlockLabel(to)}`
+}
+
 /**
  * 对比两份方案的座位差异：同一学生两方案座位不同（含只在一方就座）即计入。
  * 学生名以快照形式落入 entries；changedStudentIds 只存 id，不重复创建任何 Student。

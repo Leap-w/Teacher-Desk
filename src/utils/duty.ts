@@ -6,6 +6,7 @@ import {
   weekdayOfDateKey,
 } from '@/utils/date'
 import { createId } from '@/utils/id'
+import { isPlainObject } from '@/utils/object'
 import type { DutyGroup, DutyRecord, DutySettings } from '@/types/duty'
 import type { Weekday } from '@/types/timetable'
 
@@ -54,10 +55,6 @@ export function isDutySettings(record: DutyRecord): record is DutySettings {
 /** 新建组时的默认组名：按现有组数顺延（第 1 组 / 第 2 组 …） */
 export function defaultDutyGroupName(groupCount: number): string {
   return `第 ${groupCount + 1} 组`
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**

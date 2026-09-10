@@ -2,8 +2,7 @@
 import { computed, watch } from 'vue'
 
 import { AppButton, AppModal, AppSelect } from '@/components/ui'
-import { compareSeatPlans, seatBlockLabel, seatPositionLong } from '@/utils/seat'
-import type { SeatCompareEntry } from '@/utils/seat'
+import { compareSeatPlans, seatChangeMoveLine, seatChangeZoneLine } from '@/utils/seat'
 import type { SeatPlan } from '@/types/seat'
 import type { Student } from '@/types'
 
@@ -63,22 +62,6 @@ const result = computed(() => {
   return compareSeatPlans(planA.value, planB.value, props.students)
 })
 
-function positionText(seat: SeatCompareEntry['toSeat']): string {
-  return seat ? seatPositionLong(seat.row, seat.col) : '未就座'
-}
-
-function moveLine(entry: SeatCompareEntry): string {
-  return `${entry.fromSeat ? positionText(entry.fromSeat) : '未就座'} → ${positionText(entry.toSeat)}`
-}
-
-/** 区块变化（仅跨区显示）：左区 → 中区 */
-function zoneLine(entry: SeatCompareEntry): string | undefined {
-  const from = entry.fromSeat?.block
-  const to = entry.toSeat.block
-  if (!from || from === to) return undefined
-  return `${seatBlockLabel(from)} → ${seatBlockLabel(to)}`
-}
-
 function apply() {
   if (!comparable.value) return
   emit('apply', { planAId: planAId.value, planBId: planBId.value })
@@ -120,8 +103,10 @@ function closeModal() {
       <ul class="compare-list">
         <li v-for="entry in result?.entries ?? []" :key="entry.studentId" class="compare-entry">
           <span class="compare-name">{{ entry.name }}</span>
-          <span class="compare-move">{{ moveLine(entry) }}</span>
-          <span v-if="zoneLine(entry)" class="compare-zone">{{ zoneLine(entry) }}</span>
+          <span class="compare-move">{{ seatChangeMoveLine(entry) }}</span>
+          <span v-if="seatChangeZoneLine(entry)" class="compare-zone">{{
+            seatChangeZoneLine(entry)
+          }}</span>
         </li>
       </ul>
       <p v-if="result?.total === 0" class="compare-none">两份方案座位完全一致。</p>

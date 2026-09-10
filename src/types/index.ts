@@ -25,13 +25,6 @@ export interface ToastItem {
 
 /* ========== 路由 / 布局 ========== */
 
-/** 侧边栏导航项 */
-export interface NavItem {
-  path: string
-  title: string
-  icon: string
-}
-
 /**
  * 首页仪表盘「规划中」占位卡（截至 Phase 5 只剩「班级概况」一张：
  * 今日课程、今日待办已由 DashboardLessonCard / DashboardTodoCard 实现，
@@ -90,7 +83,7 @@ export interface Student {
 /** 新增 / 更新学生时的可写字段 */
 export type StudentInput = Omit<Student, 'id' | 'deletedAt'>
 
-/** 班干部 */
+/** 班干部（预留：学生当前用 `cadreRole: string` 平铺，尚未使用该实体） */
 export interface ClassCadre {
   id: string
   studentId: string
@@ -100,21 +93,12 @@ export interface ClassCadre {
   since: string
 }
 
-/** 宿舍 */
+/** 宿舍（预留：宿舍当前为 `Student.dormitory` 文本，尚未使用该实体） */
 export interface Dormitory {
   id: string
   building: string
   room: string
   bedCount: number
-}
-
-/** 待办事项 */
-export interface TodoItem {
-  id: string
-  title: string
-  done: boolean
-  /** 截止日期（ISO 日期） */
-  dueDate?: string
 }
 
 /* 请假 / 离校模型见 `types/leave.ts`（Phase 5 起为独立领域文件，不再放在本文件） */

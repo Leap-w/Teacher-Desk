@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { seatBlockLabel, seatPositionLong } from '@/utils/seat'
+import { seatChangeMoveLine, seatChangeZoneLine } from '@/utils/seat'
 import type { SeatCompareEntry } from '@/utils/seat'
 
 /**
  * 导出用「方案对比 · 变化摘要」静态页（纯展示，供 html-to-image 快照为 PDF 第二页）。
- * 文案与页面内对比弹窗同源：条目 = 姓名（学号后四位）+ 位置变化行 + 区块变化行（仅跨区时）。
+ * 文案与页面内对比弹窗**真·同源**：位置 / 区块变化行都由 utils/seat.ts 的
+ * seatChangeMoveLine / seatChangeZoneLine 生成（原先两处各存一份副本，
+ * 弹窗与 PDF 有漂移风险）。条目 = 姓名（学号后四位）+ 位置变化行 + 区块变化行（仅跨区时）。
  */
 
 interface Props {
@@ -17,23 +19,6 @@ interface Props {
 }
 
 defineProps<Props>()
-
-function positionText(seat: SeatCompareEntry['toSeat']): string {
-  return seat ? seatPositionLong(seat.row, seat.col) : '未就座'
-}
-
-/** 位置变化行：第2排第3列 → 第4排第2列 */
-function moveLine(entry: SeatCompareEntry): string {
-  return `${entry.fromSeat ? positionText(entry.fromSeat) : '未就座'} → ${positionText(entry.toSeat)}`
-}
-
-/** 区块变化行：仅跨区块时展示（左区 → 中区） */
-function zoneLine(entry: SeatCompareEntry): string | undefined {
-  const from = entry.fromSeat?.block
-  const to = entry.toSeat.block
-  if (!from || from === to) return undefined
-  return `${seatBlockLabel(from)} → ${seatBlockLabel(to)}`
-}
 </script>
 
 <template>
@@ -46,8 +31,10 @@ function zoneLine(entry: SeatCompareEntry): string | undefined {
     <ul class="ex-list">
       <li v-for="entry in entries" :key="entry.studentId" class="ex-entry">
         <p class="ex-name">{{ entry.name }}</p>
-        <p class="ex-line">{{ moveLine(entry) }}</p>
-        <p v-if="zoneLine(entry)" class="ex-line is-zone">{{ zoneLine(entry) }}</p>
+        <p class="ex-line">{{ seatChangeMoveLine(entry) }}</p>
+        <p v-if="seatChangeZoneLine(entry)" class="ex-line is-zone">
+          {{ seatChangeZoneLine(entry) }}
+        </p>
       </li>
     </ul>
 

@@ -1,5 +1,6 @@
 import { appConfig } from '@/config'
 import { isSampleRecordId } from '@/utils/id'
+import { isPlainObject } from '@/utils/object'
 
 /**
  * 数据备份 / 恢复（近期增量「数据管理」，tag v0.9.0）。
@@ -81,11 +82,6 @@ export interface ModuleReadResult {
   values: Record<string, unknown[]>
   /** JSON 损坏、无法解析的数据块名（调用方据此提示，绝不静默当成空） */
   broken: string[]
-}
-
-/** 是否为「非空对象」——数组也是对象，需要单独排除 */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** 取条目 id；不是对象 / 没有非空字符串 id → null（这类条目无法参与「按 id 合并」） */
