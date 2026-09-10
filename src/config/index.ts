@@ -8,6 +8,10 @@ export interface AppConfig {
 
 export const appConfig: AppConfig = {
   name: 'TeacherDesk',
-  version: '0.1.0',
+  /**
+   * 应用版本：与 package.json 的 version 保持同步（交付打 tag 时一起改）。
+   * 备份文件的元信息会带上它，用于日后诊断「这份备份出自哪个版本」（utils/backup.ts）。
+   */
+  version: '0.9.0',
   storageKeyPrefix: 'teacherdesk',
 }
