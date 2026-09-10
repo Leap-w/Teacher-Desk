@@ -21,7 +21,7 @@ withDefaults(defineProps<Props>(), {
       <EmptyState
         icon="🚧"
         title="功能建设中"
-        description="该模块为 Phase 0 占位页，业务功能将在后续阶段落地。"
+        description="该模块尚未开发，业务功能将在后续阶段落地。"
       />
     </AppCard>
   </div>
