@@ -37,6 +37,9 @@ export function normalizeStudent(raw: Student): Student {
     ...raw,
     familyAddress: typeof raw.familyAddress === 'string' ? raw.familyAddress : '',
     familyLocation,
+    // 学号缺失（外部导入 / 手改缓存）时给空串：展示函数一律 `studentNo.slice(-4)`，
+    // undefined 会直接抛错把整页渲染打断（值日卡片、座位图都在渲染路径上调用它们）
+    studentNo: typeof raw.studentNo === 'string' ? raw.studentNo : '',
   }
   // Phase 2.1 收敛：历史 localStorage 中可能残留 boarding 键（全班统一住校，模型已移除），
   // 升级时一并剔除，保证该键不再随 deep watch 写回持久层

@@ -1,3 +1,4 @@
+import { formatMonthDay, isDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
 import type { SelectOption } from '@/types'
 import type { HalfDay, LeavePoint, LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
@@ -38,7 +39,6 @@ export const KNOWN_LEAVE_TYPES: readonly LeaveType[] = ['sick', 'personal', 'oth
 /** 全部已知审批状态（load 守卫用） */
 const KNOWN_LEAVE_STATUSES: readonly LeaveStatus[] = ['pending', 'approved', 'rejected']
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const MS_PER_DAY = 86_400_000
 
 /**
@@ -52,27 +52,6 @@ function dayIndexOf(dateKey: string): number {
   const month = Number(dateKey.slice(5, 7))
   const day = Number(dateKey.slice(8, 10))
   return Date.UTC(year, month - 1, day) / MS_PER_DAY
-}
-
-/**
- * 日期键守卫：`YYYY-MM-DD` 且**这一天真实存在**。
- * 只判 `1..12 月` `1..31 日` 会放过「2 月 31 日」——它既会让
- * `<input type="date">` 静默渲染为空（教师看着空日期点保存），
- * 又会让时长计算凭空多出几天；因此回读校验：`Date` 会把不存在的
- * 日期顺延（2-31 → 3-3），对不上即拒绝（同 normalizeLesson 的「严格判定」口径）。
- */
-function isDateKey(value: unknown): value is string {
-  if (typeof value !== 'string' || !DATE_KEY_PATTERN.test(value)) return false
-  const year = Number(value.slice(0, 4))
-  const month = Number(value.slice(5, 7))
-  const day = Number(value.slice(8, 10))
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false
-  const roundTrip = new Date(Date.UTC(year, month - 1, day))
-  return (
-    roundTrip.getUTCFullYear() === year &&
-    roundTrip.getUTCMonth() + 1 === month &&
-    roundTrip.getUTCDate() === day
-  )
 }
 
 /** 半天守卫 */
@@ -108,11 +87,6 @@ export function formatLeaveDuration(start: LeavePoint, end: LeavePoint): string 
   if (halves <= 2) return halves === 2 ? '1 天' : '半天'
   const days = Math.floor(halves / 2)
   return halves % 2 === 1 ? `${days} 天半` : `${days} 天`
-}
-
-/** 日期键 → 中文月日，如「9月11日」（纯字符串解析，不经 Date，不涉时区） */
-function formatMonthDay(dateKey: string): string {
-  return `${Number(dateKey.slice(5, 7))}月${Number(dateKey.slice(8, 10))}日`
 }
 
 /** 时间点文案，如「9月11日 上午」（离校 / 返校登记展示用） */

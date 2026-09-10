@@ -1,6 +1,8 @@
 import { addDaysToDateKey, formatDateKey } from '@/utils/date'
+import { DUTY_SETTINGS_ID } from '@/utils/duty'
 import type { Student } from '@/types'
 import type { Todo } from '@/types/dashboard'
+import type { DutyRecord } from '@/types/duty'
 import type { LeaveRecord } from '@/types/leave'
 import type { Lesson } from '@/types/timetable'
 
@@ -75,6 +77,44 @@ export function createSeedStudents(): Student[] {
       dormitory: '5 号楼 210',
       familyAddress: '西藏自治区昌都市卡若区妥坝乡妥坝村 2 号',
       familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+    },
+  ]
+}
+
+/**
+ * 首次启动的示例值日安排（Phase 6）：三个值日组 + 一条轮换设置。
+ * 六名示例学生分三组各两人——含两名「旦增卓玛」，用于验证重名时显示学号后四位。
+ *
+ * 轮换起点写成**首次启动那天**，不写死日期：写死的示例过几天就成了「起点在过去很久」，
+ * 教师打开看到的是与自己无关的中间某组。周末开关默认关（Phase 6 范围拍板口径）。
+ * 只在示例学生确实还在档案中时才播种（stores/duty.ts 的 loadRecords）。
+ */
+export function createSeedDuty(): DutyRecord[] {
+  return [
+    {
+      id: 'duty-01',
+      kind: 'group',
+      name: '第 1 组',
+      studentIds: ['seed-01', 'seed-03'],
+    },
+    {
+      id: 'duty-02',
+      kind: 'group',
+      name: '第 2 组',
+      studentIds: ['seed-05', 'seed-07'],
+    },
+    {
+      id: 'duty-03',
+      kind: 'group',
+      name: '第 3 组',
+      studentIds: ['seed-02', 'seed-06'],
+    },
+    {
+      id: DUTY_SETTINGS_ID,
+      kind: 'settings',
+      startDate: formatDateKey(new Date()),
+      startGroupId: 'duty-01',
+      includeWeekend: false,
     },
   ]
 }

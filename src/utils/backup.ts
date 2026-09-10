@@ -5,8 +5,8 @@ import { isSampleRecordId } from '@/utils/id'
  * 数据备份 / 恢复（近期增量「数据管理」，tag v0.9.0）。
  *
  * 为什么存在：localStorage 是当前唯一数据载体，清缓存 / 换设备 / 换浏览器即全部丢失。
- * 本模块只做三件事——读出六个数据块的原始 JSON、校验 / 合并、写回；**条目级校验不在这里
- * 重复实现**：写回后由页面 `location.reload()`，六个 store 用各自既有的 normalize* 重新加载
+ * 本模块只做三件事——读出七个数据块的原始 JSON、校验 / 合并、写回；**条目级校验不在这里
+ * 重复实现**：写回后由页面 `location.reload()`，七个 store 用各自既有的 normalize* 重新加载
  * （字段形状、id 去重、悬空引用清理都走已验收的那一套）。这里只管两件事：
  * 结构对不对（是不是本应用的备份、每个数据块是不是列表）、哪些条目能按 id 对上。
  *
@@ -34,15 +34,16 @@ export interface BackupModule {
   unit: string
 }
 
-/** 六个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
+/** 七个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
 const STUDENT_KEY = `${appConfig.storageKeyPrefix}:students`
 const SEAT_PLAN_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 const CONSTRAINT_KEY = `${appConfig.storageKeyPrefix}:seatConstraints`
 const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
 const TODO_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
+const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
 
-/** 备份覆盖的六个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
+/** 备份覆盖的七个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
 export const BACKUP_MODULES: BackupModule[] = [
   { key: STUDENT_KEY, label: '学生档案', unit: '名' },
   { key: SEAT_PLAN_KEY, label: '座位方案', unit: '个' },
@@ -50,6 +51,8 @@ export const BACKUP_MODULES: BackupModule[] = [
   { key: TIMETABLE_KEY, label: '课程表', unit: '节' },
   { key: TODO_KEY, label: '今日待办', unit: '条' },
   { key: LEAVE_KEY, label: '请假记录', unit: '条' },
+  // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
+  { key: DUTY_KEY, label: '值日安排', unit: '条' },
 ]
 
 /** 备份文件（导出即此形状；导入按此形状逐项校验） */
@@ -61,7 +64,7 @@ export interface BackupFile {
   appVersion: string
   /** 导出时间（ISO） */
   exportedAt: string
-  /** 数据块：localStorage 键 → 该键的值（六个数据块都是数组） */
+  /** 数据块：localStorage 键 → 该键的值（七个数据块都是数组） */
   data: Record<string, unknown>
 }
 
@@ -96,7 +99,7 @@ function labelOf(key: string): string {
   return BACKUP_MODULES.find((module) => module.key === key)?.label ?? key
 }
 
-/** 读出六个数据块的原始值：缺键 = 无数据（null），JSON 损坏的块记入 broken 并跳过 */
+/** 读出七个数据块的原始值：缺键 = 无数据（null），JSON 损坏的块记入 broken 并跳过 */
 export function readModules(read: RawReader): ModuleReadResult {
   const values: Record<string, unknown[]> = {}
   const broken: string[] = []
@@ -126,7 +129,7 @@ export function countModules(values: Record<string, unknown[]>): ModuleCount[] {
 }
 
 /**
- * 生成备份：六个数据块 + 元信息。
+ * 生成备份：七个数据块 + 元信息。
  * 某个块 JSON 损坏时**跳过该块并回报**（broken），不写 null、不假装它是空的——
  * 宁可少备份一块并当场告诉教师，也不要导出一份看起来正常、实则少了数据的备份。
  */
@@ -339,6 +342,10 @@ function describeItem(key: string, item: unknown): string {
   if (key === LEAVE_KEY) {
     return textOf(item.studentName) || textOf(item.studentId) || '（未记录学生）'
   }
+  if (key === DUTY_KEY) {
+    if (item.kind === 'settings') return '轮换设置'
+    return textOf(item.name) || '（未命名的值日组）'
+  }
   return '一条记录'
 }
 
@@ -348,6 +355,13 @@ function describeItem(key: string, item: unknown): string {
  * 要看它**引用的学生**是不是示例学生（被删示例学生的约束会变成脏引用）。
  */
 function samplePredicate(key: string, sampleStudentIds: Set<string>): (item: unknown) => boolean {
+  if (key === DUTY_KEY) {
+    // 值日数组里混着「轮换设置」这条非示例记录（id 也以 duty- 开头），只对值日组认前缀
+    return (item) => {
+      const id = idOf(item)
+      return isPlainObject(item) && item.kind === 'group' && id !== null && isSampleRecordId(id)
+    }
+  }
   if (key === CONSTRAINT_KEY) {
     return (item) => {
       if (!isPlainObject(item)) return false
@@ -367,7 +381,8 @@ function samplePredicate(key: string, sampleStudentIds: Set<string>): (item: unk
 
 /**
  * 计算「清空示例数据」的结果（纯函数，不写盘）：
- * - 学生 / 课程 / 待办 / 请假：删掉 id 带示例前缀的记录（`utils/id.ts` 的 isSampleRecordId）；
+ * - 学生 / 课程 / 待办 / 请假 / 值日组：删掉 id 带示例前缀的记录（`utils/id.ts` 的 isSampleRecordId）；
+ *   值日的**轮换设置不是示例数据，保留**（它只记「哪天起轮到哪个组」，与示例学生无关）；
  * - 座位约束：删掉引用了被删示例学生的条目——座位由 seat store 的启动清扫释放，但那次清扫
  *   只在打开「座位表」时执行；约束 store 的删除监听**不是** immediate 的，跨会话的清空它
  *   看不到，会留下脏引用，所以必须在这里显式清；
