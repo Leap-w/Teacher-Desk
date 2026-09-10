@@ -39,8 +39,11 @@ const summary = computed(() =>
   }),
 )
 
-/** 无任何约束与规则：仍可排座，但结果不含任何偏好 */
-const noInput = computed(() => summary.value.hardCount === 0 && summary.value.softCount === 0)
+/** 无任何约束与规则（含「高个」派生偏好）：仍可排座，但结果不含任何偏好 */
+const noInput = computed(
+  () =>
+    summary.value.hardCount === 0 && summary.value.softCount === 0 && summary.value.tallCount === 0,
+)
 
 /** 超出教室可排座位数的学生数（按学号升序截断，其余不排座） */
 const overflow = computed(() => Math.max(0, summary.value.studentCount - summary.value.capacity))
@@ -83,18 +86,20 @@ function close() {
       当前没有约束与规则：生成结果只保证一人一座，不体现任何偏好。
     </p>
     <p v-else class="arrange-note">
-      硬约束必须满足，无法满足则不生成方案；软规则尽量满足，未满足的部分会在右侧「约束检查」逐条提示。
+      硬约束必须满足，未能满足则不生成方案；软规则与「高个」标签的靠后倾向尽量满足，未满足的部分会在右侧「约束检查」逐条提示。
     </p>
 
     <p v-if="overflow > 0" class="arrange-warn">
-      {{ summary.studentCount }} 名学生超出可排座位数：按学号升序安排前
+      学生数 {{ summary.studentCount }} 超出可排座位 {{ summary.capacity }}：按学号升序安排前
       {{ summary.capacity }} 人，其余 {{ overflow }} 人不排座。
     </p>
 
     <div v-if="conflicts.length > 0" class="arrange-conflicts" role="alert">
-      <p class="arrange-conflicts-title">无法同时满足以下硬约束，未生成方案：</p>
+      <p class="arrange-conflicts-title">未能为以下硬约束找到同时满足的排法，未生成方案：</p>
       <p v-for="conflict in conflicts" :key="conflict" class="arrange-conflict">{{ conflict }}</p>
-      <p class="arrange-conflict-tip">可停用或删除其中一条后重试。</p>
+      <p class="arrange-conflict-tip">
+        可停用或删除其中一条后重试；约束很多时也可能只是没找到，直接再点一次「生成方案」会换一种尝试。
+      </p>
     </div>
 
     <p class="arrange-footnote">

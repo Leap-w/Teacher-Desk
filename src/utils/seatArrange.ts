@@ -2,6 +2,7 @@ import {
   areAdjacent,
   areDeskmates,
   CONSTRAINT_TYPE_LABELS,
+  explicitRowRuleStudentIds,
   HARD_CONSTRAINT_TYPES,
   isPairConstraintType,
 } from '@/utils/constraint'
@@ -56,7 +57,10 @@ export type ArrangeResult =
     }
   | {
       ok: false
-      /** 无法同时满足的硬约束（面向用户的消息，供调用方逐条展示） */
+      /**
+       * 未能满足的硬约束（面向用户的消息，已去重，供调用方逐条展示）。
+       * 是「没找到排法」而非「数学上无解」——极稠密约束下贪心可能放弃确有解的情形。
+       */
       conflicts: string[]
       attempts: number
     }
@@ -132,18 +136,9 @@ function isActiveConstraint(
   )
 }
 
-/** 已有坐后排 / 坐前排规则的学生：显式规则优先，不再叠加「高个」标签偏好 */
-function explicitRowRuleIds(constraints: SeatConstraint[]): Set<string> {
-  return new Set(
-    constraints
-      .filter((constraint) => constraint.type === 'back-row' || constraint.type === 'front-row')
-      .map((constraint) => constraint.studentA),
-  )
-}
-
-/** 由「高个」标签派生后排偏好的学生（已有坐后排 / 坐前排显式规则者除外） */
+/** 由「高个」标签派生后排偏好的学生（已有坐后排 / 坐前排显式规则者除外，判定与检查器同源） */
 function tallStudentIdsOf(students: Student[], soft: SeatConstraint[]): Set<string> {
-  const explicit = explicitRowRuleIds(soft)
+  const explicit = explicitRowRuleStudentIds(soft)
   return new Set(
     students
       .filter((student) => student.tags?.includes(TALL_TAG) && !explicit.has(student.id))
@@ -180,7 +175,7 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
     }
   }
 
-  /** 「高个」标签派生偏好（显式坐后排 / 坐前排规则优先，见 tallStudentIdsOf） */
+  /** 「高个」标签派生偏好（显式坐后排 / 坐前排规则优先，见 tallStudentIdsOf / explicitRowRuleStudentIds） */
   const tallStudentIds = tallStudentIdsOf(students, soft)
 
   /** 行号归一化：第 1 排 = 0，最后一排 = 1（「越靠后分越高」的连续打分） */
@@ -342,15 +337,25 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
     }
   }
 
-  // 全部尝试都放不下同一名学生：报告与该生相关的硬约束作为冲突来源
+  // 全部尝试都放不下同一名学生：报告与该生相关的硬约束作为冲突来源。
+  // 注意措辞是「未找到」而非「无解」——贪心 + 重启在极稠密的硬约束下可能找不到
+  // 确实存在的排法（见 §9.5 边界），此时教师换个种子重试仍可能成功。
   const conflicts = (hardByStudent.get(failedStudentId) ?? []).map((constraint) => {
     const label = CONSTRAINT_TYPE_LABELS[constraint.type]
-    const nameB = constraint.studentB ? ` 与 ${nameOf(constraint.studentB)}` : ''
-    return `${label}：${nameOf(failedStudentId)}${nameB}`
+    // 失败学生可能是约束的 B 方（hardByStudent 两侧都登记）→ 取另一方，避免「X 与 X」
+    const otherId =
+      constraint.studentA === failedStudentId ? constraint.studentB : constraint.studentA
+    const nameOther = otherId ? ` 与 ${nameOf(otherId)}` : ''
+    return `${label}：${nameOf(failedStudentId)}${nameOther}`
   })
+  // 同一名学生可命中多条约束、两名学生互为对家时会产出同一条消息 → 去重
+  const uniqueConflicts = [...new Set(conflicts)]
   return {
     ok: false,
-    conflicts: conflicts.length > 0 ? conflicts : ['硬约束之间互相矛盾，当前座位数下无法同时满足'],
+    conflicts:
+      uniqueConflicts.length > 0
+        ? uniqueConflicts
+        : ['未能在当前座位数下找到满足全部硬约束的排法（可能无解）'],
     attempts: MAX_ATTEMPTS,
   }
 }

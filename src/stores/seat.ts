@@ -36,8 +36,9 @@ function occupantsFromSeats(
     if (!Number.isInteger(col) || col < 1 || col > config.cols) continue
     candidates.push({ ordinal: seatOrdinal(row, col, config), studentId: seat.studentId })
   }
-  // 按座位号升序去重：结果与传入数组的顺序无关（同一学生只保留序号最小者）
-  candidates.sort((a, b) => a.ordinal - b.ordinal)
+  // 按座位号升序去重：结果与传入数组的顺序无关（同一学生只保留序号最小者）。
+  // 同座位出现两名学生（求解器不会产出，纯防御）时按学生 id 定序，同样与传入顺序无关。
+  candidates.sort((a, b) => a.ordinal - b.ordinal || a.studentId.localeCompare(b.studentId))
   const occupants = new Map<number, string>()
   const placed = new Set<string>()
   for (const item of candidates) {

@@ -537,7 +537,7 @@ function solveArrange() {
   return result
 }
 
-/** 「自动排座」：求解成功则生成新方案（原方案原样保留，可对比 / 随时切回）；无解只报告冲突 */
+/** 「自动排座」：求解成功则生成新方案（原方案原样保留，可对比 / 随时切回）；未能满足硬约束只报告冲突 */
 function generateArrange() {
   const prevPlanId = seatStore.currentPlan?.id ?? ''
   // 每次生成换种子：同一输入下重复点「生成方案」也得到不同排法（同种子同结果是求解器的性质）
@@ -575,7 +575,7 @@ function rerollArrange() {
   arrangeSeed.value += 1
   const result = solveArrange()
   if (!result.ok) {
-    toast.danger('换一种排法失败：硬约束无法同时满足')
+    toast.danger('换一种排法失败：未能满足全部硬约束')
     return
   }
   const hadPending = seatStore.pendingLogsCount > 0
@@ -587,6 +587,8 @@ function rerollArrange() {
   outcome.createdUpdatedAt = stored?.updatedAt ?? outcome.createdUpdatedAt
   outcome.unmet = unmetRuleCount()
   selectedSeatId.value = undefined
+  // 与生成 / 撤销一致：重排后源座位可能已换人，点击换座模式必须退出
+  cancelPicker()
   clearFlash()
   if (hadPending) toast.info('已重新排座：未保存的「本次调整」记录已清空')
   toast.success('已换一种排法')

@@ -60,8 +60,27 @@ export interface ConstraintIssue {
 const TALL_TAG = '高个'
 /** 视为前排的排数（第 1–2 排靠近讲台） */
 const FRONT_ROW_LIMIT = 2
-/** 视为后排的起始排数（第 5–7 排）；back-row 规则满足线，自动排座同样引用 */
+/**
+ * 视为后排的起始排数（第 5–7 排）：back-row 规则的满足线，只用于检查器的「应坐后排」判定；
+ * 自动排座对坐后排 / 坐前排用的是连续排号打分（越靠后 / 越靠前分越高），不引用该阈值。
+ */
 export const BACK_ROW_MIN = 5
+
+/**
+ * 已有「坐后排 / 坐前排」显式规则的学生（显式规则优先，判定与自动排座同源）：
+ * 自动排座不再为其叠加「高个」标签派生的后排偏好，检查器也不再报「高个学生坐前排」
+ * ——否则求解器按教师规则把高个学生排到前排后，面板会立刻报一条工具自己造出来的警告。
+ */
+export function explicitRowRuleStudentIds(constraints: SeatConstraint[]): Set<string> {
+  return new Set(
+    constraints
+      .filter(
+        (constraint) =>
+          constraint.enabled && (constraint.type === 'back-row' || constraint.type === 'front-row'),
+      )
+      .map((constraint) => constraint.studentA),
+  )
+}
 
 /** 同桌判定：同一行、同一列块内的左右紧邻两座 */
 export function areDeskmates(a: Seat, b: Seat): boolean {
@@ -77,7 +96,8 @@ export function areAdjacent(a: Seat, b: Seat): boolean {
  * 对当前方案执行五类检查（纯函数，实时调用，不做任何座位调整）：
  * 1. 不能同桌（no-deskmate 硬约束）2. 不能相邻（no-adjacent 硬约束）
  * 3. 坐后排 / 坐前排 / 同区块（规则型软规则，未满足仅提醒，Phase 3D 起）
- * 4. 高个学生坐前排（1–2 排）提醒 5. 班委全部集中同一区块提醒。
+ * 4. 高个学生坐前排（1–2 排）提醒（已有显式坐前排 / 坐后排规则的学生除外，见
+ *    explicitRowRuleStudentIds）5. 班委全部集中同一区块提醒。
  * 只统计当前方案中「双方都就座」的关系；学生已删除 / 未就座则自然不产生问题。
  */
 export function checkSeatConstraints(ctx: {
@@ -169,11 +189,14 @@ export function checkSeatConstraints(ctx: {
   }
 
   /** 4：高个学生坐前排（按排聚合为一条消息，点按定位该排全部高个学生） */
+  const explicitRowRuleIds = explicitRowRuleStudentIds(ctx.constraints)
   const tallByRow = new Map<number, string[]>()
   for (const [studentId, seat] of studentSeat) {
     const student = ctx.students.get(studentId)
     if (!student || !student.tags?.includes(TALL_TAG)) continue
     if (seat.row > FRONT_ROW_LIMIT) continue
+    // 教师已用「坐前排」规则明确让该生坐前排 → 不再报派生提醒（否则与自动排座打架）
+    if (explicitRowRuleIds.has(studentId)) continue
     const list = tallByRow.get(seat.row) ?? []
     list.push(studentId)
     tallByRow.set(seat.row, list)
