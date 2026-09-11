@@ -472,13 +472,20 @@ export async function signInAndSync(email: string, password: string): Promise<vo
 }
 
 /**
- * 注册新账号并立刻对齐一次。失败**同样不吞**：邮箱已被占用、密码不合规、
- * 云端要求邮箱验证才能登录……每一种都要让教师当场看到原因，而不是「点了没反应」。
+ * 注册新账号并立刻对齐一次。真正的失败（邮箱已被占用、密码不合规……）**同样不吞**：
+ * 每一种都要让教师当场看到原因，而不是「点了没反应」。
+ *
+ * 返回值只区分一件事：**有没有拿到登录态**。返回 `false` 表示账号已创建、但云端还在等
+ * 邮箱验证（身份认证开了「邮箱验证」时如此）——这不是失败，所以既不抛错也不去同步
+ * （没有会话，同步必然失败，只会再刷一条红色错误盖住真正该传达的信息）。
+ * 调用方据此提示教师去收验证邮件。
  */
-export async function signUpAndSync(email: string, password: string): Promise<void> {
-  await signUpWithEmail(email, password)
+export async function signUpAndSync(email: string, password: string): Promise<boolean> {
+  const user = await signUpWithEmail(email, password)
+  if (user === null) return false
   remote = null
   await syncNow()
+  return true
 }
 
 /** 登出：清掉远端句柄与记账（见 `clearMeta`），避免下一个账号沿用上一个账号的对齐状态 */

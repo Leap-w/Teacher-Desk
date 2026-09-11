@@ -57,20 +57,71 @@ function getApp(): CloudBaseApp {
   return app
 }
 
-/** 把任意形态的失败折成 `CloudError`，并尽量保住 code（它是「可自解释」的唯一线索） */
+/** 挑错误码（两种命名都见过） */
+function pickCode(o: Record<string, unknown>): string | null {
+  const code = o.code ?? o.errorCode
+  return typeof code === 'string' && code !== '' ? code : null
+}
+
+/** 挑一句人话：`message` 之外还见过 `msg` 与 OAuth 风格的 `error_description` */
+function pickMessage(o: Record<string, unknown>): string | null {
+  for (const key of ['message', 'msg', 'error_description']) {
+    const value = o[key]
+    if (typeof value === 'string' && value.trim() !== '') return value
+  }
+  return null
+}
+
+/** 兜底：把原始字段摊开摆出来（code 已单独取出，不重复） */
+function describeFields(o: Record<string, unknown>, code: string | null): string {
+  const parts = Object.entries(o)
+    .filter(
+      ([k, v]) => k !== 'code' && k !== 'errorCode' && v !== null && v !== undefined && v !== '',
+    )
+    .filter(([, v]) => typeof v !== 'object' && typeof v !== 'function')
+    .map(([k, v]) => `${k}=${String(v)}`)
+  if (code !== null) parts.unshift(`code=${code}`)
+  return parts.length > 0
+    ? `云端操作失败（${parts.join('，')}）`
+    : '云端操作失败（云端没有给出任何原因）'
+}
+
+/**
+ * 把错误码缀到原因后面；原因里已经含它（`describeFields` 那条路）就不重复。
+ *
+ * 码不能只躺在 `CloudError.code` 里——实测就是这么漏的：登录被云端拒绝，界面只显示
+ * 兜底的「云端操作失败」，而唯一能定位问题的码存在字段里、没有任何界面读它。
+ * 界面上三个显示点（工具箱、状态栏、同步卡片）都只认 `message`，所以**保证 message
+ * 自带全部线索**比在每个显示点各补一次可靠得多。
+ */
+function withCode(message: string, code: string | null): string {
+  if (code === null || message.includes(code)) return message
+  return `${message}（${code}）`
+}
+
+/**
+ * 把任意形态的失败折成 `CloudError`。**不丢线索**是这里的全部意义。
+ *
+ * 实测踩过一次：登录被云端拒绝，但它只给了 code、没给 message，于是界面显示兜底的
+ * 「云端操作失败」——教师把这句复述过来，里面没有任何可用于排查的信息，只能靠猜。
+ * 云端返回什么就显示什么（§9.20 取舍⑦：宁可显示英文，也不编「错误码 → 中文指引」
+ * 的对照表），所以这里逐级退：message → msg → 原始字段罗列，**不退成一句空话**。
+ */
 function toCloudError(raw: unknown): CloudError {
   if (raw instanceof CloudError) return raw
   if (raw instanceof Error) {
-    const code = (raw as Error & { code?: unknown }).code
-    return new CloudError(raw.message, typeof code === 'string' ? code : null)
+    const o = raw as Error & Record<string, unknown>
+    const code = pickCode(o)
+    const message = raw.message.trim() !== '' ? raw.message : pickMessage(o)
+    return new CloudError(withCode(message ?? describeFields(o, code), code), code)
   }
   if (typeof raw === 'object' && raw !== null) {
     const o = raw as Record<string, unknown>
-    const code = o.code ?? o.errorCode
-    const message = typeof o.message === 'string' ? o.message : '云端操作失败'
-    return new CloudError(message, typeof code === 'string' ? code : null)
+    const code = pickCode(o)
+    return new CloudError(withCode(pickMessage(o) ?? describeFields(o, code), code), code)
   }
-  return new CloudError(typeof raw === 'string' ? raw : '云端操作失败', null)
+  if (typeof raw === 'string' && raw.trim() !== '') return new CloudError(raw, null)
+  return new CloudError('云端操作失败（云端没有给出任何原因）', null)
 }
 
 /** 失败必抛：SDK 抛出来的、和 `{ data, error }` 里藏着的，在这里合流 */
@@ -119,13 +170,19 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return user
 }
 
-/** 注册新账号（邮箱 + 密码）；是否要求邮箱验证由云端身份认证的配置决定 */
-export async function signUpWithEmail(email: string, password: string): Promise<CloudUser> {
+/**
+ * 注册新账号（邮箱 + 密码）。
+ *
+ * 返回 `null` 表示**账号建好了，但云端没给登录态**——身份认证开了「邮箱验证」时就是
+ * 这样：注册成功、验证邮件发出，但邮箱验证通过前不发放会话。这是配置决定的**正常中间
+ * 状态**，不是失败（早先这里抛「注册成功但没拿到用户信息」：一句话自相矛盾，教师看了
+ * 只会以为程序坏了，然后反复重试注册）。是否要求验证由云端配置决定，客户端**不该**去
+ * 猜，所以这里只如实报告「有没有拿到登录态」，含义交给调用方翻译。
+ */
+export async function signUpWithEmail(email: string, password: string): Promise<CloudUser | null> {
   const auth = getApp().auth()
   await call(auth.signUpWithEmailAndPassword(email, password))
-  const user = await currentUser()
-  if (!user) throw new CloudError('注册成功但没拿到用户信息', null)
-  return user
+  return currentUser()
 }
 
 export async function signOutCloud(): Promise<void> {

@@ -162,13 +162,23 @@ function cloudErrorText(error: unknown): string {
 
 async function submitCloudAuth(mode: 'in' | 'up'): Promise<void> {
   if (!cloudReady.value) return
+  const email = cloudEmail.value.trim()
   const what = mode === 'in' ? '登录' : '注册'
   cloudBusy.value = true
   try {
-    await (mode === 'in' ? signInAndSync : signUpAndSync)(
-      cloudEmail.value.trim(),
-      cloudPassword.value,
-    )
+    if (mode === 'up') {
+      const signedIn = await signUpAndSync(email, cloudPassword.value)
+      if (!signedIn) {
+        // 账号建好了、验证信也发了，只是验证前云端不发登录态（身份认证开了「邮箱验证」）。
+        // 这是**正常中间状态**，所以报 info 而不是 danger：报红会让教师以为注册没成、
+        // 反复重试注册，而每次重试只会换来「邮箱已被占用」。清掉密码——下一步是去收信。
+        cloudPassword.value = ''
+        toast.info(`账号已创建，请到 ${email} 收验证邮件，点链接完成验证后再回来登录`)
+        return
+      }
+    } else {
+      await signInAndSync(email, cloudPassword.value)
+    }
     cloudPassword.value = ''
     // 「登录本身成了」与「数据对上了」是两件事，不能混成一句话报出去：集合没建、权限
     // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
