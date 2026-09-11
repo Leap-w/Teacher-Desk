@@ -35,6 +35,9 @@ const keyHandlers = new Map<string, Set<(raw: unknown[]) => void>>()
 /** 整批替换时的处理（应用入口注册：整页重载） */
 let reloadHandler: (() => void) | null = null
 
+/** 「本页有东西变了」的处理（云端同步注册：把变更推上去） */
+let dirtyHandler: ((key: string) => void) | null = null
+
 let channel: BroadcastChannel | null = null
 
 /**
@@ -65,6 +68,18 @@ function handleMessage(event: MessageEvent): void {
   if (kind !== 'keys') return
   const keys = (message as { keys?: unknown }).keys
   if (!Array.isArray(keys)) return
+  applySyncKeys(keys)
+}
+
+/**
+ * 「这些键在别处变了」的统一处理：重读盘上内容 → 归一化 → 替换内存状态。
+ *
+ * **不对外导出给业务用**（只有 `handleMessage` 与 `services/cloudSync.ts` 两个调用方）：
+ * 盘上内容变化只有两个来源——同设备另一个入口（广播消息），或云端拉下来的更新。
+ * 两条路必须落到同一个函数上，否则「同步后内存怎么更新」会长出第二份实现，
+ * 而它跟首屏加载用的 `reviveXxx` 一旦分叉，同一份数据在三条路径上会有三种样子。
+ */
+export function applySyncKeys(keys: readonly string[]): void {
   for (const key of keys) {
     if (typeof key !== 'string') continue
     const handlers = keyHandlers.get(key)
@@ -72,7 +87,7 @@ function handleMessage(event: MessageEvent): void {
       // 收到一个没人订的键：要么是键名写错（写盘广播两处对不上，数据永远不会同步，
       // 而界面上看不出任何异常），要么是同源页面在跑旧版本。两种情况都该有人知道，
       // 但**不能中断**——别人发的消息不该影响这一页的其余处理。
-      console.warn(`[sync] 收到「${keyLabel(key)}」的变更广播，但本页没有 store 订阅它`)
+      console.warn(`[sync] 收到「${keyLabel(key)}」的变更，但本页没有 store 订阅它`)
       continue
     }
     // 读到「键不存在」（对方那边被删了）或「内容损坏」时都**不动内存**：
@@ -82,6 +97,17 @@ function handleMessage(event: MessageEvent): void {
     if (raw === null) continue
     for (const handler of handlers) handler(raw)
   }
+}
+
+/**
+ * 已被 store 接进同步的键（按注册顺序）。
+ *
+ * 给 `services/cloudSync.ts` 用：云端同步要同步哪些键，不该另立一张写死的键名清单
+ * （那种清单一定会漏掉将来新增的 store，而漏掉的表现是「这个模块就是不同步」，
+ * 界面上完全看不出来）。以注册表为准，`syncPersisted` 接了几个就同步几个。
+ */
+export function syncedKeys(): string[] {
+  return [...keyHandlers.keys()]
 }
 
 /** 广播「这些键变了」。写盘真的发生后才调用（见 syncPersisted） */
@@ -116,6 +142,20 @@ export function onSyncReload(handler: () => void): void {
 }
 
 /**
+ * 订阅「本页有东西需要同步出去」。两种时刻会触发，二者都是**真的变了**：
+ * 1. 本页写盘成功（幂等写返回 true 才会调，所以纯回声不会触发）；
+ * 2. 一个新 store 第一次接进同步（`syncPersisted` 注册时）——store 是懒加载的，
+ *    它一被打开就会播种示例数据，那时必须让云端同步看一眼：若云上已有真实数据，
+ *    就得把它们拿下来，而不是把刚播种的示例推上去。
+ *
+ * 只有一个消费者（`services/cloudSync.ts`），也就不需要做成订阅列表——
+ * 多消费者会带来「谁先谁后」的问题，而这里语义上就该只有一个。
+ */
+export function onSyncDirty(handler: (key: string) => void): void {
+  dirtyHandler = handler
+}
+
+/**
  * 某个键上挂了几个订阅者（**只给自检脚本用**）。
  *
  * 为什么值得为自检开一个口子：自检里有一类是「这个键变化后，本页不该有任何写盘 / 广播」
@@ -140,7 +180,9 @@ export function syncPersisted<T>(key: string, source: Ref<T>, revive: (raw: unkn
   watch(
     source,
     (value) => {
-      if (writeJSON(key, value)) broadcastKeys([key])
+      if (!writeJSON(key, value)) return
+      broadcastKeys([key])
+      dirtyHandler?.(key)
     },
     { deep: true },
   )
@@ -148,4 +190,8 @@ export function syncPersisted<T>(key: string, source: Ref<T>, revive: (raw: unkn
   onSyncKeys(key, (raw) => {
     source.value = revive(raw)
   })
+
+  // 注册本身就是一次「有东西需要同步出去」：这个键刚被 store 载入（首次打开时它已经
+  // 播种了示例数据），云端同步必须立刻看一眼，否则示例数据会被推上去盖掉云上的真实数据
+  dirtyHandler?.(key)
 }

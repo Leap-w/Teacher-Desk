@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import { AppButton, AppCard, AppModal } from '@/components/ui'
+import { AppButton, AppCard, AppField, AppInput, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
+import {
+  cloudSyncState,
+  signInAndSync,
+  signOutAndStop,
+  signUpAndSync,
+  syncNow,
+} from '@/services/cloudSync'
 import { localStoragePort } from '@/services/storage'
 import { broadcastReload } from '@/services/sync'
 import {
@@ -97,6 +104,131 @@ const lastBackupText = computed(() => {
   if (Number.isNaN(date.getTime())) return '还没有导出过备份。'
   return `上次导出：${formatDateOnly(date)} ${formatClock(date)}`
 })
+
+/* ---------- 云端同步（Phase 9B） ---------- */
+
+/**
+ * 云端同步的状态与操作。
+ *
+ * **同步的引擎不在这一页**：谁新谁旧、该推还是该采纳，全部在 `services/cloudSync.ts`；
+ * 本页只做两件事——把那边算好的状态显示出来，把教师的动作转成它的三个入口
+ * （登录 / 登出 / 立即同步）。这样这一页仍然能在不碰网络的情况下被读懂和自检。
+ */
+const cloud = cloudSyncState
+
+const cloudEmail = ref('')
+const cloudPassword = ref('')
+const cloudBusy = ref(false)
+
+/** 状态文案与配色。颜色只是辅助，句子本身要能读懂（色盲、打印、截图都还得看） */
+const cloudStatusView = computed<{ text: string; tone: 'ok' | 'warn' | 'danger' | 'muted' }>(() => {
+  switch (cloud.value.status) {
+    case 'syncing':
+      return { text: '正在同步…', tone: 'muted' }
+    case 'idle':
+      return { text: '已同步', tone: 'ok' }
+    case 'offline':
+      return { text: '连不上云端', tone: 'warn' }
+    case 'error':
+      return { text: '同步出错', tone: 'danger' }
+    case 'signedOut':
+      return { text: '未登录', tone: 'muted' }
+    default:
+      return { text: '未启用', tone: 'muted' }
+  }
+})
+
+const cloudLastSyncedText = computed(() => {
+  const at = cloud.value.lastSyncedAt
+  if (at === null) return '本次打开还没有同步过。'
+  const date = new Date(at)
+  if (Number.isNaN(date.getTime())) return '本次打开还没有同步过。'
+  return `上次同步：${formatDateOnly(date)} ${formatClock(date)}`
+})
+
+const cloudReady = computed(
+  () => cloudEmail.value.trim().length > 0 && cloudPassword.value.length > 0,
+)
+
+/**
+ * 云端返回的原因原样显示（它才是事实），**不在代码里编**「某某错误码 = 某某中文」的
+ * 对照表——那种表一旦猜错，教师就会照着一条假指引去操作。要做什么写在卡片说明里，
+ * 和机器给的原因分开摆。
+ */
+function cloudErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return String(error)
+}
+
+async function submitCloudAuth(mode: 'in' | 'up'): Promise<void> {
+  if (!cloudReady.value) return
+  const what = mode === 'in' ? '登录' : '注册'
+  cloudBusy.value = true
+  try {
+    await (mode === 'in' ? signInAndSync : signUpAndSync)(
+      cloudEmail.value.trim(),
+      cloudPassword.value,
+    )
+    cloudPassword.value = ''
+    // 「登录本身成了」与「数据对上了」是两件事，不能混成一句话报出去：集合没建、权限
+    // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
+    // 已经在云上了，而云上什么都没有。`signInAndSync` 会等这一轮同步跑完才返回，
+    // 所以这里读到的状态就是这一轮的结果，不会是中途的「正在同步」。
+    if (cloud.value.status === 'idle') {
+      toast.success(`${what}成功，数据已同步`)
+    } else {
+      toast.danger(`${what}成功，但数据没同步上：${cloud.value.error ?? '原因见下方卡片'}`)
+    }
+  } catch (error) {
+    // 走到这里的是登录 / 注册**本身**失败（账号密码不对、登录方式没开……）：密码留在框里好重试
+    toast.danger(`${what}失败：${cloudErrorText(error)}`)
+  } finally {
+    cloudBusy.value = false
+  }
+}
+
+/**
+ * 立即同步。`syncNow` 自己吞掉失败并记进状态（它还要给自动同步用，不能抛），
+ * 所以这里看状态说话，而不是等异常。
+ */
+async function doCloudSyncNow(): Promise<void> {
+  cloudBusy.value = true
+  try {
+    await syncNow()
+    const now = cloud.value
+    if (now.status === 'idle') {
+      const parts: string[] = []
+      if (now.pushedCount > 0) parts.push(`上传 ${now.pushedCount} 个模块`)
+      if (now.adoptedCount > 0) parts.push(`取回 ${now.adoptedCount} 个模块`)
+      toast.success(parts.length > 0 ? `同步完成：${parts.join('，')}` : '同步完成，云上和本机一致')
+    } else if (now.status === 'syncing') {
+      // 跑完的这一轮又被新的一轮接上了（期间又有人写盘）：这不是失败，只是还没轮到它
+      // 出结果。报红字会让教师以为同步坏了，而它下一拍就会自己变成「已同步」。
+      toast.info('同步还在进行，稍后看卡片上的状态。')
+    } else if (now.status === 'signedOut') {
+      // 会话失效（云端清了会话、浏览器换了配置）：这不是「同步失败」，是得重新登录。
+      // 单独报一句，别让教师对着「原因未知」去猜出了什么事。
+      toast.danger('登录状态已失效，请重新登录后再同步。')
+    } else {
+      toast.danger(`同步没成：${now.error ?? '原因未知'}`)
+    }
+  } finally {
+    cloudBusy.value = false
+  }
+}
+
+async function doCloudSignOut(): Promise<void> {
+  cloudBusy.value = true
+  try {
+    await signOutAndStop()
+    cloudPassword.value = ''
+    toast.info('已退出登录。本机数据还在，只是不再往云上同步。')
+  } catch (error) {
+    toast.danger(`退出登录失败：${cloudErrorText(error)}`)
+  } finally {
+    cloudBusy.value = false
+  }
+}
 
 /* ---------- 写盘收尾（成功 / 失败两条路，绝不混说） ---------- */
 
@@ -380,7 +512,12 @@ onMounted(() => {
             周末返家），以及这些学生产生的座位约束。你自己新增的记录不受影响；但若你把某条示例记录改成了自己的内容，它同样会被删掉——确认前请先核对名单。座位方案保留，示例学生占用的座位会在下次打开「座位表」时自动释放。轮换设置会保留：剩下的值日组若接不上起点，值日管理页会提示重设。
           </dd>
           <dt>清空全部数据</dt>
-          <dd>删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。</dd>
+          <dd>
+            删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。
+            <template v-if="cloud.account">
+              云端同步已登录：这里只清本机，下一轮同步会把云端那份取回来。
+            </template>
+          </dd>
         </dl>
         <div class="action-row">
           <AppButton
@@ -395,6 +532,86 @@ onMounted(() => {
         </div>
         <p v-if="sampleTotal === 0" class="footnote">当前没有可清理的示例数据。</p>
       </section>
+    </AppCard>
+
+    <!-- 没配环境 ID 的构建里整块不显示：与其摆一个按不动的开关，不如不出现 -->
+    <AppCard
+      v-if="cloud.status !== 'disabled'"
+      title="云端同步"
+      subtitle="把本机数据同步到你自己的云端账号，换设备或换浏览器时不用重新录一遍。不登录也能照常用——数据只留在本机，和以前一样。"
+    >
+      <div class="cloud-block">
+        <div class="cloud-status">
+          <span class="cloud-dot" :class="`is-${cloudStatusView.tone}`" aria-hidden="true" />
+          <span class="cloud-status-text">{{ cloudStatusView.text }}</span>
+          <span v-if="cloud.account" class="cloud-account">{{ cloud.account }}</span>
+        </div>
+        <p class="footnote">{{ cloudLastSyncedText }}</p>
+        <!-- 云端给的原因原样摆出来。教师多半看不懂，但照着它去搜索、或截图发给懂的人，
+             都比我们编一句「同步失败，请稍后再试」有用得多 -->
+        <p v-if="cloud.error" class="cloud-error">云端返回的原因：{{ cloud.error }}</p>
+
+        <p v-if="!cloud.checked" class="footnote">正在检查登录状态…</p>
+
+        <!-- 连不上云端时**不摆登录表单**：这种时候「查不出登录状态」与「确实没登录」在界面上
+             分不开，摆出密码框会让教师以为掉登录了，在没信号的地方反复输密码（输一次失败一次），
+             而真实原因只是没网 -->
+        <p v-else-if="!cloud.account && cloud.status === 'offline'" class="footnote">
+          连不上云端，暂时无法确认登录状态。恢复网络后会自动重试。
+        </p>
+
+        <form v-else-if="!cloud.account" class="cloud-form" @submit.prevent="submitCloudAuth('in')">
+          <AppField label="邮箱">
+            <AppInput
+              v-model="cloudEmail"
+              type="email"
+              autocomplete="email"
+              placeholder="teacher@example.com"
+              :disabled="cloudBusy"
+            />
+          </AppField>
+          <AppField label="密码">
+            <AppInput
+              v-model="cloudPassword"
+              type="password"
+              autocomplete="current-password"
+              :disabled="cloudBusy"
+            />
+          </AppField>
+          <div class="action-row">
+            <AppButton type="submit" :loading="cloudBusy" :disabled="!cloudReady">
+              登录并同步
+            </AppButton>
+            <AppButton
+              variant="secondary"
+              :disabled="cloudBusy || !cloudReady"
+              @click="submitCloudAuth('up')"
+            >
+              注册新账号
+            </AppButton>
+          </div>
+        </form>
+
+        <div v-else class="action-row">
+          <AppButton
+            :loading="cloudBusy"
+            :disabled="cloudBusy || cloud.status === 'syncing'"
+            @click="doCloudSyncNow"
+          >
+            立即同步
+          </AppButton>
+          <AppButton variant="secondary" :disabled="cloudBusy" @click="doCloudSignOut">
+            退出登录
+          </AppButton>
+        </div>
+
+        <p class="footnote">
+          账号只在这个应用里代表你自己：云上的数据挂在你的账号下，别的老师看不到。首次在某台设备上登录时以云端为准——这样新设备一登录就能看到已有数据，而不是把本机的示例数据推上去。之后同一项两边都改过，以写得晚的一方为准。
+        </p>
+        <p class="footnote">
+          同步需要云端先做好两件事：在云开发控制台开启邮箱登录、并建好数据集合。若登录或同步一直失败，先查这两项。
+        </p>
+      </div>
     </AppCard>
 
     <AppCard title="教学小工具" subtitle="随机点名、随机分组、课堂倒计时等，还在计划中。">
@@ -487,7 +704,12 @@ onMounted(() => {
       <p v-if="hasLegacyArchive" class="note-text">
         课表升级时留下的「旧课表数据」存档也会一并删除——它不在备份范围内，删除后无法找回。
       </p>
-      <p class="warn-text">此操作不可撤销。若还想保留，请先导出备份。</p>
+      <p v-if="cloud.account" class="warn-text">
+        云端同步已登录（{{
+          cloud.account
+        }}）：本机这份删掉后无法从本机找回，而下一轮同步会把云端那份取回来——也就是说「清空」清不掉云端。要连云端一起清，得去云开发控制台删除该集合里的文档。
+      </p>
+      <p v-else class="warn-text">此操作不可撤销。若还想保留，请先导出备份。</p>
       <template #footer>
         <AppButton variant="ghost" @click="clearAllOpen = false">取消</AppButton>
         <AppButton variant="danger" @click="confirmClearAll">确认清空全部数据</AppButton>
@@ -656,5 +878,68 @@ onMounted(() => {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
   line-height: 1.6;
+}
+
+/* 云端同步：自带纵向间距。AppCard 的 body 不管子元素的间隔（各卡片内容形态差得远，
+   在那边定一套反而处处要覆盖），故这一块自己成列 */
+.cloud-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cloud-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cloud-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-faint);
+}
+
+.cloud-dot.is-ok {
+  background: var(--color-success);
+}
+
+.cloud-dot.is-warn {
+  background: var(--color-warning);
+}
+
+.cloud-dot.is-danger {
+  background: var(--color-danger);
+}
+
+.cloud-status-text {
+  font-weight: 600;
+}
+
+.cloud-account {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  word-break: break-all;
+}
+
+/* 云端返回的原因：是给人看的原文，不是我们写的文案，故用次一级的颜色，
+   与「危险操作」那类红字区分开——红字是「你会丢数据」，这里只是「没同步上」 */
+.cloud-error {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-fill-disabled);
+  border-radius: var(--radius-md);
+  word-break: break-word;
+}
+
+.cloud-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 360px;
 }
 </style>

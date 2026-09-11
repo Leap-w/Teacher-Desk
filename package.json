@@ -1,6 +1,6 @@
 {
   "name": "teacherdesk",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "description": "TeacherDesk —— 面向高中班主任的综合工作台",
@@ -16,6 +16,7 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@cloudbase/js-sdk": "^3.9.3",
     "@vicons/ionicons5": "^0.13.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
