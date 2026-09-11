@@ -19,9 +19,14 @@ import type { RemoteDoc, RemotePort } from '@/services/remote'
 
 type CloudBaseApp = ReturnType<typeof cloudbase.init>
 
-/** 已登录用户（云端只给应用这两样，够用了：uid 用来隔离数据，邮箱用来显示「你登录的是谁」） */
+/**
+ * 已登录用户。云端够用的就这几样：`uid` 用来隔离数据，`username` / `email` 用来显示
+ * 「你登录的是谁」——账号是控制台建的「用户名」类型时**只有 `username`、没有邮箱**
+ * （`IUserInfo` 里两者都是可选，见 `core.d.ts`），所以显示时先取 `username`。
+ */
 export interface CloudUser {
   uid: string
+  username: string | null
   email: string | null
 }
 
@@ -153,31 +158,68 @@ async function call<T>(promise: Promise<unknown>): Promise<T> {
  */
 export async function currentUser(): Promise<CloudUser | null> {
   if (!isCloudConfigured()) return null
-  const state = await call<{ user?: { uid?: string; email?: string } } | null>(
-    getApp().auth().getLoginState(),
-  )
+  const state = await call<{
+    user?: { uid?: string; username?: string; email?: string }
+  } | null>(getApp().auth().getLoginState())
   const user = state?.user
   if (!user?.uid) return null
-  return { uid: user.uid, email: user.email ?? null }
+  return { uid: user.uid, username: user.username ?? null, email: user.email ?? null }
 }
 
-/** 邮箱 + 密码登录（账号由教师在控制台或应用的注册入口创建） */
-export async function signInWithEmail(email: string, password: string): Promise<CloudUser> {
-  const auth = getApp().auth()
-  await call(auth.signInWithEmailAndPassword(email, password))
+/** 「登录动作成了、但拿不到会话」是异常，不是「没登录」——混同会让界面显示成未登录 */
+async function requireUser(): Promise<CloudUser> {
   const user = await currentUser()
   if (!user) throw new CloudError('登录成功但没拿到用户信息', null)
   return user
 }
 
 /**
+ * 用户名 + 密码登录（**应用当前走的就是这条**）。
+ *
+ * **为什么是用户名而不是邮箱**（2026-09-12 实测定的）：CloudBase 控制台「身份认证 →
+ * 用户管理 → 新建用户」的必填项是**用户名 / 用户昵称 / 密码**，邮箱只是选填——账号天生
+ * 就是「用户名」类型，拿邮箱那套接口登不上。更要命的是界面这一侧的坑：输入框写的是
+ * `type="email"`，教师填自己建的用户名时**被浏览器自己的校验挡在提交之前**（提示「请输入
+ * 邮箱」），表现是「点登录没反应」——请求根本没发出去，云端不会有任何错误可查。
+ *
+ * `signInWithUsernameAndPassword` 与 `signInWithEmailAndPassword` 同在 `AuthV1Compat` 上
+ * （`auth/dist/v1-compat.d.ts` 里相邻两行），所以会话读取那条路（`currentUser` →
+ * `getLoginState`）一行都不用改——这次只换调用，不换代际。
+ *
+ * 想让用户名**就是**邮箱地址也完全可以：CloudBase 的用户名字符集允许邮箱格式，
+ * 那时界面上填的是邮箱，走的仍是这条用户名登录。
+ */
+export async function signInWithUsername(username: string, password: string): Promise<CloudUser> {
+  const auth = getApp().auth()
+  await call(auth.signInWithUsernameAndPassword(username, password))
+  return requireUser()
+}
+
+/** 邮箱 + 密码登录。⚠️ **目前没有调用方**（应用走的是 `signInWithUsername`，理由见上） */
+export async function signInWithEmail(email: string, password: string): Promise<CloudUser> {
+  const auth = getApp().auth()
+  await call(auth.signInWithEmailAndPassword(email, password))
+  return requireUser()
+}
+
+/**
  * 注册新账号（邮箱 + 密码）。
+ *
+ * ⚠️ **目前没有调用方**（2026-09-12 需求方拍板：网站单教师自用，账号在云开发控制台建，
+ * 应用里只留登录页）。保留而不删，是因为它是这个适配层对 SDK 能力的一份如实记录，
+ * 将来要重新开放注册只差一个界面——`services/index.ts` 那个空壳是同样的处置（见开发手册
+ * §9.8）。**它不是「待用的死代码」，是「保留的能力」**：真删了，下次要用还得重新摸一遍
+ * CloudBase 的注册语义（下面这些坑就是这样踩出来的）。
  *
  * 返回 `null` 表示**账号建好了，但云端没给登录态**——身份认证开了「邮箱验证」时就是
  * 这样：注册成功、验证邮件发出，但邮箱验证通过前不发放会话。这是配置决定的**正常中间
- * 状态**，不是失败（早先这里抛「注册成功但没拿到用户信息」：一句话自相矛盾，教师看了
- * 只会以为程序坏了，然后反复重试注册）。是否要求验证由云端配置决定，客户端**不该**去
- * 猜，所以这里只如实报告「有没有拿到登录态」，含义交给调用方翻译。
+ * 状态**，不是失败（早先这里抛「注册成功但没拿到用户信息」：一句话自相矛盾，看了只会
+ * 以为程序坏了，然后反复重试注册）。是否要求验证由云端配置决定，客户端**不该**去猜，
+ * 所以这里只如实报告「有没有拿到登录态」，含义交给调用方翻译。
+ *
+ * 另一个实测记下的坑：若环境开了邮箱验证，**光有本函数不够**——云端发的若是「验证码」，
+ * 还得有把验证码交回去的一步（v2 的 `getVerification` / `verifyOtp`，本机 SDK 里都在），
+ * 否则账号会永远停在未验证、登录必被拒。
  */
 export async function signUpWithEmail(email: string, password: string): Promise<CloudUser | null> {
   const auth = getApp().auth()

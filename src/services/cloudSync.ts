@@ -28,9 +28,8 @@ import {
   createCloudBaseRemote,
   currentUser,
   isCloudConfigured,
-  signInWithEmail,
+  signInWithUsername,
   signOutCloud,
-  signUpWithEmail,
 } from '@/services/cloudbase'
 import type { RemoteDoc, RemotePort } from '@/services/remote'
 import { keyLabel, lastWriteAt, localStoragePort, readRaw, writeJSON } from '@/services/storage'
@@ -59,7 +58,7 @@ export interface CloudSyncState {
    * 启动都会先闪一下登录表单，再被异步查出来的登录状态换掉——看起来就像掉线了。
    */
   checked: boolean
-  /** 当前登录的账号（邮箱；没有邮箱时退化成 uid）。未登录为 `null` */
+  /** 当前登录的账号（用户名 → 邮箱 → uid，逐级退；控制台建的账号通常只有用户名）。未登录为 `null` */
   account: string | null
   /** 上一次同步**成功**的时刻；从没成功过为 `null` */
   lastSyncedAt: number | null
@@ -270,7 +269,7 @@ async function runCycle(): Promise<void> {
     return
   }
   remote ??= createCloudBaseRemote()
-  setState({ account: user.email ?? user.uid })
+  setState({ account: user.username ?? user.email ?? user.uid })
 
   const keys = syncedKeys()
   let docs: RemoteDoc[]
@@ -463,29 +462,12 @@ export function startCloudSync(): void {
 
 /**
  * 登录并立刻对齐一次。失败**不吞**：登录这种教师主动发起的动作，
- * 必须让他看到「为什么没成」（登录方式没开、密码错、邮箱没验证……）。
+ * 必须让他看到「为什么没成」（登录方式没开、用户名或密码错、账号没建……）。
  */
-export async function signInAndSync(email: string, password: string): Promise<void> {
-  await signInWithEmail(email, password)
+export async function signInAndSync(username: string, password: string): Promise<void> {
+  await signInWithUsername(username, password)
   remote = null
   await syncNow()
-}
-
-/**
- * 注册新账号并立刻对齐一次。真正的失败（邮箱已被占用、密码不合规……）**同样不吞**：
- * 每一种都要让教师当场看到原因，而不是「点了没反应」。
- *
- * 返回值只区分一件事：**有没有拿到登录态**。返回 `false` 表示账号已创建、但云端还在等
- * 邮箱验证（身份认证开了「邮箱验证」时如此）——这不是失败，所以既不抛错也不去同步
- * （没有会话，同步必然失败，只会再刷一条红色错误盖住真正该传达的信息）。
- * 调用方据此提示教师去收验证邮件。
- */
-export async function signUpAndSync(email: string, password: string): Promise<boolean> {
-  const user = await signUpWithEmail(email, password)
-  if (user === null) return false
-  remote = null
-  await syncNow()
-  return true
 }
 
 /** 登出：清掉远端句柄与记账（见 `clearMeta`），避免下一个账号沿用上一个账号的对齐状态 */

@@ -2,15 +2,10 @@
 import { computed, onMounted, ref } from 'vue'
 
 import { AppButton, AppCard, AppField, AppInput, AppModal } from '@/components/ui'
+import { useCloudSync } from '@/composables/useCloudSync'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
-import {
-  cloudSyncState,
-  signInAndSync,
-  signOutAndStop,
-  signUpAndSync,
-  syncNow,
-} from '@/services/cloudSync'
+import { signInAndSync, signOutAndStop } from '@/services/cloudSync'
 import { localStoragePort } from '@/services/storage'
 import { broadcastReload } from '@/services/sync'
 import {
@@ -111,43 +106,25 @@ const lastBackupText = computed(() => {
  * 云端同步的状态与操作。
  *
  * **同步的引擎不在这一页**：谁新谁旧、该推还是该采纳，全部在 `services/cloudSync.ts`；
- * 本页只做两件事——把那边算好的状态显示出来，把教师的动作转成它的三个入口
- * （登录 / 登出 / 立即同步）。这样这一页仍然能在不碰网络的情况下被读懂和自检。
+ * 状态怎么说、点了按钮报什么，都在 `composables/useCloudSync.ts`——和顶栏那个同步按钮
+ * **同一份**，所以两处不可能再各说各话。本页自己负责的只剩登录 / 登出：顶栏放不下表单，
+ * 也不该在顶栏摆一个密码框。
+ *
+ * 下面解构成 `cloud*` 只是为了少改模板里的名字（模板早就这么叫了）。
  */
-const cloud = cloudSyncState
+const {
+  state: cloud,
+  busy: cloudBusy,
+  statusView: cloudStatusView,
+  lastSyncedText: cloudLastSyncedText,
+  syncWithFeedback,
+} = useCloudSync()
 
-const cloudEmail = ref('')
+const cloudUsername = ref('')
 const cloudPassword = ref('')
-const cloudBusy = ref(false)
-
-/** 状态文案与配色。颜色只是辅助，句子本身要能读懂（色盲、打印、截图都还得看） */
-const cloudStatusView = computed<{ text: string; tone: 'ok' | 'warn' | 'danger' | 'muted' }>(() => {
-  switch (cloud.value.status) {
-    case 'syncing':
-      return { text: '正在同步…', tone: 'muted' }
-    case 'idle':
-      return { text: '已同步', tone: 'ok' }
-    case 'offline':
-      return { text: '连不上云端', tone: 'warn' }
-    case 'error':
-      return { text: '同步出错', tone: 'danger' }
-    case 'signedOut':
-      return { text: '未登录', tone: 'muted' }
-    default:
-      return { text: '未启用', tone: 'muted' }
-  }
-})
-
-const cloudLastSyncedText = computed(() => {
-  const at = cloud.value.lastSyncedAt
-  if (at === null) return '本次打开还没有同步过。'
-  const date = new Date(at)
-  if (Number.isNaN(date.getTime())) return '本次打开还没有同步过。'
-  return `上次同步：${formatDateOnly(date)} ${formatClock(date)}`
-})
 
 const cloudReady = computed(
-  () => cloudEmail.value.trim().length > 0 && cloudPassword.value.length > 0,
+  () => cloudUsername.value.trim().length > 0 && cloudPassword.value.length > 0,
 )
 
 /**
@@ -160,68 +137,34 @@ function cloudErrorText(error: unknown): string {
   return String(error)
 }
 
-async function submitCloudAuth(mode: 'in' | 'up'): Promise<void> {
+/**
+ * 登录并同步。**应用只提供登录，不提供注册**（2026-09-12 需求方拍板：网站只有他一个人用，
+ * 账号在云开发控制台自己建）。
+ *
+ * 去掉注册按钮不只是「少一个按钮」：在开了「邮箱验证」的环境里，应用内的注册**走不通**——
+ * 账号建出来了、验证码也发了，但应用没有交回验证码的地方，账号会永远停在未验证、登录必被拒。
+ * 留着它等于摆一条点了会把人绕进去的路（实测走过一遍：注册「成功」却登不上，很容易误判成
+ * 程序坏了）。账号从控制台建、应用只负责登录，这条链路每一环都有明确的负责人。
+ */
+async function submitCloudLogin(): Promise<void> {
   if (!cloudReady.value) return
-  const email = cloudEmail.value.trim()
-  const what = mode === 'in' ? '登录' : '注册'
   cloudBusy.value = true
   try {
-    if (mode === 'up') {
-      const signedIn = await signUpAndSync(email, cloudPassword.value)
-      if (!signedIn) {
-        // 账号建好了、验证信也发了，只是验证前云端不发登录态（身份认证开了「邮箱验证」）。
-        // 这是**正常中间状态**，所以报 info 而不是 danger：报红会让教师以为注册没成、
-        // 反复重试注册，而每次重试只会换来「邮箱已被占用」。清掉密码——下一步是去收信。
-        cloudPassword.value = ''
-        toast.info(`账号已创建，请到 ${email} 收验证邮件，点链接完成验证后再回来登录`)
-        return
-      }
-    } else {
-      await signInAndSync(email, cloudPassword.value)
-    }
+    await signInAndSync(cloudUsername.value.trim(), cloudPassword.value)
     cloudPassword.value = ''
     // 「登录本身成了」与「数据对上了」是两件事，不能混成一句话报出去：集合没建、权限
     // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
     // 已经在云上了，而云上什么都没有。`signInAndSync` 会等这一轮同步跑完才返回，
     // 所以这里读到的状态就是这一轮的结果，不会是中途的「正在同步」。
     if (cloud.value.status === 'idle') {
-      toast.success(`${what}成功，数据已同步`)
+      toast.success('登录成功，数据已同步')
     } else {
-      toast.danger(`${what}成功，但数据没同步上：${cloud.value.error ?? '原因见下方卡片'}`)
+      toast.danger(`登录成功，但数据没同步上：${cloud.value.error ?? '原因见下方卡片'}`)
     }
   } catch (error) {
-    // 走到这里的是登录 / 注册**本身**失败（账号密码不对、登录方式没开……）：密码留在框里好重试
-    toast.danger(`${what}失败：${cloudErrorText(error)}`)
-  } finally {
-    cloudBusy.value = false
-  }
-}
-
-/**
- * 立即同步。`syncNow` 自己吞掉失败并记进状态（它还要给自动同步用，不能抛），
- * 所以这里看状态说话，而不是等异常。
- */
-async function doCloudSyncNow(): Promise<void> {
-  cloudBusy.value = true
-  try {
-    await syncNow()
-    const now = cloud.value
-    if (now.status === 'idle') {
-      const parts: string[] = []
-      if (now.pushedCount > 0) parts.push(`上传 ${now.pushedCount} 个模块`)
-      if (now.adoptedCount > 0) parts.push(`取回 ${now.adoptedCount} 个模块`)
-      toast.success(parts.length > 0 ? `同步完成：${parts.join('，')}` : '同步完成，云上和本机一致')
-    } else if (now.status === 'syncing') {
-      // 跑完的这一轮又被新的一轮接上了（期间又有人写盘）：这不是失败，只是还没轮到它
-      // 出结果。报红字会让教师以为同步坏了，而它下一拍就会自己变成「已同步」。
-      toast.info('同步还在进行，稍后看卡片上的状态。')
-    } else if (now.status === 'signedOut') {
-      // 会话失效（云端清了会话、浏览器换了配置）：这不是「同步失败」，是得重新登录。
-      // 单独报一句，别让教师对着「原因未知」去猜出了什么事。
-      toast.danger('登录状态已失效，请重新登录后再同步。')
-    } else {
-      toast.danger(`同步没成：${now.error ?? '原因未知'}`)
-    }
+    // 走到这里的是登录**本身**失败（用户名或密码不对、账号还没在控制台建、登录方式没开……）：
+    // 密码留在框里好重试
+    toast.danger(`登录失败：${cloudErrorText(error)}`)
   } finally {
     cloudBusy.value = false
   }
@@ -570,13 +513,17 @@ onMounted(() => {
           连不上云端，暂时无法确认登录状态。恢复网络后会自动重试。
         </p>
 
-        <form v-else-if="!cloud.account" class="cloud-form" @submit.prevent="submitCloudAuth('in')">
-          <AppField label="邮箱">
+        <form v-else-if="!cloud.account" class="cloud-form" @submit.prevent="submitCloudLogin">
+          <!-- type 必须是 text，**不能是 email**：账号是控制台建的「用户名」类型，用户名不
+               一定是邮箱格式，写成 email 会被浏览器自己的校验挡在提交之前（提示「请输入邮箱」），
+               表现是「点登录没反应」——请求根本没发出去，云端也就没有任何错误可查（实测踩过）。
+               想在用户名里填邮箱地址当然也可以，text 一样收得下。 -->
+          <AppField label="用户名">
             <AppInput
-              v-model="cloudEmail"
-              type="email"
-              autocomplete="email"
-              placeholder="teacher@example.com"
+              v-model="cloudUsername"
+              type="text"
+              autocomplete="username"
+              placeholder="控制台里建的那个用户名"
               :disabled="cloudBusy"
             />
           </AppField>
@@ -592,21 +539,19 @@ onMounted(() => {
             <AppButton type="submit" :loading="cloudBusy" :disabled="!cloudReady">
               登录并同步
             </AppButton>
-            <AppButton
-              variant="secondary"
-              :disabled="cloudBusy || !cloudReady"
-              @click="submitCloudAuth('up')"
-            >
-              注册新账号
-            </AppButton>
           </div>
+          <!-- 应用里**不提供注册**（需求方拍板）：账号在云开发控制台建。这里必须写清楚去哪儿建，
+               否则「没有注册入口」会被当成「还没做完」——摆一条路就得指明它通向哪 -->
+          <p class="footnote">
+            账号不在这里注册：到云开发控制台「身份认证 → 用户管理」新建，再回来登录。
+          </p>
         </form>
 
         <div v-else class="action-row">
           <AppButton
             :loading="cloudBusy"
             :disabled="cloudBusy || cloud.status === 'syncing'"
-            @click="doCloudSyncNow"
+            @click="syncWithFeedback"
           >
             立即同步
           </AppButton>
@@ -619,7 +564,8 @@ onMounted(() => {
           账号只在这个应用里代表你自己：云上的数据挂在你的账号下，别的老师看不到。首次在某台设备上登录时以云端为准——这样新设备一登录就能看到已有数据，而不是把本机的示例数据推上去。之后同一项两边都改过，以写得晚的一方为准。
         </p>
         <p class="footnote">
-          同步需要云端先做好两件事：在云开发控制台开启邮箱登录、并建好数据集合。若登录或同步一直失败，先查这两项。
+          同步需要云端先做好三件事：在云开发控制台开启用户名密码登录、在「身份认证 →
+          用户管理」里建好你的账号、并建好数据集合。若登录或同步一直失败，先查这三项。
         </p>
       </div>
     </AppCard>
