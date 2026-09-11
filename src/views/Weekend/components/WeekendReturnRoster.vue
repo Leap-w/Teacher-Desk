@@ -8,8 +8,11 @@ import type { WeekendReturnRecord } from '@/types/weekend'
  * 某个周末的返家名单（一张卡装完整份名单）。
  *
  * 不做成「一人一张卡」：返家名单是给人点的花名册，十几个人各自套一张卡只会把页面拉长，
- * 也让「还有谁」这件事看不出来。留校人数由页面算（档案在读人数 − 名单里仍在读的人），
- * 本组件只管名单本身。
+ * 也让「还有谁」这件事看不出来。
+ *
+ * 本组件只管**名单**（含已退档学生的历史记录，标注出来）：返家 / 留校 / 已不在档案的
+ * 三个数一律由页面取 `weekendStore` 的 `returnedCountOf` / `stayCountOf` / `staleCountOf`
+ * （Phase 8 上收，见 §9.18），这里不再各算一份。
  */
 
 interface Props {

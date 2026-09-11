@@ -20,24 +20,20 @@ const toast = useToast()
  */
 const selected = ref(weekendStore.currentWeekend)
 
+/** 在读学生的 id 列表：只用来给名单标注「已不在档案」，人数不从这里数 */
 const activeIds = computed(() => studentStore.activeStudents.map((item) => item.id))
-const activeIdSet = computed(() => new Set(activeIds.value))
 
+/** **完整**名单（含已退档学生的历史记录，由名单组件标注后照常列出） */
 const roster = computed(() => weekendStore.listReturns(selected.value))
 
 /**
- * 这一期**仍在读**的返家人数。名单里可能留着已退档学生的历史记录，
- * 若直接拿 `roster.length` 当返家数，「返家 + 留校」就会超过班级人数（§9.17 审查修复）。
+ * 返家 / 留校 / 已不在档案的条数都问 store，页面不再自己数一遍（Phase 8 上收）：
+ * 「只算在读」这条口径若在两处各实现一次，改一处就会留下另一处（§11.1）。
+ * 注：留校人数是派生的（在读人数 − 这一期仍在读的返家人数），不落库（§2.2 只有「返家」是事实）。
  */
-const returnedCount = computed(
-  () => roster.value.filter((item) => activeIdSet.value.has(item.studentId)).length,
-)
-
-/** 留校人数（派生）：在读人数 − 这一期仍在读的返家人数；不落库，也不写进记录（§2.2 只有「返家」是事实） */
-const stayCount = computed(() => activeIds.value.length - returnedCount.value)
-
-/** 名单里已不在档案的记录条数：照常列在名单里（历史不该被抹掉），但**不计入**上面两个数 */
-const staleCount = computed(() => roster.value.length - returnedCount.value)
+const returnedCount = computed(() => weekendStore.returnedCountOf(selected.value))
+const stayCount = computed(() => weekendStore.stayCountOf(selected.value))
+const staleCount = computed(() => weekendStore.staleCountOf(selected.value))
 
 const selectedLabel = computed(() => formatWeekendLabel(selected.value))
 const selectedRelative = computed(() => describeWeekend(selected.value, weekendStore.todayKey))
@@ -118,7 +114,7 @@ function confirmRemove() {
         <span class="chip-name">
           {{ describeWeekend(key, weekendStore.todayKey) || formatWeekendLabel(key) }}
         </span>
-        <span class="chip-count">{{ weekendStore.countsByWeekend.get(key) ?? 0 }} 人</span>
+        <span class="chip-count">{{ weekendStore.returnedCountOf(key) }} 人</span>
       </button>
     </div>
 

@@ -2,8 +2,7 @@
 import { computed } from 'vue'
 
 import { AppBadge, AppButton, AppCard } from '@/components/ui'
-import { addDaysToDateKey } from '@/utils/date'
-import { WEEKDAY_LABELS } from '@/utils/timetable'
+import { describeDutyDay, dutyTodayState, nextDutyDay } from '@/utils/duty'
 import type { DutyGroup, DutyMember } from '@/types/duty'
 import type { DutyDay } from '@/utils/duty'
 
@@ -40,26 +39,30 @@ const restCount = computed(() => Math.max(0, props.members.length - MAX_CHIPS))
 /**
  * 下一次值日（跳过今天与不值日的日子）。周末不排时它能直接回答
  * 教师最关心的问题——「今天不值日，那下次是谁？」，而不用再跑一趟值日页。
+ * 「哪一天」「怎么说」都取自 `utils/duty`：班级概况卡片要问同一个问题（§11.1）。
  */
-const nextDay = computed(() =>
-  props.upcoming.find((day) => day.dateKey !== props.todayKey && day.group),
+const nextText = computed(() =>
+  describeDutyDay(nextDutyDay(props.upcoming, props.todayKey), props.todayKey),
 )
 
-const nextText = computed(() => {
-  const day = nextDay.value
-  if (!day || !day.group) return ''
-  const when =
-    day.dateKey === addDaysToDateKey(props.todayKey, 1) ? '明天' : WEEKDAY_LABELS[day.weekday]
-  return `${when}由「${day.group.name}」值日`
-})
+/**
+ * 今天值日的状态（判定阶梯见 `dutyTodayState`）：班级概况卡片问的是同一件事，
+ * 两块卡片挨着显示，判定不能一处一个顺序（§11.1）。
+ */
+const todayState = computed(() =>
+  dutyTodayState(props.group, {
+    weekendSkipped: props.weekendSkipped,
+    needsSetup: props.needsSetup,
+  }),
+)
 
 const footNote = computed(() => {
   // 今天有组、或今天按设置不值日时，都把「下一次是谁」摆在页脚；
   // 「还没设起点」与「还没有组」分成两句——后者让教师去建组，前者建的组已经在了
-  if (props.group || props.weekendSkipped) {
+  if (todayState.value === 'group' || todayState.value === 'weekend-skipped') {
     return nextText.value ? `接下来：${nextText.value}` : '值日组与轮换设置都在值日管理页。'
   }
-  if (props.needsSetup) return '设好起点日期和起点组，每天的值日会自动排出来。'
+  if (todayState.value === 'needs-setup') return '设好起点日期和起点组，每天的值日会自动排出来。'
   return '建好值日组，轮换会自动按天排起来。'
 })
 </script>
@@ -85,11 +88,13 @@ const footNote = computed(() => {
       <p v-else class="band-note">这个组还没有组员，去值日管理把同学加进来。</p>
     </div>
 
-    <p v-else-if="needsSetup" class="band-note">
+    <p v-else-if="todayState === 'needs-setup'" class="band-note">
       🗓️ 还没设置轮换起点，去值日管理设好就会自动排班。
     </p>
 
-    <p v-else-if="weekendSkipped" class="band-note">🌙 今天不值日（当前设置为周末不排）。</p>
+    <p v-else-if="todayState === 'weekend-skipped'" class="band-note">
+      🌙 今天不值日（当前设置为周末不排）。
+    </p>
 
     <p v-else class="band-note">🧹 还没有值日组，去值日管理建好组就能自动轮换。</p>
 

@@ -1,5 +1,3 @@
-import type { Component } from 'vue'
-
 /* ========== 通用 UI 类型 ========== */
 
 /** 下拉选项 */
@@ -21,20 +19,6 @@ export interface ToastItem {
   message: string
   variant: ToastVariant
   duration: number
-}
-
-/* ========== 路由 / 布局 ========== */
-
-/**
- * 首页仪表盘「规划中」占位卡（截至 Phase 5 只剩「班级概况」一张：
- * 今日课程、今日待办已由 DashboardLessonCard / DashboardTodoCard 实现，
- * 请假审批由 DashboardLeaveCard 实现——它们数据化后不再走这个通用形状）
- */
-export interface DashboardCard {
-  key: 'class'
-  title: string
-  icon: Component
-  description: string
 }
 
 /* ========== 业务领域类型（仅类型定义，Phase 2 起逐步使用） ========== */

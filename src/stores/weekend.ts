@@ -51,7 +51,8 @@ function loadReturns(students: Student[]): WeekendReturnRecord[] {
     }
     // 两重去重，都只保留首条：同一 id（重复 id 会让列表的 v-for key 冲突）；
     // 同一「学生 + 周末」——本模块的不变量是一条记录对应一个学生一个周末，
-    // 篡改出的重复项会让名单里同一个人出现两次、并把留校人数算少（页面层按名单派生留校）
+    // 篡改出的重复项会让名单里同一个人出现两次、把返家人数算多、留校人数算少
+    // （留校 = 在读人数 − 在读返家人数，`stayCountOf` 以此为前提）
     const seenIds = new Set<string>()
     const seenPairs = new Set<string>()
     const records = parsed
@@ -96,9 +97,15 @@ function withStudentNames(
  *
  * 与请假的差异（Phase 7B 需求方拍板）：**不设审批**（记录建了就是定了）、
  * **不记时长与离校 / 返校时间**。留校不落库——「本周末留校 M 人」由
- * 「在读学生数 − 这一期名单里仍在读的人数」派生（页面层计算，不进本 store）——
- * 减的是**名单里仍在读的**而不是「本周末已登记人数」：已从档案删除的学生记录会保留，
- * 但他不算班里的在校生，若按记录数减会让留校人数偏少（页面 views/Weekend/index.vue 的 stayCount）。
+ * 「在读学生数 − 这一期仍在读的返家人数」派生，**减的是仍在读的人而不是记录条数**：
+ * 已从档案删除的学生记录会保留（历史不该被抹掉），但他不算班里的在校生。
+ *
+ * **所有计数一律「只算在读学生」**（Phase 8 统一）：返家人数、切换条上每期的人数、
+ * 本周末人数、本月人次都只数在 `activeStudents` 里的记录；已退档学生的记录**仍列在名单里**
+ * （周末页会标注「已不在档案」）但**不计入任何数**。这条口径只能有一份实现——
+ * 工作台的「班级概况」卡片会把在读人数与留校人数挨着显示，若两张卡各按各的口径算，
+ * 教师会看到「在读 5 人 / 留校 4 人」与「本周末返家 2 人」这种加起来超过班级人数的画面。
+ * 因此留校派生进本 store（Phase 7B 时它只在周末页里算，Phase 8 出现第二个消费方后上收）。
  *
  * 与请假一致的两处：学生被删除时记录保留（姓名快照冻结）；同一学生同一周末只有一条记录。
  */
@@ -106,6 +113,9 @@ export const useWeekendStore = defineStore('weekend', () => {
   /** 学生 store 同步实例化：供姓名快照刷新与新增时取学生用 */
   const studentStore = useStudentStore()
   const now = useNow()
+
+  /** 在读学生 id 集合：本 store 所有计数的唯一分母（顶部说明的那条口径就落在这里） */
+  const activeIdSet = computed(() => new Set(studentStore.activeStudents.map((item) => item.id)))
 
   const records = ref<WeekendReturnRecord[]>(
     withStudentNames(loadReturns(studentStore.students), studentStore.students),
@@ -128,14 +138,45 @@ export const useWeekendStore = defineStore('weekend', () => {
   const currentWeekend = computed(() => currentWeekendKey(todayKey.value))
   const nextWeekend = computed(() => addDaysToDateKey(currentWeekend.value, 7))
 
-  /** 各周末的返家人数（周末页切换条按它标注每期人数；工作台卡片只服务本周末，走 currentReturns） */
-  const countsByWeekend = computed(() => {
-    const counts = new Map<string, number>()
-    for (const record of records.value) {
-      counts.set(record.weekendDate, (counts.get(record.weekendDate) ?? 0) + 1)
-    }
-    return counts
-  })
+  /**
+   * 某个周末**仍在读**的返家人数：切换条每期的人数、页头「本周末返家 N 人」、工作台卡片都用它。
+   * 已退档学生的记录仍列在名单里（历史不该被抹掉），但**不计入任何人数**——
+   * 留校是「在读学生数 − 这一期仍在读的返家人数」，把退档的记录算进来会让两者超过班级人数。
+   *
+   * 从「各周末人数表」改成一期一问：表与函数各数一遍，迟早会在「退档算不算」上分叉（§11.1）。
+   * 调用点最多是切换条那一排（十来项 × 每条几十条记录），不值得为此再建一张表。
+   */
+  function returnedCountOf(weekendKey: string): number {
+    const active = activeIdSet.value
+    return records.value.filter(
+      (item) => item.weekendDate === weekendKey && active.has(item.studentId),
+    ).length
+  }
+
+  /**
+   * 某个周末的留校人数（**派生，永不落库**）：在读学生数 − 这一期仍在读的返家人数。
+   * 只有「返家」是行为事实（§2.2），留校是它在这个班里的补集。
+   *
+   * 不必夹 `Math.max(0, …)`：同一学生同一周末只有一条记录（load 时按「学生 + 周末」去重、
+   * `addReturns` 跳过已登记的），所以仍在读的返家人数不会超过在读学生数。
+   * 应用内唯一的旁路写入是工具箱的「合并导入」，它写盘后必定整页 reload——重复项
+   * 会在那一次 load 的去重里清掉，不会留到计数这一步。
+   */
+  function stayCountOf(weekendKey: string): number {
+    return studentStore.activeStudents.length - returnedCountOf(weekendKey)
+  }
+
+  /**
+   * 某个周末**已不在档案**的返家登记条数。
+   * 这些记录照常列在名单里并标注「已不在档案」，但不在任何人数里；
+   * 页面把条数说出来，教师才不会以为记录丢了（§11.1「界面口径别比实现乐观」）。
+   */
+  function staleCountOf(weekendKey: string): number {
+    return (
+      records.value.filter((item) => item.weekendDate === weekendKey).length -
+      returnedCountOf(weekendKey)
+    )
+  }
 
   /**
    * 页面可切换的周末：**所有已有记录的周末 ∪ 本周末 ∪ 下周末**，按时间倒序（近的在前）。
@@ -149,7 +190,11 @@ export const useWeekendStore = defineStore('weekend', () => {
     return [...keys].sort((a, b) => b.localeCompare(a))
   })
 
-  /** 某个周末的返家名单（按姓名升序） */
+  /**
+   * 某个周末的**完整**返家名单（按姓名升序），含已退档学生的历史记录。
+   * 周末页的名单与撤销入口都用它——历史要看得见；**人数一律走 `returnedCountOf`**，
+   * 谁需要「N 人 + 名字对得上」就用 `currentReturns`（在读子集）。
+   */
   function listReturns(weekendKey: string): WeekendReturnRecord[] {
     return sortWeekendReturns(records.value.filter((item) => item.weekendDate === weekendKey))
   }
@@ -165,17 +210,33 @@ export const useWeekendStore = defineStore('weekend', () => {
     )
   }
 
-  /** 本周末的返家名单与人数（工作台卡片与周末页页头共用） */
-  const currentReturns = computed(() => listReturns(currentWeekend.value))
+  /**
+   * 本周末**计入人数**的返家名单（工作台卡片用）：只含仍在读的学生。
+   * 与 `listReturns` 的分工——那个是**完整名单**（周末页要把已退档的历史记录也列出来并标注），
+   * 这个只服务「N 人」与后面的名字必须对得上的地方：卡片上徽标数了几个人，
+   * 下面的名字就该有几个，否则同一张卡自己跟自己打架。
+   */
+  const currentReturns = computed(() =>
+    listReturns(currentWeekend.value).filter((item) => activeIdSet.value.has(item.studentId)),
+  )
+
+  /** 本周末返家人数（周末页页头与工作台卡片共用；与 `currentReturns` 同源，不会一个算退档一个不算） */
   const currentCount = computed(() => currentReturns.value.length)
 
+  /** 本周末留校人数（派生）：与上面那个数同源——「留校 + 返家 = 在读人数」，工作台两块卡片才不会互相打脸 */
+  const currentStayCount = computed(() => stayCountOf(currentWeekend.value))
+
   /**
-   * 本月返家人次：**周末落在本月**的记录数（按周末的周六日期键归月，跨月的那一周算在周六所在的月）。
-   * 与请假的「本月已批准 N 人次」同口径：同一个人本月返家两次记两人次。
+   * 本月返家人次：**周末落在本月、且学生仍在读**的记录数（按周末的周六日期键归月，
+   * 跨月的那一周算在周六所在的月）。与请假的「本月已批准 N 人次」同口径：
+   * 同一个人本月返家两次记两人次。
    */
   const monthReturnCount = computed(() => {
     const monthPrefix = formatDateKey(now.value).slice(0, 7)
-    return records.value.filter((item) => item.weekendDate.startsWith(monthPrefix)).length
+    const active = activeIdSet.value
+    return records.value.filter(
+      (item) => item.weekendDate.startsWith(monthPrefix) && active.has(item.studentId),
+    ).length
   })
 
   // 学生改名 / 补学号后同步快照（只监听姓名与学号，换座位之类的改动不触发）
@@ -235,12 +296,15 @@ export const useWeekendStore = defineStore('weekend', () => {
     todayKey,
     currentWeekend,
     nextWeekend,
-    countsByWeekend,
     weekendKeys,
     listReturns,
+    returnedCountOf,
+    stayCountOf,
+    staleCountOf,
     registeredIdsOf,
     currentReturns,
     currentCount,
+    currentStayCount,
     monthReturnCount,
     addReturns,
     removeReturn,

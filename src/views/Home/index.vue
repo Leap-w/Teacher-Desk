@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { SchoolOutline } from '@vicons/ionicons5'
 
-import { AppCard, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
+import { useStudentStore } from '@/stores/student'
 import { useTimetableStore } from '@/stores/timetable'
 import { useWeekendStore } from '@/stores/weekend'
 import { describeWeekend } from '@/utils/weekend'
 import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
+import DashboardClassCard from './components/DashboardClassCard.vue'
 import DashboardDutyCard from './components/DashboardDutyCard.vue'
 import DashboardHeader from './components/DashboardHeader.vue'
 import DashboardLeaveCard from './components/DashboardLeaveCard.vue'
@@ -20,13 +20,13 @@ import DashboardLessonStats from './components/DashboardLessonStats.vue'
 import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
 import DashboardTodoCard from './components/DashboardTodoCard.vue'
 import DashboardWeekendCard from './components/DashboardWeekendCard.vue'
-import type { DashboardCard } from '@/types'
 
 const toast = useToast()
 const router = useRouter()
 const dashboardStore = useDashboardStore()
 const dutyStore = useDutyStore()
 const leaveStore = useLeaveStore()
+const studentStore = useStudentStore()
 const timetableStore = useTimetableStore()
 const weekendStore = useWeekendStore()
 
@@ -60,21 +60,24 @@ const weekendLabel = computed(() =>
 )
 // 直接下传记录而不是姓名数组：卡片要的是「谁返家」，而 v-for 的 key 得是记录 id
 // （姓名快照是「姓名（学号后四位）」，同名 + 学号后四位相同就会撞 key，不能拿它当身份）
+// store 给的这份**只含在读学生**（Phase 8）：徽标数几个，下面就得列几个
 const weekendReturns = computed(() => weekendStore.currentReturns)
+
+/** 本周末已不在档案的返家登记条数：不进徽标也不列名字，但卡片要说出来，别让记录显得凭空少了 */
+const weekendStaleCount = computed(() => weekendStore.staleCountOf(weekendStore.currentWeekend))
+
+/**
+ * 班级概况卡片的第 1 行：在读人数（分母）与已退档人数。
+ * 退档的单独说一句，因为**界面上没有任何地方能看到他们**（档案页只列在读学生，没有回收站；
+ * 唯一的恢复路径是工具箱的「合并导入」旧备份）——不说，教师只会看到人数比记忆里少几个，
+ * 却找不到少的是谁，更容易以为数字出错了（Phase 8 审查修正：原注释误以为档案页仍列着他们）。
+ */
+const studentCount = computed(() => studentStore.activeStudents.length)
+const removedStudentCount = computed(() => studentStore.students.length - studentCount.value)
 
 function toggleTodo(id: string): void {
   if (!dashboardStore.toggle(id)) toast.warning('待办状态更新失败，请刷新后重试')
 }
-
-/** 尚未实现的占位卡片（点击不跳转）：请假审批已在 Phase 5 转为真实卡片 */
-const plannedCards: DashboardCard[] = [
-  {
-    key: 'class',
-    title: '班级概况',
-    icon: SchoolOutline,
-    description: '班级人数、出勤等概览信息将汇总于此。',
-  },
-]
 </script>
 
 <template>
@@ -119,17 +122,22 @@ const plannedCards: DashboardCard[] = [
           :weekend-label="weekendLabel"
           :returns="weekendReturns"
           :month-count="weekendStore.monthReturnCount"
+          :stale-count="weekendStaleCount"
           @open="router.push('/weekend')"
         />
 
-        <AppCard v-for="card in plannedCards" :key="card.key" :title="card.title">
-          <template #actions>
-            <span class="card-chip" aria-hidden="true">
-              <component :is="card.icon" />
-            </span>
-          </template>
-          <EmptyState icon="🚧" title="功能建设中" :description="card.description" />
-        </AppCard>
+        <DashboardClassCard
+          :student-count="studentCount"
+          :removed-student-count="removedStudentCount"
+          :duty-group="dutyStore.todayGroup"
+          :duty-weekend-skipped="dutyWeekendSkipped"
+          :duty-needs-setup="dutyNeedsSetup"
+          :upcoming="dutyStore.upcomingDays"
+          :today-key="dutyStore.todayKey"
+          :weekend-label="weekendLabel"
+          :stay-count="weekendStore.currentStayCount"
+          :returned-count="weekendStore.currentCount"
+        />
       </div>
     </div>
   </div>
@@ -170,27 +178,11 @@ const plannedCards: DashboardCard[] = [
     grid-column: 1 / -1;
   }
 
-  /* 自动铺满而不是写死 3 列：7B 之后这一行有 4 张卡（课时 / 请假 / 周末 / 班级概况），
+  /* 自动铺满而不是写死 3 列：这一行有 4 张卡（课时 / 请假 / 周末 / 班级概况），
      写死 3 列会让第 4 张独自折到第二行、右侧空出 2/3。auto-fit + 200px 下限在
      桌面宽度下正好 4 列，窄一些时回落成 3 列——与改动前的观感一致（§9.17 审查修复） */
   .cell-bottom {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
-}
-
-.card-chip {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
-}
-
-.card-chip :deep(svg) {
-  width: 18px;
-  height: 18px;
 }
 </style>

@@ -7,6 +7,7 @@ import {
 } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { isPlainObject } from '@/utils/object'
+import { WEEKDAY_LABELS } from '@/utils/timetable'
 import type { DutyGroup, DutyRecord, DutySettings } from '@/types/duty'
 import type { Weekday } from '@/types/timetable'
 
@@ -187,6 +188,51 @@ export function dutyDaysFrom(
     })
   }
   return list
+}
+
+/** 今天值日的状态（判定阶梯的四种出口，见 `dutyTodayState`） */
+export type DutyTodayState = 'group' | 'needs-setup' | 'weekend-skipped' | 'no-groups'
+
+/**
+ * 「今天值日吗」的判定阶梯：工作台的**今日值日卡片与班级概况卡片共用这一处**。
+ * 顺序有讲究——先「还没设起点」再「今天不值日」：两块卡片挨着显示，
+ * 顺序不一致时同一个周末会一块说「还没设置轮换起点」、另一块说「今天不值日」，
+ * 看着像程序自相矛盾（§11.1）。文案各卡片自己写，判定只此一份。
+ *
+ * 注意 `group` 本身已是「今天有组」的结论（`dutyGroupFor` 算出来的），
+ * 所以这里先看它：有组时轮换设置必然是齐的。
+ *
+ * 收编时顺手纠掉一处自相矛盾（Phase 8 记录）：旧模板里「有组 ∧ 还没设起点 ∧ 今天周末不排」
+ * 这一种输入会落到页脚兜底句「值日组与轮换设置都在值日管理页。」，可上方的横条正说着
+ * 「还没设置轮换起点」——现在统一判成 `needs-setup`，横条与页脚指的是同一件事。
+ */
+export function dutyTodayState(
+  group: DutyGroup | undefined,
+  options: { weekendSkipped: boolean; needsSetup: boolean },
+): DutyTodayState {
+  if (group) return 'group'
+  if (options.needsSetup) return 'needs-setup'
+  if (options.weekendSkipped) return 'weekend-skipped'
+  return 'no-groups'
+}
+
+/**
+ * 「接下来谁值日」：`days` 里**今天之后**第一个有组的日子（今天由调用方自己说，不在这里重复）。
+ * 今日值日卡片与班级概况卡片共用一处——各写一遍就会在「今天本身算不算下一次」
+ * 「不值日的日子跳过没有」这些边界上分叉（§11.1）。
+ */
+export function nextDutyDay(days: DutyDay[], todayKey: string): DutyDay | undefined {
+  return days.find((day) => day.dateKey !== todayKey && day.group)
+}
+
+/**
+ * 某一天值日的说法，如「明天由「第 1 组」值日」；没有这一天（或那天不值日）时返回空串。
+ * 紧挨着的 tomorrow 说「明天」、其余日子说星期几——教师看这两张卡片时最省事的说法。
+ */
+export function describeDutyDay(day: DutyDay | undefined, todayKey: string): string {
+  if (!day || !day.group) return ''
+  const when = day.dateKey === addDaysToDateKey(todayKey, 1) ? '明天' : WEEKDAY_LABELS[day.weekday]
+  return `${when}由「${day.group.name}」值日`
 }
 
 /**
