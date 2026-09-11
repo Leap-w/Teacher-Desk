@@ -1,9 +1,11 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedDuty } from '@/services/mock'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
@@ -25,6 +27,38 @@ import type { Student } from '@/types'
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:duty`
 
 /**
+ * 把盘上的原始列表规范成内存里的值日记录（**首屏加载与跨标签页同步共用**，§11.1）。
+ * 两重唯一性：同一 id 只保留首条（重复 id 会让列表的 v-for key 冲突）；设置记录也只认第一条
+ * （settings 是单例，重复会让轮换口径分叉）。丢弃条目时告警，但缓存原文保留。
+ *
+ * 末尾保证数组里有设置记录（不写盘，只在内存里补）：少了它，后面所有读取路径
+ * （settings 计算属性 / removeGroup / updateGroup）都以为「设置不在数组里」，
+ * 写完一轮才把设置补进去，中间那一步是两套状态（§11.3）。
+ */
+function reviveDutyRecords(raw: unknown[]): DutyRecord[] {
+  const seen = new Set<string>()
+  const records = raw
+    .map((item) => normalizeDutyRecord(item))
+    .filter((item): item is DutyRecord => item !== null)
+    .filter((record) => {
+      if (seen.has(record.id)) return false
+      seen.add(record.id)
+      return true
+    })
+  let settingsSeen = false
+  const unique = records.filter((record) => {
+    if (!isDutySettings(record)) return true
+    if (settingsSeen) return false
+    settingsSeen = true
+    return true
+  })
+  if (unique.length < raw.length) {
+    console.warn(`[duty] 丢弃 ${raw.length - unique.length} 条不合法的值日记录（缓存原文保留）`)
+  }
+  return withSettings(unique)
+}
+
+/**
  * 从 localStorage 读取值与设置；首次启动（无缓存）时写入示例值日安排。
  *
  * 播种条件比学生 / 课表严一档（同请假）：值日组引用学生主键，
@@ -35,53 +69,17 @@ const STORAGE_KEY = `${appConfig.storageKeyPrefix}:duty`
  * 示例数据不再是唯一来源，重播会盖掉教师自己排的值日表（§3.2）。
  */
 function loadRecords(students: Student[]): DutyRecord[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) {
-      const seed = createSeedDuty()
-      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
-      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-      const referenced = seed.flatMap((record) => (isDutyGroup(record) ? record.studentIds : []))
-      if (!referenced.every((id) => inSchoolIds.has(id))) return []
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-      return seed
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[duty] localStorage 数据格式异常，已重置为空值日表')
-      return []
-    }
-    // 同一 id 只保留首条：外部篡改可能造出重复 id，会让列表的 v-for key 冲突
-    const seen = new Set<string>()
-    const records = parsed
-      .map((item) => normalizeDutyRecord(item))
-      .filter((item): item is DutyRecord => item !== null)
-      .filter((record) => {
-        if (seen.has(record.id)) return false
-        seen.add(record.id)
-        return true
-      })
-    // 设置记录唯一：篡改出多条时只认第一条（settings 是单例，重复会让轮换口径分叉）
-    let settingsSeen = false
-    const unique = records.filter((record) => {
-      if (!isDutySettings(record)) return true
-      if (settingsSeen) return false
-      settingsSeen = true
-      return true
-    })
-    if (unique.length < parsed.length) {
-      console.warn(
-        `[duty] 丢弃 ${parsed.length - unique.length} 条不合法的值日记录（缓存原文保留）`,
-      )
-    }
-    // 有记录就必须有设置记录（不写盘，只在内存里补）：少了它，后面所有读取路径
-    // （settings 计算属性 / removeGroup / updateGroup）都以为「设置不在数组里」，
-    // 写完一轮才把设置补进去，中间那一步是两套状态（§11.3）
-    return withSettings(unique)
-  } catch (error) {
-    console.warn('[duty] 读取 localStorage 失败：', error)
-    return []
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) {
+    const seed = createSeedDuty()
+    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
+    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
+    const referenced = seed.flatMap((record) => (isDutyGroup(record) ? record.studentIds : []))
+    if (!referenced.every((id) => inSchoolIds.has(id))) return []
+    writeJSON(STORAGE_KEY, seed)
+    return seed
   }
+  return reviveDutyRecords(stored)
 }
 
 /** 保证数组里有设置记录（缺失时补一条默认的，可带起点）——轮换口径始终只有一处 */
@@ -106,17 +104,8 @@ export const useDutyStore = defineStore('duty', () => {
 
   const records = ref<DutyRecord[]>(loadRecords(studentStore.students))
 
-  watch(
-    records,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.warn('[duty] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
+  syncPersisted(STORAGE_KEY, records, reviveDutyRecords)
 
   /** 值日组（数组顺序即轮换顺序，也是页面展示顺序） */
   const groups = computed(() => records.value.filter(isDutyGroup))

@@ -1,9 +1,11 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedLessons } from '@/services/mock'
+import { localStoragePort, readRaw, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import {
   MAX_LESSON_PERIOD,
@@ -70,15 +72,7 @@ interface ParsedLessons {
  * 否则「旧键不是 JSON」会冒泡到外层 catch 变成空课表，与「旧键不是数组」的
  * 「跳过迁移、保留现场、先用示例课表」各说各话（开发手册 §9.7 记录项）。
  */
-function readLessons(raw: string): ParsedLessons | null {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    console.warn('[timetable] 课表缓存不是合法 JSON：', error)
-    return null
-  }
-  if (!Array.isArray(parsed)) return null
+function filterLessons(parsed: unknown[]): ParsedLessons {
   // 同一 id 只保留首条：外部篡改可能造出重复 id，会让列表的 v-for key 冲突
   const seen = new Set<string>()
   const lessons = parsed
@@ -93,45 +87,77 @@ function readLessons(raw: string): ParsedLessons | null {
   return { lessons, dropped: parsed.length - lessons.length }
 }
 
+function readLessons(raw: string): ParsedLessons | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    console.warn('[timetable] 课表缓存不是合法 JSON：', error)
+    return null
+  }
+  if (!Array.isArray(parsed)) return null
+  return filterLessons(parsed)
+}
+
+/** 丢弃条目时告警（首屏加载与跨标签页同步共用同一句，两边的口径不会各说各话） */
+function warnDropped(dropped: number): void {
+  if (dropped > 0) {
+    // 不覆盖缓存：盘上原文保留，界面先用过滤后的结果（改坏的数据仍可人工找回）
+    console.warn(`[timetable] 丢弃 ${dropped} 条不合法的课表条目（缓存原文保留）`)
+  }
+}
+
+/** 把盘上的原始列表规范成内存里的课表（**首屏加载与跨标签页同步共用**，§11.1） */
+function reviveLessons(raw: unknown[]): Lesson[] {
+  const result = filterLessons(raw)
+  warnDropped(result.dropped)
+  return result.lessons
+}
+
 /**
- * 从 localStorage 读取课程：新键 → 旧键迁移 → 首次启动写示例课表。
+ * 读课程：新键 → 旧键迁移 → 首次启动写示例课表。
  * 数据损坏（非数组 / JSON 解析失败）时**安全降级为空数组**，不重置为示例数据
  * ——避免覆盖用户的真实课表（Phase 5 起课表可编辑，示例数据不再是唯一来源）。
  */
 function loadLessons(): Lesson[] {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
+    const stored = readRaw(STORAGE_KEY)
     if (stored !== null) {
       const parsed = readLessons(stored)
       if (parsed === null) {
-        console.warn('[timetable] localStorage 数据格式异常，已重置为空课表')
+        console.warn('[timetable] 本地数据不是列表，已按空课表处理（原文保留）')
         return []
       }
-      if (parsed.dropped > 0) {
-        // 不覆盖缓存：盘上原文保留，界面先用过滤后的结果（改坏的数据仍可人工找回）
-        console.warn(`[timetable] 丢弃 ${parsed.dropped} 条不合法的课表条目（缓存原文保留）`)
-      }
+      warnDropped(parsed.dropped)
       return parsed.lessons
     }
 
     // Phase 4 旧键迁移：补 classId / teacher 后写入新键
-    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+    const legacy = readRaw(LEGACY_STORAGE_KEY)
     if (legacy !== null) {
       const migrated = readLessons(legacy)
       if (migrated !== null) {
-        try {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated.lessons))
-          // 有条目被丢弃时**不删旧键**：迁移是单向的，删了就再也找不回原文（同「保留现场」口径）
-          if (migrated.dropped === 0) {
-            window.localStorage.removeItem(LEGACY_STORAGE_KEY)
-          } else {
-            console.warn(
-              `[timetable] 旧课表有 ${migrated.dropped} 条不合法条目未迁移，旧键保留以便找回`,
-            )
-          }
-        } catch (error) {
+        // 这里要的是「新键最终是不是这份内容」，不是「刚才写没写」——writeJSON 幂等，
+        // 内容相同就不写、也不返回 true，所以写完读回来对一次
+        const target = JSON.stringify(migrated.lessons)
+        writeJSON(STORAGE_KEY, migrated.lessons)
+        if (readRaw(STORAGE_KEY) !== target) {
           // 写失败就保留旧键，下次启动重试；本次仍返回迁移结果，界面可用
-          console.warn('[timetable] 旧课表迁移写盘失败：', error)
+          console.warn('[timetable] 旧课表迁移写盘失败，旧键保留')
+        } else if (migrated.dropped === 0) {
+          // 有条目被丢弃时**不删旧键**：迁移是单向的，删了就再也找不回原文（同「保留现场」口径）。
+          // 删除单独兜一层：这只是「收拾现场」，删不掉（存储被拒等）不该连累本次的迁移结果——
+          // 让它漏到外层 catch，教师看到的是**空课表**，可新键里已经躺着一份完整的课表，
+          // 之后随便改一门课还会把这份课表整份覆盖掉（Phase 9A 交付前审查修复）
+          try {
+            localStoragePort.remove(LEGACY_STORAGE_KEY)
+          } catch (error) {
+            console.warn('[timetable] 旧课表已迁移，但旧键未删除（下次启动会再迁移一次）：', error)
+          }
+        } else {
+          console.warn(
+            `[timetable] 旧课表有 ${migrated.dropped} 条不合法条目未迁移，旧键保留以便找回`,
+          )
         }
         return migrated.lessons
       }
@@ -140,10 +166,10 @@ function loadLessons(): Lesson[] {
     }
 
     const seed = createSeedLessons()
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
+    writeJSON(STORAGE_KEY, seed)
     return seed
   } catch (error) {
-    console.warn('[timetable] 读取 localStorage 失败：', error)
+    console.warn('[timetable] 读取本地存储失败：', error)
     return []
   }
 }
@@ -177,17 +203,8 @@ export const useTimetableStore = defineStore('timetable', () => {
   const lessons = ref<Lesson[]>(loadLessons())
   const now = useNow()
 
-  watch(
-    lessons,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.warn('[timetable] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
+  syncPersisted(STORAGE_KEY, lessons, reviveLessons)
 
   /** 今天是星期几（按共享时钟解析） */
   const todayWeekday = computed(() => weekdayOf(now.value))

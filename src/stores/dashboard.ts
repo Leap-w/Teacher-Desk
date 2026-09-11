@@ -1,14 +1,16 @@
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createSeedTodos } from '@/services/mock'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import type { Todo } from '@/types/dashboard'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 
-/** 单条待办的健壮化（load 时逐条调用）：文本为空即丢弃；done 非 true 一律视为未完成 */
+/** 单条待办的健壮化：文本为空即丢弃；done 非 true 一律视为未完成 */
 function normalizeTodo(raw: Partial<Todo>): Todo | null {
   const text = typeof raw.text === 'string' ? raw.text.trim() : ''
   if (!text) return null
@@ -19,35 +21,32 @@ function normalizeTodo(raw: Partial<Todo>): Todo | null {
   }
 }
 
-/** 从 localStorage 读取；首次启动（无缓存）时写入示例待办 */
+/**
+ * 把盘上的原始列表规范成内存里的待办表（**首屏加载与跨标签页同步共用**，§11.1）。
+ * 同一 id 只保留首条：外部篡改可能造出重复 id，会让待办列表的 v-for key 冲突。
+ */
+function reviveTodos(raw: unknown[]): Todo[] {
+  const seen = new Set<string>()
+  return raw
+    .filter((item): item is Partial<Todo> => Boolean(item) && typeof item === 'object')
+    .map((item) => normalizeTodo(item))
+    .filter((item): item is Todo => item !== null)
+    .filter((todo) => {
+      if (seen.has(todo.id)) return false
+      seen.add(todo.id)
+      return true
+    })
+}
+
+/** 读待办；首次启动（键不存在）时写入示例待办 */
 function loadTodos(): Todo[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) {
-      const seed = createSeedTodos()
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-      return seed
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[dashboard] localStorage 数据格式异常，已重置为空待办')
-      return []
-    }
-    // 同一 id 只保留首条：外部篡改可能造出重复 id，会让待办列表的 v-for key 冲突
-    const seen = new Set<string>()
-    return parsed
-      .filter((item): item is Partial<Todo> => Boolean(item) && typeof item === 'object')
-      .map((item) => normalizeTodo(item))
-      .filter((item): item is Todo => item !== null)
-      .filter((todo) => {
-        if (seen.has(todo.id)) return false
-        seen.add(todo.id)
-        return true
-      })
-  } catch (error) {
-    console.warn('[dashboard] 读取 localStorage 失败：', error)
-    return []
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) {
+    const seed = createSeedTodos()
+    writeJSON(STORAGE_KEY, seed)
+    return seed
   }
+  return reviveTodos(stored)
 }
 
 /**
@@ -59,17 +58,8 @@ function loadTodos(): Todo[] {
 export const useDashboardStore = defineStore('dashboard', () => {
   const todos = ref<Todo[]>(loadTodos())
 
-  watch(
-    todos,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.warn('[dashboard] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
+  syncPersisted(STORAGE_KEY, todos, reviveTodos)
 
   /** 切换一条待办的完成状态；目标不存在返回 false */
   function toggle(id: string): boolean {

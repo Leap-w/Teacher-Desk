@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedWeekendReturns } from '@/services/mock'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { addDaysToDateKey, formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
@@ -20,6 +22,33 @@ import type { WeekendReturnRecord } from '@/types/weekend'
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
 
 /**
+ * 把盘上的原始列表规范成内存里的返家记录（**首屏加载与跨标签页同步共用**，§11.1）。
+ *
+ * 两重去重，都只保留首条：同一 id（重复 id 会让列表的 v-for key 冲突）；
+ * 同一「学生 + 周末」——本模块的不变量是一条记录对应一个学生一个周末，
+ * 篡改出的重复项会让名单里同一个人出现两次、把返家人数算多、留校人数算少
+ * （留校 = 在读人数 − 在读返家人数，`stayCountOf` 以此为前提）。
+ */
+function reviveReturns(raw: unknown[]): WeekendReturnRecord[] {
+  const seenIds = new Set<string>()
+  const seenPairs = new Set<string>()
+  const records = raw
+    .map((item) => normalizeWeekendReturn(item))
+    .filter((item): item is WeekendReturnRecord => item !== null)
+    .filter((item) => {
+      const pair = `${item.studentId}|${item.weekendDate}`
+      if (seenIds.has(item.id) || seenPairs.has(pair)) return false
+      seenIds.add(item.id)
+      seenPairs.add(pair)
+      return true
+    })
+  if (records.length < raw.length) {
+    console.warn(`[weekend] 丢弃 ${raw.length - records.length} 条不合法的返家记录（缓存原文保留）`)
+  }
+  return records
+}
+
+/**
  * 从 localStorage 读取周末返家记录；首次启动（无缓存）时写入示例数据。
  *
  * 与课表 / 请假 / 值日同口径：**缓存损坏（非 JSON / 非数组）时降级为空列表，不重播示例数据**
@@ -32,49 +61,18 @@ const STORAGE_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
  * （即学生档案同为示例数据）才播种（§11.3）；不播种时**不写盘**，下次启动还会再判一次。
  */
 function loadReturns(students: Student[]): WeekendReturnRecord[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) {
-      const seed = createSeedWeekendReturns()
-      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里，
-      // 只看 id 是否存在，会把「已把示例学生全部退档」的教师也算成「档案仍是示例数据」，
-      // 于是给人家凭空播种 5 条已退档学生的返家记录。退档不算在档案里（§9.17 审查修复）
-      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-      if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-      return seed
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[weekend] localStorage 数据格式异常，已重置为空列表')
-      return []
-    }
-    // 两重去重，都只保留首条：同一 id（重复 id 会让列表的 v-for key 冲突）；
-    // 同一「学生 + 周末」——本模块的不变量是一条记录对应一个学生一个周末，
-    // 篡改出的重复项会让名单里同一个人出现两次、把返家人数算多、留校人数算少
-    // （留校 = 在读人数 − 在读返家人数，`stayCountOf` 以此为前提）
-    const seenIds = new Set<string>()
-    const seenPairs = new Set<string>()
-    const records = parsed
-      .map((item) => normalizeWeekendReturn(item))
-      .filter((item): item is WeekendReturnRecord => item !== null)
-      .filter((item) => {
-        const pair = `${item.studentId}|${item.weekendDate}`
-        if (seenIds.has(item.id) || seenPairs.has(pair)) return false
-        seenIds.add(item.id)
-        seenPairs.add(pair)
-        return true
-      })
-    if (records.length < parsed.length) {
-      console.warn(
-        `[weekend] 丢弃 ${parsed.length - records.length} 条不合法的返家记录（缓存原文保留）`,
-      )
-    }
-    return records
-  } catch (error) {
-    console.warn('[weekend] 读取 localStorage 失败：', error)
-    return []
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) {
+    const seed = createSeedWeekendReturns()
+    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里，
+    // 只看 id 是否存在，会把「已把示例学生全部退档」的教师也算成「档案仍是示例数据」，
+    // 于是给人家凭空播种 5 条已退档学生的返家记录。退档不算在档案里（§9.17 审查修复）
+    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
+    if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
+    writeJSON(STORAGE_KEY, seed)
+    return seed
   }
+  return reviveReturns(stored)
 }
 
 /**
@@ -121,16 +119,10 @@ export const useWeekendStore = defineStore('weekend', () => {
     withStudentNames(loadReturns(studentStore.students), studentStore.students),
   )
 
-  watch(
-    records,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.warn('[weekend] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
+  // 归一化里带上姓名快照刷新，与首屏加载那条路径**给出一致的结果**（同 `stores/leave.ts` 的说明）
+  syncPersisted(STORAGE_KEY, records, (raw) =>
+    withStudentNames(reviveReturns(raw), studentStore.students),
   )
 
   /** 今天（日期键）、本周末与下周末（周六键），与工作台 / 课表同一个共享时钟 */

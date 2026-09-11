@@ -4,6 +4,8 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedLeaves } from '@/services/mock'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
@@ -22,6 +24,26 @@ import type { LeaveInput, LeaveRecord, LeaveStatus, LeaveType } from '@/types/le
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 
 /**
+ * 把盘上的原始列表规范成内存里的请假记录（**首屏加载与跨标签页同步共用**，§11.1）。
+ * 同一 id 只保留首条（重复 id 会让列表的 v-for key 冲突），丢弃条目时告警但保留缓存原文。
+ */
+function reviveLeaves(raw: unknown[]): LeaveRecord[] {
+  const seen = new Set<string>()
+  const records = raw
+    .map((item) => normalizeLeaveRecord(item))
+    .filter((item): item is LeaveRecord => item !== null)
+    .filter((item) => {
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    })
+  if (records.length < raw.length) {
+    console.warn(`[leave] 丢弃 ${raw.length - records.length} 条不合法的请假记录（缓存原文保留）`)
+  }
+  return records
+}
+
+/**
  * 从 localStorage 读取请假记录；首次启动（无缓存）时写入示例数据。
  *
  * 与课表同口径：**缓存损坏（非 JSON / 非数组）时降级为空列表，不重播示例数据**
@@ -34,41 +56,16 @@ const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
  * 主键，只在示例学生**都还在读**时（即学生档案同为示例数据）才播种（§11.3）。
  */
 function loadLeaves(students: Student[]): LeaveRecord[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) {
-      const seed = createSeedLeaves()
-      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
-      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-      if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-      return seed
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[leave] localStorage 数据格式异常，已重置为空列表')
-      return []
-    }
-    // 同一 id 只保留首条：外部篡改可能造出重复 id，会让列表的 v-for key 冲突
-    const seen = new Set<string>()
-    const records = parsed
-      .map((item) => normalizeLeaveRecord(item))
-      .filter((item): item is LeaveRecord => item !== null)
-      .filter((item) => {
-        if (seen.has(item.id)) return false
-        seen.add(item.id)
-        return true
-      })
-    if (records.length < parsed.length) {
-      console.warn(
-        `[leave] 丢弃 ${parsed.length - records.length} 条不合法的请假记录（缓存原文保留）`,
-      )
-    }
-    return records
-  } catch (error) {
-    console.warn('[leave] 读取 localStorage 失败：', error)
-    return []
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) {
+    const seed = createSeedLeaves()
+    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
+    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
+    if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
+    writeJSON(STORAGE_KEY, seed)
+    return seed
   }
+  return reviveLeaves(stored)
 }
 
 /**
@@ -113,16 +110,12 @@ export const useLeaveStore = defineStore('leave', () => {
     withStudentNames(loadLeaves(studentStore.students), studentStore.students),
   )
 
-  watch(
-    leaves,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        console.warn('[leave] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
+  // 归一化里带上姓名快照刷新，与首屏加载那条路径**给出一致的结果**——
+  // 只跑 reviveLeaves 的话，别人改了学生姓名后再广播请假记录，本页会把旧快照吃进内存，
+  // 而列表中显示的正是这份快照（§11.1 同一份规则，两条路径不许分叉）
+  syncPersisted(STORAGE_KEY, leaves, (raw) =>
+    withStudentNames(reviveLeaves(raw), studentStore.students),
   )
 
   /** 在档案中的学生（新增 / 编辑只能选在读学生） */

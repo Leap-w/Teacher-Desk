@@ -1,4 +1,5 @@
 import { appConfig } from '@/config'
+import type { StoragePort } from '@/services/storage'
 import { isSampleRecordId } from '@/utils/id'
 import { isPlainObject } from '@/utils/object'
 
@@ -479,16 +480,13 @@ export function planClearSamples(
   return { writes, removed }
 }
 
-/* ---------- 写盘（唯一出口，全部可注入，便于自检脚本替换） ---------- */
+/* ---------- 写盘（全部可注入，便于自检脚本替换） ---------- */
 
-/** 本机存储端口（实现即 window.localStorage，自检脚本用内存 Map 顶替） */
-export interface StoragePort {
-  read(key: string): string | null
-  write(key: string, value: string): void
-  remove(key: string): void
-  /** 列出全部键（清空全部数据用；需覆盖本模块不认识的历史 / 未来键，不能写死键名） */
-  list(): string[]
-}
+/**
+ * 本机存储端口：接口与实现已上收到 `services/storage.ts`（Phase 9A 起它是全应用读写
+ * localStorage 的唯一出口）——这里只把它当入参类型用，`applyWrites` / `clearAllKeys`
+ * 的调用形状没有变（自检脚本照旧用内存 Map 顶替同一个接口）。
+ */
 
 export type CommitOutcome =
   | { ok: true; count: number }

@@ -2,6 +2,8 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
+import { readList } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import { isPairConstraintType } from '@/utils/constraint'
 import { useStudentStore } from '@/stores/student'
@@ -38,31 +40,21 @@ function normalizeConstraint(raw: unknown): SeatConstraint | null {
   }
 }
 
-function persist(value: SeatConstraint[]) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-  } catch (error) {
-    console.warn('[constraint] 写入 localStorage 失败：', error)
-  }
+/**
+ * 把盘上的原始列表规范成内存里的约束表（**首屏加载与跨标签页同步共用**，§11.1）：
+ * 逐条只信合法字段，非法即丢弃。
+ */
+function reviveConstraints(raw: unknown[]): SeatConstraint[] {
+  return raw
+    .map((item) => normalizeConstraint(item))
+    .filter((item): item is SeatConstraint => item !== null)
 }
 
-/** 从 localStorage 读取约束；守卫策略同 student / seat store，键不存在返回空（首次不写盘） */
+/** 从本地存储读取约束；守卫策略同 student / seat store，键不存在返回空（首次不写盘） */
 function loadConstraints(): SeatConstraint[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) return []
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[constraint] localStorage 约束数据格式异常，已重置为空')
-      return []
-    }
-    return parsed
-      .map((item) => normalizeConstraint(item))
-      .filter((item): item is SeatConstraint => item !== null)
-  } catch (error) {
-    console.warn('[constraint] 读取 localStorage 失败：', error)
-    return []
-  }
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) return []
+  return reviveConstraints(stored)
 }
 
 export const useConstraintStore = defineStore('constraint', () => {
@@ -71,13 +63,8 @@ export const useConstraintStore = defineStore('constraint', () => {
 
   const items = ref<SeatConstraint[]>(loadConstraints())
 
-  watch(
-    items,
-    (value) => {
-      persist(value)
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
+  syncPersisted(STORAGE_KEY, items, reviveConstraints)
 
   /**
    * 新增一条约束：双人型（不能同桌 / 不能相邻 / 同区块）必须提供互异的第二位学生；

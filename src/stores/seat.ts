@@ -2,6 +2,8 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import {
   buildSeatGrid,
@@ -59,19 +61,10 @@ function studentProfiles() {
   }))
 }
 
-function persist(value: SeatPlan[]) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-  } catch (error) {
-    // 存储配额耗尽 / 隐私模式等写入失败时不应中断应用运行（同 student store）
-    console.warn('[seat] 写入 localStorage 失败：', error)
-  }
-}
-
 /** 首次启动（键不存在）：建一个「开学初」当前方案，学生按 seatNumber 自动就座 */
 function seedPlans(): SeatPlan[] {
   const plan: SeatPlan = { ...createSeatPlan('开学初', studentProfiles()), isCurrent: true }
-  persist([plan])
+  writeJSON(STORAGE_KEY, [plan])
   return [plan]
 }
 
@@ -85,25 +78,20 @@ function ensureSingleCurrent(plans: SeatPlan[]): SeatPlan[] {
   })
 }
 
-/** 从 localStorage 读取座位方案；守卫与升级策略同 student store（§3.2 数据安全保护） */
+/** 把盘上的原始列表规范成内存里的座位方案表（**首屏加载与跨标签页同步共用**，§11.1） */
+function reviveSeatPlans(raw: unknown[]): SeatPlan[] {
+  return ensureSingleCurrent(
+    raw
+      .filter((item): item is SeatPlan => Boolean(item) && typeof item === 'object')
+      .map((item) => normalizeSeatPlan(item as Partial<SeatPlan>)),
+  )
+}
+
+/** 从本地存储读取座位方案；守卫与升级策略同 student store（§3.2 数据安全保护） */
 function loadSeatPlans(): SeatPlan[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) return seedPlans()
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      console.warn('[seat] localStorage 座位方案数据格式异常，已重置为空')
-      return []
-    }
-    return ensureSingleCurrent(
-      parsed
-        .filter((item): item is SeatPlan => Boolean(item) && typeof item === 'object')
-        .map((item) => normalizeSeatPlan(item as Partial<SeatPlan>)),
-    )
-  } catch (error) {
-    console.warn('[seat] 读取 localStorage 失败：', error)
-    return []
-  }
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) return seedPlans()
+  return reviveSeatPlans(stored)
 }
 
 export const useSeatStore = defineStore('seat', () => {
@@ -119,13 +107,16 @@ export const useSeatStore = defineStore('seat', () => {
   /** 全部座位方案（含历史方案；数组顺序即创建顺序） */
   const plans = ref<SeatPlan[]>(loadSeatPlans())
 
-  watch(
-    plans,
-    (value) => {
-      persist(value)
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
+  syncPersisted(STORAGE_KEY, plans, reviveSeatPlans)
+
+  // 同步路径**不重新清扫悬空座位**（`sweepDanglingSeats` 只在启动时与删除学生时跑）：
+  // 清扫的输入是**学生**（另一个键），而这里收到的是座位方案的变更。实测这个缺口进不来——
+  // 能改座位方案的入口只有两类：本页的排座操作（写入前自己先清扫），
+  // 以及导入备份 / 清空数据（走 `broadcastReload` 整页重载，重载后启动清扫照跑）。
+  // 真正会留下悬空座位的路径是「A 页删学生、B 页同时排座」，那需要 B 页在**没有座位广播**的
+  // 情况下自己发起写入——而排座操作本身就会先清扫一次。把清扫挂到这里反而更糟：
+  // 学生键的变更会触发全体座位方案的写盘广播（座位上本没有任何变化）。
 
   /** 当前方案（方案切换后唯一 isCurrent）；无方案时为 undefined */
   const currentPlan = computed(() => plans.value.find((plan) => plan.isCurrent))

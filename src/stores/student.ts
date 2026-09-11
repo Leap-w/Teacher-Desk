@@ -1,37 +1,36 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createSeedStudents } from '@/services/mock'
+import { readList, writeJSON } from '@/services/storage'
+import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import { normalizeStudent } from '@/utils/student'
 import type { Gender, Student, StudentInput } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:students`
 
-/** 从 localStorage 读取；首次启动（无缓存）时写入示例数据 */
+/**
+ * 把盘上的原始列表规范成内存里的学生表：丢弃非对象条目，逐条 normalize 补齐
+ * 旧数据缺的家庭信息等字段。**首屏加载与跨标签页同步共用这一份**——
+ * 两条路径各写一套，规则迟早分叉（§11.1）。
+ */
+function reviveStudents(raw: unknown[]): Student[] {
+  return raw
+    .filter((item): item is Student => Boolean(item) && typeof item === 'object')
+    .map((item) => normalizeStudent(item))
+}
+
+/** 读学生表；首次启动（键不存在）时写入示例数据 */
 function loadStudents(): Student[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw === null) {
-      const seed = createSeedStudents()
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
-      return seed
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (!Array.isArray(parsed)) {
-      // 内容被外部改动（如手工编辑）成非数组时兜底为空，避免后续 .filter 崩溃
-      console.warn('[student] localStorage 数据格式异常，已重置为空列表')
-      return []
-    }
-    // 旧数据升级：逐条 normalize 补齐家庭信息等新增字段的安全默认值
-    return parsed
-      .filter((item): item is Student => Boolean(item) && typeof item === 'object')
-      .map((item) => normalizeStudent(item))
-  } catch (error) {
-    console.warn('[student] 读取 localStorage 失败：', error)
-    return []
+  const stored = readList(STORAGE_KEY)
+  if (stored === null) {
+    const seed = createSeedStudents()
+    writeJSON(STORAGE_KEY, seed)
+    return seed
   }
+  return reviveStudents(stored)
 }
 
 export interface StudentSearchOptions {
@@ -46,18 +45,10 @@ export const useStudentStore = defineStore('student', () => {
   /** 未删除学生 */
   const activeStudents = computed(() => students.value.filter((item) => !item.deletedAt))
 
-  watch(
-    students,
-    (value) => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-      } catch (error) {
-        // 存储配额耗尽 / 隐私模式等写入失败时不应中断应用运行
-        console.warn('[student] 写入 localStorage 失败：', error)
-      }
-    },
-    { deep: true },
-  )
+  // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
+  // 写盘是幂等的（见 services/storage.ts），所以「收到远端更新 → 替换内存 → 触发写盘」
+  // 这条链在第二次写盘处自然终止，不会两个入口互相触发
+  syncPersisted(STORAGE_KEY, students, reviveStudents)
 
   /** 关键词搜索 + 筛选（仅活跃学生），按学号升序返回 */
   function searchStudents(keyword = '', options: StudentSearchOptions = {}): Student[] {

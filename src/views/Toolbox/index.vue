@@ -4,6 +4,8 @@ import { computed, onMounted, ref } from 'vue'
 import { AppButton, AppCard, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
+import { localStoragePort } from '@/services/storage'
+import { broadcastReload } from '@/services/sync'
 import {
   LAST_BACKUP_KEY,
   LEGACY_CLEAR_MODULES,
@@ -21,7 +23,6 @@ import {
   type ClearPlan,
   type CommitOutcome,
   type MergeStat,
-  type StoragePort,
 } from '@/utils/backup'
 import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
 
@@ -37,33 +38,11 @@ const toast = useToast()
 const NOTICE_KEY = `${appConfig.storageKeyPrefix}:notice`
 
 /**
- * 本机存储端口：读不到（隐私模式等）不是错误，按「没有数据」处理；
- * 写失败必须让调用方知道，故不吞异常——由 utils/backup.ts 整批回滚。
+ * 本机存储端口：Phase 9A 起实现上收到 `services/storage.ts`（那里是全应用读写 localStorage
+ * 的唯一出口），本页只借用——读不到（隐私模式等）不是错误，按「没有数据」处理；
+ * 写失败必须让调用方知道，故它不吞异常——由 utils/backup.ts 整批回滚。
  */
-const storage: StoragePort = {
-  read(key) {
-    try {
-      return window.localStorage.getItem(key)
-    } catch {
-      return null
-    }
-  },
-  write(key, value) {
-    window.localStorage.setItem(key, value)
-  },
-  remove(key) {
-    window.localStorage.removeItem(key)
-  },
-  /** 枚举全部键用规范 API（length + key(i)），不依赖 Object.keys 的实现细节 */
-  list() {
-    const keys: string[] = []
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index)
-      if (key !== null) keys.push(key)
-    }
-    return keys
-  },
-}
+const storage = localStoragePort
 
 function readAll() {
   return readModules((key) => storage.read(key))
@@ -121,8 +100,16 @@ const lastBackupText = computed(() => {
 
 /* ---------- 写盘收尾（成功 / 失败两条路，绝不混说） ---------- */
 
-/** 成功收尾：写一次性提示 → 重载，由各 store 的 normalize* 重新加载 */
+/**
+ * 成功收尾：先广播 → 写一次性提示 → 重载，由各 store 的 normalize* 重新加载。
+ *
+ * 广播（Phase 9A）必须在重载**之前**：导入备份 / 清空数据是**整批换数据**
+ * （键可能新增、也可能消失），别的入口没法逐键对齐，只能整页重来。
+ * 少了这一句，另一个标签页内存里还留着旧数据，教师下一次编辑就会把刚导入的整份覆盖掉
+ * ——那正是技术债 #2 的另一半。
+ */
 function finish(notice: string): void {
+  broadcastReload()
   setNotice(notice)
   try {
     window.location.reload()
