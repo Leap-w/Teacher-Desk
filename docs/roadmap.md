@@ -1,8 +1,10 @@
 # TeacherDesk 路线图
 
-> 同步自 `docs/开发手册.md` §10（2026-09-12 **Phase 12 开发完成、待真机验收**时更新）。两份文档冲突时以开发手册为准。
+> 同步自 `docs/开发手册.md` §10（2026-09-12 **`v1.0.0` 正式上线、Phase 12 随版入库、待在真机验收**时更新）。两份文档冲突时以开发手册为准。
 >
-> **2026-09-12 交付进展（Phase 12）**：**Phase 12 macOS Widget 代码开发完成，等待真实 macOS Widget 验收；暂不提交**（**未打 tag**；完整记录见开发手册 §9.22）。① **位置在 `macos/`**——一个与 Web 项目**并列**的独立 Xcode 工程（35 个文件：21 个 Swift / 2,736 行 + 2 个 shell / 224 行 + 12 个配置与文档），**Web/PWA 侧一行未改**（`src/`、八个业务 store、`cloudSync`、`RemotePort` 全部原样，Phase 9C 的 81 项测试仍全绿；`npm run build` 的出口数字与 9C 交付时**逐位相同**）；② **两个 target**：宿主 App `com.teacherdesk.mac` + Widget 扩展 `com.teacherdesk.mac.widget`，`MACOSX_DEPLOYMENT_TARGET = 14.0`，`project.pbxproj` 手写、附 `project.yml` 作退路；③ **三个只读 Widget**（**今日课程 / 今日待办 / 班级概况**，各支持 Small / Medium / Large，**不增第四类**）；④ **数据通路**：宿主 App 直连 CloudBase 拉那四份文档 → 组装成只读快照 → 写 `~/Library/Application Support/TeacherDesk/widget-snapshot.json` → **Widget 只读这一个文件**（不联网、不写数据、不认识 CloudBase）；⑤ **协议层手写**（`CloudBaseClient.swift`，**不引 SDK**），网关与凭据形状从 SDK 的 `sourcesContent` 原文读出并用 curl 在真实网关验过——**但被验的是鉴权那一段，数据库查询那一段要到第一次真机登录才第一次真跑**；⑥ **不开 App Sandbox、不用 App Groups、ad-hoc 签名**（依据：不上架、只自己用）——代价是「Widget 不联网」由系统强制降级成代码纪律；⑦ **`sh Tools/verify.sh` 六档全绿**（配置 / JSON / 类型检查 15 + 14 个文件 / 冒烟测试 29 项 / `xcodebuild -list` 两个 target / **BUILD SUCCEEDED**）。**⚠️ 七项真机验收一项都没验**——Widget 能否被系统组件库加载、三个是否都能添加到桌面、三种尺寸渲染、刷新是否生效、点击能否跳转、样例快照在真机上的显示、真实登录能否取到云端数据——**七项全部待验**（清单见下方 Phase 12 一节）。**验收通过再提交并打 tag（预留 `v0.15.0`）；验收不过只改不过的那一处。**
+> **2026-09-12 正式上线（`v1.0.0`）**：**Web / PWA 发布到 CloudBase 静态网站托管**——部署方式为**声明式**（新增 `cloudbaserc.json`：`framework: vite` / `buildCommand: npm run build` / `outputDir: dist` / `deployPath: /`，以及 `npm run deploy` = `tcb deploy`），一条命令走完「安装依赖 → 构建 → 上传产物」。**发布位置与数据库、鉴权是同一个环境**（`teacher-desk-d6gdsgqb8f9dc13d2`）。**访问地址（2026-09-12 由 CLI 实测读出）**：`https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com`——**带 `-1454430270` 后缀**，不是环境 ID 直拼。**哈希路由**（`#/…`）让静态托管**不需要配 SPA 回退重写**；默认域名**自带 HTTPS**（PWA 的硬前提）。**发布前要在控制台做两件事，2026-09-12 已核对均已就绪**：① 静态网站托管**已开通**（CLI 报状态「已上线」）；② 本环境静态托管域名**默认就在**「环境配置 → 安全来源」里（**不在的话页面能打开，但登录与同步会被云端拒**）。✅ **已发布上线（2026-09-12）**：`--dry-run` 与真实上传都跑通——单资源 `teacherdesk`、路径 `/`、46 个文件上传成功、**`deleted: 0`**（云端自带的 `__auth/`、`cloud-admin/` 等 9 个一个没动，云端共 55 个文件）。线上 `curl` 验证 `/`、`manifest.webmanifest`、`sw.js`、图标、入口 chunk 全部 200。⚠️ **两个已知首屏问题**（实测）：**未启用 gzip**（入口 chunk 传 917,700 字节而非 251 kB）、**默认 `cache-control: no-store`**（可在控制台缓存配置按后缀改）。退路 `tcb hosting deploy dist / -e <环境ID>` 未用到。⚠️ **上线后第一个真实问题出在登录**：生产站点首次登录被拒（`FIRST_LOGIN_PASSWORD_UPDATE_REQUIRED`——环境开着「首次登录强制改密」而账号从未登录过，且应用里没有改密码的界面）；**判定是动态的**，关掉策略后同一密码立刻登录成功（实测，见开发手册 §9.20 第 6 条）。**至此 Web/PWA 端到端走通：打开 → 登录 → 可用。****本版同时把 Phase 12 的 `macos/` 首次带进仓库**（见下条），版号四处同步为 `1.0.0`（含 macOS 侧 `MARKETING_VERSION`，由预留的 `0.15.0` 定版）。
+>
+> **2026-09-12 交付进展（Phase 12）**：**Phase 12 macOS Widget 代码已随 `v1.0.0` 入库；七项真机验收一项都没验**（完整记录见开发手册 §9.22）。① **位置在 `macos/`**——一个与 Web 项目**并列**的独立 Xcode 工程（35 个文件：21 个 Swift / 2,736 行 + 2 个 shell / 224 行 + 12 个配置与文档），**Web/PWA 侧一行未改**（`src/`、八个业务 store、`cloudSync`、`RemotePort` 全部原样，Phase 9C 的 81 项测试仍全绿；`npm run build` 的出口数字与 9C 交付时**逐位相同**）；② **两个 target**：宿主 App `com.teacherdesk.mac` + Widget 扩展 `com.teacherdesk.mac.widget`，`MACOSX_DEPLOYMENT_TARGET = 14.0`，`project.pbxproj` 手写、附 `project.yml` 作退路；③ **三个只读 Widget**（**今日课程 / 今日待办 / 班级概况**，各支持 Small / Medium / Large，**不增第四类**）；④ **数据通路**：宿主 App 直连 CloudBase 拉那四份文档 → 组装成只读快照 → 写 `~/Library/Application Support/TeacherDesk/widget-snapshot.json` → **Widget 只读这一个文件**（不联网、不写数据、不认识 CloudBase）；⑤ **协议层手写**（`CloudBaseClient.swift`，**不引 SDK**），网关与凭据形状从 SDK 的 `sourcesContent` 原文读出并用 curl 在真实网关验过——**但被验的是鉴权那一段，数据库查询那一段要到第一次真机登录才第一次真跑**；⑥ **不开 App Sandbox、不用 App Groups、ad-hoc 签名**（依据：不上架、只自己用）——代价是「Widget 不联网」由系统强制降级成代码纪律；⑦ **`sh Tools/verify.sh` 六档全绿**（配置 / JSON / 类型检查 15 + 14 个文件 / 冒烟测试 29 项 / `xcodebuild -list` 两个 target / **BUILD SUCCEEDED**）。**⚠️ 七项真机验收一项都没验**——Widget 能否被系统组件库加载、三个是否都能添加到桌面、三种尺寸渲染、刷新是否生效、点击能否跳转、样例快照在真机上的显示、真实登录能否取到云端数据——**七项全部待验**（清单见下方 Phase 12 一节）。**入库与验收解耦**：代码已随 `v1.0.0` 进仓库，验收不通过时**只改不过的那一处**。
 >
 > **2026-09-12 交付进展（Phase 9C）**：**Phase 9C 已交付**（tag `v0.14.1`，见开发手册 §9.21）——**稳定性与回归测试基线，不新增任何业务功能、页面或模块**。① **引入 Vitest**（唯一新增开发依赖，`npm run test` = `vitest run`、`npm run test:watch`），落下**四类常驻回归测试共 81 项**：同步冲突判定 21 / 写盘幂等与「存储唯一出口」12 / 各域 `revive*` 与 normalize 38 / 断网与刷新下的同步队列 + 首次同步保护 10——**全部不依赖真实 CloudBase、不需要网络**，从此改同步判定、存储层、`revive*` 或备份清空都有测试兜着，不必再临时写脚本；② **首次同步收紧**：本机已有教师录入的真实数据而云端也有时**不再静默覆盖**（9B 时以云端为准＝整份替换），改为报出待裁决的键、本机与云端一字未动，由教师在工具箱里选「保留本机并上传 / 保留云端并覆盖本机」——**不做复杂合并 UI、不做字段级合并**（情况 1「本机没有真实数据」仍以云端为准，新设备装上就该看到已有数据）；③ 「清空全部数据」**改名为「清空本机数据」**并在已登录时说明「不会删除云端数据，下次同步时可能重新出现在本机」，**文案之外没有行为改动**；④ 写常驻测试时**顺手抓出一个数据安全缺陷并修掉**：`normalizeStudent` 没兜 `name`，缓存缺姓名时 `SeatClassroom.vue` / `SeatExportGraphic.vue` 的 `name.charAt(0)` 会抛错打断整页座位图渲染；⑤ **CloudBase SDK 的包体做了实测与可行性分析，但只分析不实施**——入口 chunk 917.70 kB / gzip 251.43 kB，其中 SDK 占 773.32 kB 原始 / 195.55 kB gzip 且在首屏静态路径上；改成 `await import(...)` 可行（全应用只有一处 import），但会动到登录链路，建议放到 Phase 12 之后或一个专门的小版本（见开发手册 §9.21 §十一）。**至此 Phase 9（后端接入）三步走完**：9A 本机存储层与同设备同步、9B 跨设备云端同步、9C 把这两层的关键行为看住。**路线图同日重排**：**Phase 10 取消**、**Phase 11 不作为独立模块开发**、**Phase 12 macOS Widget 保留**（见下方各节）。
 >
@@ -247,9 +249,9 @@
 >
 > ⚠️ 若真有那一天，交付时要一并处理的（**先记在这里，免得当天临时拍**）：`teacherdesk:dashboard:todos` 已是**数据管理八个数据块之一**、也是**首页卡片之一**——**存储键不要改**（备份文件的块标签按 key 反查，改了旧备份会对不上）。
 
-## Phase 12 🔶 macOS Widget（**代码开发完成，待 macOS 真机 Widget 验收**；路线图上的最后一格）
+## Phase 12 🔶 macOS Widget（**代码已随 `v1.0.0` 入库，七项真机验收仍未做**；路线图上的最后一格）
 
-> **Phase 12：开发完成，待 macOS 真机 Widget 验收。** 代码在 `macos/`（独立 Xcode 工程，**与 Web 项目并列**，Web 侧一行未改），**未提交、未打 tag**（预留 `v0.15.0`）。完整记录见开发手册 **§9.22**，交付内容见 `docs/CHANGELOG.md` 的 `v0.15.0` 条。
+> **Phase 12：代码已随 `v1.0.0` 入库（2026-09-12），但七项真机验收一项都还没验。** 代码在 `macos/`（独立 Xcode 工程，**与 Web 项目并列**，Web 侧应用代码一行未改）。**入库与验收是两件事**——它随版进仓库，是「上线这个版本时它已经在里面」的结果，**不是验收结论**。完整记录见开发手册 **§9.22**，交付内容见 `docs/CHANGELOG.md` 的 `v1.0.0` 条（Phase 12 部分）。
 >
 > **⚠️ 不要写成「已完成」**——下面七项**一项都没验**，它们只有真实 macOS 桌面能回答：
 >
@@ -261,7 +263,7 @@
 > 6. **样例快照在真实桌面上显示是否正确**（`sh Tools/use-sample-snapshot.sh` 铺一份假数据，**不登录也能验第 1–5 项**）；
 > 7. **真实登录能否取到云端数据**（会第一次真跑那段没能 curl 验证的数据库查询路径）。
 >
-> **建议顺序**：铺样例 → Xcode 里 Run 一次宿主 App → 把三个 Widget 加到桌面（第 1–6 项）→ 再登录验第 7 项。**前六项不过，第七项不用试**（它们证明的是「Widget 这个壳能不能用」，与数据无关）。**验收通过再提交；不过就只改不过的那一处**——若卡在第 1 项，那才轮到 App Sandbox + App Groups 方案（两个 `.entitlements` 里已写好要加哪几个键）。
+> **建议顺序**：铺样例 → Xcode 里 Run 一次宿主 App → 把三个 Widget 加到桌面（第 1–6 项）→ 再登录验第 7 项。**前六项不过，第七项不用试**（它们证明的是「Widget 这个壳能不能用」，与数据无关）。**代码已入库，验收不通过时只改不过的那一处**——若卡在第 1 项，那才轮到 App Sandbox + App Groups 方案（两个 `.entitlements` 里已写好要加哪几个键）。
 
 **已经做完并自检通过的部分**（`sh Tools/verify.sh` 六档全绿：配置语法 / JSON / 类型检查 15 + 14 个文件 / 冒烟测试 29 项断言 / `xcodebuild -list` / **BUILD SUCCEEDED**）：
 

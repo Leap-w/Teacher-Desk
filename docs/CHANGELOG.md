@@ -6,15 +6,48 @@
 
 ---
 
-## v0.15.0 —— Phase 12：macOS 原生 Widget（**代码已完成，待在真实 macOS 桌面上验收；未提交、未打 tag**）
+## v1.0.0 —— 正式上线（2026-09-12）
 
-> **这一条与上面所有条目的性质不同：它不是一次交付记录，而是一份「待验收」的现状。** macOS 侧的代码已写完、工程自检全绿（见下方「验证」），但**它从没在真实桌面上跑过**——Widget 能不能被系统的小组件库加载、三种尺寸渲染成什么样、刷新与点击跳转是否真的成立，**一件都没验过**（七项清单见下）。因此：**代码留在工作区、暂不提交**（§八）；验收通过再连同本节一起提交并打 tag，验收不过就只改不过的那一处。**版号 `v0.15.0` 是预留**（Xcode 工程里 `MARKETING_VERSION = 0.15.0`），最终由需求方在打 tag 时定。
+> **这一版两条内容合打一个 tag**，处理方式与 `v0.14.1` 相同：① **正式上线**——Web / PWA 发布到 CloudBase **静态网站托管**（新增 `cloudbaserc.json` 与 `npm run deploy`，见下「正式上线」）；② **Phase 12 入库**——macOS 原生 Widget 的代码（`macos/`，与 Web 项目并列的独立 Xcode 工程）随本版**首次进入仓库**。**`v0.15.0` 从未发过**：它是 Phase 12 收尾时留的预留号，Phase 12 的成果直接并进 `v1.0.0`，所以本文件里**不存在 `v0.15.0` 这一条**。
+
+> **⚠️ 上线的是 Web / PWA。macOS Widget 的七项真机验收，一项都还没验。** 本版把 `macos/` 提交入库，**不是因为验过了**——而是需求方 2026-09-12 拍板以 `v1.0.0` 正式上线：Web 侧是上线主体，macOS 侧属于**随版入库、继续留在真机上验收**。Widget 能否被系统组件库加载、三种尺寸渲染成什么样、刷新与点击跳转是否成立、真实登录能否取到云端数据，**全部仍待验**（七项清单见下）。**在验收通过之前，任何文档里都不要把它写成「已完成」。**
+
+### 正式上线（Web / PWA → CloudBase 静态网站托管）
+
+- ✅ **已发布上线（2026-09-12）**：**https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com**。线上验证通过——`/`（200 / `text/html`）、`manifest.webmanifest`（200 / `application/manifest+json`）、`sw.js`（200 / `application/javascript`）、`favicon.svg`、`icon-192.png`、入口 chunk 全部可访问；云端共 **55 个文件** = 本次上传 46 + 环境自带 9。**`deleted: 0` 得到验证**：`__auth/`、`cloud-admin/` 等一个没动。
+- **发布位置**：**与数据库、鉴权同一个 CloudBase 环境**（`teacher-desk-d6gdsgqb8f9dc13d2`），不另开账号体系。**访问地址**：`https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com`——**带 `-1454430270` 后缀**，不是环境 ID 直拼（本文件与 `README.md`、开发手册早先按「形如环境 ID」写的，**此处更正**）；托管状态**「已上线」**、默认索引文档 `index.html`、错误文档未设（哈希路由不需要）。
+- ⚠️ **首次发布暴露的两个首屏加载问题**（`curl` 读响应头实测，非推测）：① **未启用 gzip**——响应无 `content-encoding`，入口 chunk 传 917,700 字节（gzip 后本应 251 kB），首屏白多下 ~666 kB；官方文档未找到开启 gzip 的开关，**暂记为已知问题**。② **默认不缓存**——所有文件含带哈希的 `assets/*.js` 都是 `cache-control: no-store, no-cache, must-revalidate, max-age=0`；**可在控制台「静态网站托管 → 缓存配置」按后缀调整**（官方建议：图片 30 天 / CSS-JS 7 天 / HTML 1 小时），尚未改。**缓解**：Service Worker 预缓存 48 项（2181.22 KiB），**装成 PWA 后不再走网络**，受影响的只是第一次访问。
+- **发布方式**：**声明式**——新增 `cloudbaserc.json`（`hosting` 字段：`framework: vite` / `buildCommand: npm run build` / `outputDir: dist` / `deployPath: /`，环境 ID 同写在该文件里），新增 `npm run deploy`（= `tcb deploy`）。一条命令走完「安装依赖 → 构建 → 上传产物」，不必手工往控制台拖文件。
+- **为什么是静态网站托管**：CloudBase 官方已**停用 Web 应用托管**，网站类应用走**静态网站托管**；本项目是**纯前端 + CloudBase 数据库 / 鉴权**，**没有任何服务端代码**要跑，正好对上。
+- **不需要 SPA 回退重写**：全应用是**哈希路由**（`#/…`），任何路径都由 `index.html` 承担——静态托管不必配 rewrite / 404 规则。这是哈希路由在上线时白拿的一个便宜。
+- **HTTPS 自带**：默认域名自带证书，这是 PWA 的硬前提（Service Worker 与「添加到主屏幕」在非安全上下文里不工作）。
+- **上线前置（应用之外）**：① 控制台**开通静态网站托管**——**2026-09-12 已核对：已开通**；② 把访问域名加进**安全来源 / Web 安全域名**——**不加，页面能打开，但登录与同步会被云端拒**（与 Phase 9 那三件事同一性质）；**这一项也已满足**，该域名默认就在安全来源里。**两件都已就绪。**
+- **边界**：`vite.config.ts` 的 `base` 保持默认 `/`（部署在站点**根**，不是子路径；哪天要挪到子路径，这里得一起改）；`dist/` 仍是构建产物、**不入库**（`.gitignore` 已覆盖）。
+- ✅ **`--dry-run` 已于 2026-09-12 本机实测通过**（CLI 3.8.1，经 `npx -y -p @cloudbase/cli tcb …` 跑通，**无需全局安装**）：`cloudbaserc.json` 被正确识别，计划为**单个 `hosting` 资源 `teacherdesk`、部署路径 `/`**（`deployPath` 生效，不是默认的 `/服务名`）、构建方式「本地构建（`npm run build`）→ 上传 `dist`」、**46 个文件全部 `added`**、**`modified` 与 `deleted` 均为 0**。最后一点最要紧：云端本有 **9 个环境自带文件**（`__auth/`、`cloud-admin/` 等），**`deleted: 0` 说明发布不会误删它们**。
+- ✅ **真实上传也已跑通**（同日）：`npx -y -p @cloudbase/cli tcb deploy` 完成「本地构建 → 上传」——`built in 1.99s`、`precache 48 entries (2181.22 KiB)`、`[uploadFiles] 全部完成！共处理 45 个文件` + `共处理 1 个文件`、`✔ 部署完成：1 个资源成功`。**退路（文件级上传）未被用到**，留档：`npm run build` 后 `tcb hosting deploy dist / -e teacher-desk-d6gdsgqb8f9dc13d2`。
+- ⚠️ **上线后的第一个真实问题出在登录，不在发布**（同日）：教师在**生产站点**上首次登录被拒，报 **`FIRST_LOGIN_PASSWORD_UPDATE_REQUIRED`（首次登录必须改密码）**。根因：环境开着 `PwdUpdateStrategy.FirstLoginUpdate`，而该账号**从未登录成功过**（`tcb user list` 里它 `LastLoginTime` 为空），于是第一次登录被要求先改密——**而应用里没有改密码的界面**，教师卡死在门口。**判定是动态的**（用户记录里没有 firstLogin 字段），关掉策略后**同一个密码立刻登录成功（实测）**：
+  ```bash
+  npx -y -p @cloudbase/cli tcb env login set -e teacher-desk-d6gdsgqb8f9dc13d2 --first-login-update false
+  ```
+  **改完逐项复核过**：`AnonymousLogin` 仍 `false`、`UserNameLogin` 仍 `true`，只有 `FirstLoginUpdate` 变了。完整记录见开发手册 **§9.20 第 6 条**。**代价如实记下**：登录界面对这个错误码**只显示错误码本身、不给人话**，所以「换环境要记得先关它」只能靠文档。
+- ✅ **借这次一并实证了三件原先只是「应该没问题」的事**：① 从 `tcloudbaseapp.com` 发出的鉴权请求**被云端正常受理**（拿到结构化业务错误，非 `Failed to fetch`，即**安全来源没有拦**）；② 静态托管域名**确实在安全来源列表里**（`tcb cors list` 共 **11** 条，第 1 条即本环境域名——**CLI 表格输出会截断，以 `--json` 的 `meta.total` 为准**）；③ PWA 站点在公网上**能被真实浏览器打开并完成登录**。
+- ✅ **端到端走通：打开 → 登录 → 同步**（2026-09-12，教师在真机上确认「云上和本机一致」）。**并从云端独立复核了一遍**（`tcb db nosql execute`，只取键名不取数据）：云端 `teacherdesk` 集合 **7 个文档**，键为 `students` / `leaves` / `timetable` / `duty` / `weekendReturns` / `dashboard:todos` / `seatPlans`。**本机注册了 8 个持久化键，第 8 个 `seatConstraints` 云端没有——这不是漏同步**：`constraint.ts` 的 store **只读不写、不播种**（对比 `student.ts` 会 `writeSeedJSON` 播种），该键**只有教师真的建过座位约束才会存在**；而 `decideKey` 在「本机无此键 + 云端也无」时返回 `skip`（理由「两边都没有」），且反向也成立——**本机若真有约束，必有内容且云端无 → 走 `push`**。故「7 个有数据的全上去了、第 8 个两边都没有所以什么都没做」，**同步语义在真实环境里得到一次正反两面的确认**。
+
+### 版号（`1.0.0`）
+
+**四处同步改**：`package.json` 的 `version`、`package-lock.json` 的根 `version`（顶层与 `packages[""]`，两处）、`src/config/index.ts` 的 `appConfig.version`（会写进导出备份的 `appVersion` 元信息，纯记录用——**导入兼容判断看的是 `schemaVersion`，与它无关**）、macOS 侧 `MARKETING_VERSION`（`project.pbxproj` 四处 + `project.yml` 一处，由预留的 `0.15.0` 一并改为 `1.0.0`）。
+
+**顺手修掉一处旧的不一致**：`package-lock.json` 的根 `version` 此前停在 `0.14.0`——`v0.14.1` 那次只改了 `package.json` 与 `appConfig.version`，**漏了 lockfile**（它不影响运行，跑一次 `npm install` 就会被改写，但两处对不上是隐患）。本版一并改齐。
+
+### Phase 12：macOS 原生 Widget（随本版入库；**七项真机验收仍未做**）
+
+**本节就是上一版收尾时那条「待验收」内容的正文**（版号由预留的 `v0.15.0` 并入本版）。**状态一字未松口**：代码在手、工程自检六档全绿，**但七项真机验收一项都没验**——它随本版入库，是「上线这个版本时它已经在仓库里」的结果，**不是验收结论**。
 
 **位置**：全部在 `macos/`（与 Web 项目**并列**的独立 Xcode 工程），**Web/PWA 侧一行未改**——`src/`、八个业务 store、`services/cloudSync.ts`、`RemotePort` 一个字节都没动，Phase 9C 的 81 项常驻测试仍全绿。「不动 Web 项目结构来凑 Widget」是规格 §十的原话，也是本阶段的边界。
 
 ### 新增
 
-- **独立的 Xcode 工程 `macos/`**（35 个文件：21 个 Swift / 2,736 行 + 2 个 shell / 224 行 + 12 个配置与文档）：两个 target——宿主 App `com.teacherdesk.mac` 与 Widget 扩展 `com.teacherdesk.mac.widget`，`MACOSX_DEPLOYMENT_TARGET = 14.0`、`SWIFT_VERSION = 5.0`（Swift 5 语言模式）、`MARKETING_VERSION = 0.15.0`。`project.pbxproj` **手写**（不引 XcodeGen 生成），另附 `project.yml` 作为「pbxproj 被改坏 / 想从头重建」的退路。**实测可用**：`plutil -lint`、`xcodebuild -list`（两个 target 都在）、`xcodebuild build` **BUILD SUCCEEDED**（宿主 + 扩展 + 嵌入 + 资源目录）。
+- **独立的 Xcode 工程 `macos/`**（35 个文件：21 个 Swift / 2,736 行 + 2 个 shell / 224 行 + 12 个配置与文档）：两个 target——宿主 App `com.teacherdesk.mac` 与 Widget 扩展 `com.teacherdesk.mac.widget`，`MACOSX_DEPLOYMENT_TARGET = 14.0`、`SWIFT_VERSION = 5.0`（Swift 5 语言模式）、`MARKETING_VERSION = 1.0.0`（本版由预留的 `0.15.0` 定版，见上「版号」）。`project.pbxproj` **手写**（不引 XcodeGen 生成），另附 `project.yml` 作为「pbxproj 被改坏 / 想从头重建」的退路。**实测可用**：`plutil -lint`、`xcodebuild -list`（两个 target 都在）、`xcodebuild build` **BUILD SUCCEEDED**（宿主 + 扩展 + 嵌入 + 资源目录）。
 - **三个只读 Widget**（规格 §三指定的三类，**不增第四类**）：**今日课程**（`TeacherDeskLessonWidget`）、**今日待办**（`TeacherDeskTodoWidget`）、**班级概况**（`TeacherDeskClassWidget`），各自支持 **Small / Medium / Large** 三种尺寸。时间线按「下一个 30 分钟整点」刷新，另在宿主 App 同步成功后调 `WidgetCenter.reloadAllTimelines()` 立即重画。
 - **数据通路**（规格 §五「Widget 不联网」的落地方式）：**宿主 App 直连 CloudBase 拉那四份文档 → 组装成一份只读快照 → 写 `~/Library/Application Support/TeacherDesk/widget-snapshot.json` → Widget 只读这一个文件**。Widget 侧不联网、不写数据、不认识 CloudBase。
 - **手写的 CloudBase 协议层**（`TeacherDesk/CloudBaseClient.swift`）：**不引 `@cloudbase/js-sdk`**（Widget 侧不需要，宿主侧也没必要为四份文档拖进一整个 SDK）。协议不是猜的——网关前缀、`Basic base64("<env>:")` 凭据头、`/v1/signin`、`/v1/token`、文档查询 URL 的拼法，都是从 SDK 的 sourcemap 原文（`sourcesContent`）逐行读出来、再用 curl 在**真实网关**上验证过凭据形状的（有 Basic 头 → `INVALID_CREDENTIALS`，没有 → `MISSING_CREDENTIALS`）。**诚实记一笔：被验证的是鉴权那一段；数据库查询那一段没能这样验**——网关在路由之前就以同一个 401 拒掉任何路径，它要到第一次真机登录才第一次真跑。
@@ -26,7 +59,7 @@
 
 ### 变化
 
-- **Web / PWA 侧没有任何变化**——没有新页面、没有新路由、没有新 store、没有改动任何既有模块。本阶段是**并列新增一个 `macos/` 目录**，Web 项目结构原样不动（规格 §十）。
+- **Web / PWA 侧的应用代码没有任何变化**——没有新页面、没有新路由、没有新 store、没有改动任何既有模块。本阶段是**并列新增一个 `macos/` 目录**，Web 项目结构原样不动（规格 §十）。**本版唯一的 Web 侧新增是部署配置**（`cloudbaserc.json` + `npm run deploy`，见上「正式上线」）——它只在发布时用，**不进应用包、不影响运行时**。
 
 ### 边界（重要，别误会）
 
@@ -43,12 +76,12 @@
 
 ### 验证
 
-- **`sh Tools/verify.sh` 全绿**（六档全过）：配置语法 ✓ 五个文件 / JSON ✓ 四个 / 类型检查 ✓ 15 + 14 个文件 / **冒烟测试 29 项断言全过** / `xcodebuild -list` ✓ 两个 target / **`xcodebuild build` BUILD SUCCEEDED**。工具链：Xcode 26.6 + macOS 26.5 SDK（`xcode-select` 仍指向 Command Line Tools，脚本用 `DEVELOPER_DIR` 局部指定，不需要 sudo）。
-- **Web / PWA 五项验证全绿，标准一条没降**：`prettier --check .`（**收尾时因 `macos/` 的 6 个文件红过一次，已格式化，现在绿**）/ `vue-tsc --noEmit` / `eslint` / **`npm run test`（4 个文件 81 项全过）** / `npm run build`（✓ 1.99s；PWA **48** 条 / **2181.22 KiB**、入口 chunk **917.70 kB**——与 Phase 9C 交付时**逐位相同**，正是「Web 侧一行未改」的旁证）。
+- **`sh Tools/verify.sh` 全绿**（六档全过）：配置语法 ✓ 五个文件 / JSON ✓ 四个 / 类型检查 ✓ 15 + 14 个文件 / **冒烟测试 29 项断言全过** / `xcodebuild -list` ✓ 两个 target / **`xcodebuild build` BUILD SUCCEEDED**。工具链：Xcode 26.6 + macOS 26.5 SDK（`xcode-select` 仍指向 Command Line Tools，脚本用 `DEVELOPER_DIR` 局部指定，不需要 sudo）。**定版后（`MARKETING_VERSION` 由 `0.15.0` 改为 `1.0.0`）整套重跑，仍六档全绿。**
+- **Web / PWA 五项验证全绿，标准一条没降**：`prettier --check .`（**收尾时因 `macos/` 的 6 个文件红过一次，已格式化，现在绿**）/ `vue-tsc --noEmit` / `eslint` / **`npm run test`（4 个文件 81 项全过）** / `npm run build`（✓ 2.08s；PWA **48** 条 / **2181.22 KiB**、入口 chunk **917.70 kB**（gzip 251.42 kB）——PWA 条数、PWA 体积与入口 chunk 的**原始体积与 Phase 9C 交付时逐位相同**；唯一差别是入口的 gzip **少了 0.01 kB**（251.43 → 251.42），来源是版号字符串由 `0.14.1` 变成 `1.0.0` **短了一个字符**——**这正是「Web 应用代码一行未改」的旁证**）。
 
 ### 待真机验收（七项，只有真实 macOS 桌面能回答）
 
-**这七项一项都还没验**，它们也正是「暂不提交」的全部理由：
+**这七项一项都还没验。** 本版把它们连同代码一起入库，**不是因为验过了**（见开头「⚠️」）——**入库与验收是两件事，验收结论至今没有产生**：
 
 1. **Widget 能不能被系统的组件库发现**（组件库列表里有没有 TeacherDesk）——**不开沙箱的扩展，`chronod` 认不认，这是本阶段最大的未知**；
 2. **三个 Widget 是不是都能加到桌面上**（今日课程 / 今日待办 / 班级概况）；
@@ -64,13 +97,22 @@
 
 - 开发手册新增 **§9.22**（本阶段的完整记录：工程结构、数据通路、协议层怎么反推出来的、不开沙箱的取舍 ⑯、边界与明确未做），§1 状态表与「当前结论」、§10 阶段表、§12 接手起点同步。
 - `docs/roadmap.md` 与 `docs/开发计划.md` 同步 Phase 12 的实际状态（**开发完成、待真机验收**，不写成最终完成）。
+- **定版 `v1.0.0` 时**：上述各处的「未提交、未打 tag」按实际改写为「**已随 `v1.0.0` 入库、待在真机验收**」，版号由预留的 `v0.15.0` 改为 `v1.0.0`；各文档新增「正式上线」一节（部署方式、前置与未实测部分），`README.md` 补部署说明。
 
 ### 提交与打标签
 
-**本阶段不提交**（§八）。等真机验收：
+**`macos/` 随本版首次入库**（在此之前的三个 tag 里都没有它）。提交**只列明确路径、绝不 `git add -A`**；`macos/` 入库前已确认 `find macos -name '.DS_Store'` 为空——工程自带的 `.gitignore` 兜住 `xcuserdata/` 与构建产物：
 
-- 验收**通过** → 与本节一起提交并打 tag（`git add macos docs/CHANGELOG.md docs/roadmap.md docs/开发计划.md docs/开发手册.md`，**只列明确路径、绝不 `git add -A`**；`macos/` 首次入库前先确认 `find macos -name '.DS_Store' -o -name 'xcuserdata'` 为空——工程里带了 `.gitignore` 兜这几样）；
-- 验收**不通过** → **只改不过的那一处**，不动已经通过的其余部分；若卡在第 1 项（组件库加载不了），那才轮到「App Sandbox + App Groups」方案，届时两个 `.entitlements` 里已经写好了要加哪几个键。
+```bash
+git add macos cloudbaserc.json package.json package-lock.json src/config/index.ts \
+        docs/CHANGELOG.md docs/roadmap.md docs/开发计划.md docs/开发手册.md README.md
+git commit -m "release: v1.0.0 web/pwa launch and phase-12 macos widget in-repo" \
+        -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
+git tag -a v1.0.0 -m "v1.0.0: 正式上线（Web/PWA）+ Phase 12 macOS Widget 入库（待在真机验收）"
+```
+
+- **`macos/` 入库与验收解耦**（本版的关键取舍）：代码入库**不等于**验收通过，文档里两件事分开写、分开管。真机验收**不通过**时，**只改不过的那一处**，不动已经通过的其余部分；若卡在第 1 项（组件库加载不了），那才轮到「App Sandbox + App Groups」方案，届时两个 `.entitlements` 里已经写好了要加哪几个键。
+- **`.claude/settings.local.json` 与工作区里那些老异常不随本版提交**（该文件被 `.gitignore` 的 `*.local` 覆盖，`docs/` 下那个 `.docx` 的删除是本阶段之前就存在的异常）。
 
 ---
 

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Widget 扩展的 entitlements —— 刻意是空的。
+
+    不开沙箱的理由见宿主 App 那份文件。这里额外记一件**取舍**：
+
+    原本在沙箱方案里，这个文件是「Widget 不许联网」的**系统级**保证——
+    不写 com.apple.security.network.client，代码就算写错了也联不上网。
+    去掉沙箱之后，这条保证**降级成了代码纪律**：Widget 那份源码里没有任何网络调用，
+    CloudBaseClient.swift 只编进宿主 App 的 target，根本不在这个扩展里。
+
+    这是为了「零配置、不需要开发者账号」有意付出的代价。什么时候值得换回来：
+    如果哪天要把这个 App 交给别人用，就应该换回沙箱 + App Groups。
+-->
+<plist version="1.0">
+<dict/>
+</plist>
