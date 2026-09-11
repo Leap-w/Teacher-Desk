@@ -7,18 +7,17 @@ import { useToast } from '@/composables/useToast'
 import { useLeaveStore } from '@/stores/leave'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
+import { HALF_DAY_OPTIONS, halfDayKey, isDayPoint } from '@/utils/point'
 import {
-  HALF_DAY_OPTIONS,
   KNOWN_LEAVE_TYPES,
   LEAVE_STATUS_LABELS,
   LEAVE_TYPE_OPTIONS,
   formatLeaveDuration,
   formatLeavePeriod,
-  halfDayKey,
-  isLeavePoint,
 } from '@/utils/leave'
 import { formatStudentDisplayName } from '@/utils/student'
-import type { HalfDay, LeaveInput, LeaveRecord, LeaveType } from '@/types/leave'
+import type { LeaveInput, LeaveRecord, LeaveType } from '@/types/leave'
+import type { HalfDay } from '@/types/point'
 import type { SelectOption } from '@/types'
 
 interface Props {
@@ -156,7 +155,7 @@ function validate(): boolean {
   errors.startDate = form.startDate ? '' : '请选择开始日期'
   errors.endDate = form.endDate ? '' : '请选择结束日期'
   if (!errors.startDate && !errors.endDate) {
-    if (!isLeavePoint(startPoint.value) || !isLeavePoint(endPoint.value)) {
+    if (!isDayPoint(startPoint.value) || !isDayPoint(endPoint.value)) {
       errors.endDate = '日期格式不正确'
     } else if (halfDayKey(endPoint.value) < halfDayKey(startPoint.value)) {
       errors.endDate = '结束时段不能早于开始时段'

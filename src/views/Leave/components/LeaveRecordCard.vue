@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import RegisterStatusLine from '@/components/flow/RegisterStatusLine.vue'
 import { AppBadge, AppButton, AppCard } from '@/components/ui'
 import {
   LEAVE_STATUS_LABELS,
   LEAVE_TYPE_LABELS,
   formatLeaveDuration,
   formatLeavePeriod,
-  formatLeavePoint,
 } from '@/utils/leave'
-import type { BadgeVariant } from '@/types'
 import type { LeaveRecord } from '@/types/leave'
 
 interface Props {
@@ -42,18 +41,6 @@ const statusVariant = computed(() => {
 const periodText = computed(() => formatLeavePeriod(props.record.start, props.record.end))
 const durationText = computed(() => formatLeaveDuration(props.record.start, props.record.end))
 
-/**
- * 离校 / 返校状态由两个时间戳**派生展示**，不新增第四种审批状态（Phase 5 口径）：
- * 有返校时间即已返校，只有离校时间即已离校（学生不在校内，教师最需要一眼看到的），
- * 两者皆无为未离校。配色沿用徽标语义：已离校用警示色、已返校用成功色。
- */
-const followUp = computed<{ label: string; variant: BadgeVariant }>(() => {
-  const { leftSchool, backToSchool } = props.record
-  if (backToSchool) return { label: '已返校', variant: 'success' }
-  if (leftSchool) return { label: '已离校', variant: 'warning' }
-  return { label: '未离校', variant: 'neutral' }
-})
-
 /** 返校登记需先有离校时间（时间线起点），否则按钮点了也只会被 store 拒绝 */
 const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
 </script>
@@ -77,16 +64,11 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
       驳回说明：{{ record.decisionNote }}
     </p>
 
-    <p v-if="record.status === 'approved'" class="follow-up">
-      <AppBadge :variant="followUp.variant" size="sm">{{ followUp.label }}</AppBadge>
-      <span>
-        离校时间 {{ record.leftSchool ? formatLeavePoint(record.leftSchool) : '未登记' }}
-      </span>
-      <span class="follow-divider" aria-hidden="true">·</span>
-      <span>
-        返校时间 {{ record.backToSchool ? formatLeavePoint(record.backToSchool) : '未登记' }}
-      </span>
-    </p>
+    <RegisterStatusLine
+      v-if="record.status === 'approved'"
+      class="register-line"
+      :endpoints="record"
+    />
 
     <div class="actions">
       <template v-if="record.status === 'pending'">
@@ -189,18 +171,9 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
   color: var(--color-text-secondary);
 }
 
-.follow-up {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+/* 间距由使用方给：共用组件只管状态行本身，不管落在页面的哪里 */
+.register-line {
   margin-top: var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.follow-divider {
-  color: var(--color-text-faint);
 }
 
 .actions {

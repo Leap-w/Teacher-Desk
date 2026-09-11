@@ -5,8 +5,11 @@
  * 离校 / 返校登记；**不含任何「能否回家」的推导**，周末返家属 Phase 7 周末管理。
  *
  * 时间一律「日期 + 上午 / 下午」，不引入时刻：班主任日常说的是「请一上午」「请三天」，
- * 精确到时刻会抬高录入门槛（Phase 5 范围拍板口径）。
+ * 精确到时刻会抬高录入门槛（Phase 5 范围拍板口径）。该时间点与离校 / 返校登记端点的
+ * 定义在 `types/point.ts`（Phase 7A 起为请假与周末返家共用件）。
  */
+
+import type { DayPoint, RegisterEndpoints } from './point'
 
 /** 请假类型 */
 export type LeaveType = 'sick' | 'personal' | 'other'
@@ -14,21 +17,8 @@ export type LeaveType = 'sick' | 'personal' | 'other'
 /** 审批状态：待处理 → 批准 / 驳回（驳回后不再流转，也无「销假」流程） */
 export type LeaveStatus = 'pending' | 'approved' | 'rejected'
 
-/** 半天 */
-export type HalfDay = 'am' | 'pm'
-
-/**
- * 一个时间点：日期（YYYY-MM-DD）+ 上午 / 下午。
- * 请假起止与离校 / 返校登记**共用同一形状**——四者都是「某天的上半天或下半天」。
- */
-export interface LeavePoint {
-  /** 日期键，如 `2026-09-11`（由 `formatDateKey` 从本地时间生成，不走 UTC） */
-  date: string
-  half: HalfDay
-}
-
-/** 一条请假记录 */
-export interface LeaveRecord {
+/** 一条请假记录（离校 / 返校登记端点见 `RegisterEndpoints`） */
+export interface LeaveRecord extends RegisterEndpoints {
   id: string
   studentId: string
   /**
@@ -39,9 +29,9 @@ export interface LeaveRecord {
   studentName: string
   type: LeaveType
   /** 请假开始（含半天） */
-  start: LeavePoint
+  start: DayPoint
   /** 请假结束（含半天；不早于 start） */
-  end: LeavePoint
+  end: DayPoint
   /** 请假原因 */
   reason: string
   status: LeaveStatus
@@ -51,10 +41,6 @@ export interface LeaveRecord {
   decidedAt?: string
   /** 审批说明（仅驳回时有意义，批准时不保存） */
   decisionNote?: string
-  /** 离校登记（已批准后由教师登记实际离校时间） */
-  leftSchool?: LeavePoint
-  /** 返校登记（需先登记离校，且不早于离校时间） */
-  backToSchool?: LeavePoint
 }
 
 /**
@@ -64,7 +50,7 @@ export interface LeaveRecord {
 export interface LeaveInput {
   studentId: string
   type: LeaveType
-  start: LeavePoint
-  end: LeavePoint
+  start: DayPoint
+  end: DayPoint
   reason: string
 }

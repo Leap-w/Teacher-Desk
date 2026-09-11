@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import RegisterPointModal from '@/components/flow/RegisterPointModal.vue'
 import { AppButton, AppCard, AppInput, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useLeaveStore } from '@/stores/leave'
-import { formatLeavePoint } from '@/utils/leave'
-import type { LeaveInput, LeavePoint, LeaveRecord, LeaveStatus } from '@/types/leave'
+import { formatLeavePeriod } from '@/utils/leave'
+import { REGISTER_MODE_LABELS, formatDayPoint } from '@/utils/point'
+import type { LeaveInput, LeaveRecord, LeaveStatus } from '@/types/leave'
+import type { DayPoint, RegisterMode } from '@/types/point'
 import LeaveDecisionModal from './components/LeaveDecisionModal.vue'
 import LeaveFormDrawer from './components/LeaveFormDrawer.vue'
 import LeaveRecordCard from './components/LeaveRecordCard.vue'
-import LeaveRegisterModal from './components/LeaveRegisterModal.vue'
 
 type LeaveFilter = 'all' | LeaveStatus
 
@@ -119,29 +121,28 @@ function confirmDecision(note: string) {
 
 const registerOpen = ref(false)
 const registerTarget = ref<LeaveRecord | undefined>(undefined)
-const registerMode = ref<'left' | 'back'>('left')
+const registerMode = ref<RegisterMode>('left')
 
-function askRegister(record: LeaveRecord, mode: 'left' | 'back') {
+function askRegister(record: LeaveRecord, mode: RegisterMode) {
   registerTarget.value = record
   registerMode.value = mode
   registerOpen.value = true
 }
 
-function confirmRegister(point: LeavePoint) {
+function confirmRegister(point: DayPoint) {
   const target = registerTarget.value
   registerOpen.value = false
   if (!target) return
-  const isBack = registerMode.value === 'back'
-  const saved = isBack
-    ? leaveStore.registerBackToSchool(target.id, point)
-    : leaveStore.registerLeftSchool(target.id, point)
+  const verb = REGISTER_MODE_LABELS[registerMode.value]
+  const saved =
+    registerMode.value === 'back'
+      ? leaveStore.registerBackToSchool(target.id, point)
+      : leaveStore.registerLeftSchool(target.id, point)
   if (!saved) {
     toast.danger('登记失败：请检查时间顺序，或该记录已被处理')
     return
   }
-  toast.success(
-    `已登记 ${saved.studentName} ${isBack ? '返校' : '离校'}：${formatLeavePoint(point)}`,
-  )
+  toast.success(`已登记 ${saved.studentName} ${verb}：${formatDayPoint(point)}`)
 }
 
 /* ---------- 删除（二次确认） ---------- */
@@ -248,12 +249,21 @@ function clearFilters() {
       @confirm="confirmDecision"
     />
 
-    <LeaveRegisterModal
+    <!-- 登记弹窗与周末返家共用（components/flow）；上下文由本页经插槽给，
+         两端时间戳直接把记录交给弹窗按 mode 取（RegisterEndpoints） -->
+    <RegisterPointModal
       v-model="registerOpen"
-      :record="registerTarget"
       :mode="registerMode"
+      :endpoints="registerTarget"
       @confirm="confirmRegister"
-    />
+    >
+      <template #context>
+        {{ registerTarget ? registerTarget.studentName : '' }} 请假时段：
+        <strong>{{
+          registerTarget ? formatLeavePeriod(registerTarget.start, registerTarget.end) : ''
+        }}</strong>
+      </template>
+    </RegisterPointModal>
 
     <AppModal v-model="confirmOpen" title="删除请假记录" :width="380">
       <p class="confirm-text">

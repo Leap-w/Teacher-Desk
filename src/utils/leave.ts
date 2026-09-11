@@ -1,7 +1,15 @@
-import { formatMonthDay, isDateKey } from '@/utils/date'
+import { formatMonthDay } from '@/utils/date'
 import { createId } from '@/utils/id'
+import {
+  HALF_DAY_LABELS,
+  formatDayPoint,
+  halfDayKey,
+  isDayPoint,
+  normalizeRegisterEndpoints,
+} from '@/utils/point'
 import type { SelectOption } from '@/types'
-import type { HalfDay, LeavePoint, LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
+import type { DayPoint } from '@/types/point'
+import type { LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
 
 /** 请假类型中文文案（表单选项、列表徽标共用一处） */
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -24,82 +32,31 @@ export const LEAVE_STATUS_LABELS: Record<LeaveStatus, string> = {
   rejected: '已驳回',
 }
 
-/** 半天中文文案（时间点文案经 formatLeavePoint / formatLeavePeriod 间接使用） */
-const HALF_DAY_LABELS: Record<HalfDay, string> = { am: '上午', pm: '下午' }
-
-/** 半天表单选项（顺序即时间顺序） */
-export const HALF_DAY_OPTIONS: SelectOption<HalfDay>[] = [
-  { label: HALF_DAY_LABELS.am, value: 'am' },
-  { label: HALF_DAY_LABELS.pm, value: 'pm' },
-]
-
 /** 全部已知请假类型（load 守卫与写入校验共用；类型值扩展时同步） */
 export const KNOWN_LEAVE_TYPES: readonly LeaveType[] = ['sick', 'personal', 'other']
 
 /** 全部已知审批状态（load 守卫用） */
 const KNOWN_LEAVE_STATUSES: readonly LeaveStatus[] = ['pending', 'approved', 'rejected']
 
-const MS_PER_DAY = 86_400_000
-
-/**
- * 日期键 → 天序号（1970-01-01 起的天数，两个天序号相减即相隔天数）。
- * 用 `Date.UTC` 按年 / 月 / 日构造，全程 UTC，不读本地时区与夏令时；
- * 跨月 / 跨年的进位交给日历本身——直接对 `YYYYMMDD` 做十进制算术，
- * 会在 9-30 → 10-01 这种进位处把相差 1 天算成 71 天。
- */
-function dayIndexOf(dateKey: string): number {
-  const year = Number(dateKey.slice(0, 4))
-  const month = Number(dateKey.slice(5, 7))
-  const day = Number(dateKey.slice(8, 10))
-  return Date.UTC(year, month - 1, day) / MS_PER_DAY
-}
-
-/** 半天守卫 */
-function isHalfDay(value: unknown): value is HalfDay {
-  return value === 'am' || value === 'pm'
-}
-
-/** 时间点守卫（日期 + 半天） */
-export function isLeavePoint(value: unknown): value is LeavePoint {
-  if (!value || typeof value !== 'object') return false
-  const point = value as Partial<LeavePoint>
-  return isDateKey(point.date) && isHalfDay(point.half)
-}
-
-/**
- * 半天顺序键：把「日期 + 上午 / 下午」合成一个可比较的数值（天序号 × 2 + 半天偏移）。
- * 比较与相减共用这一个键——两者必须同源，否则「跨月时长」会与「跨月先后」打架
- * （注：不要用 `new Date('2026-09-11')`，那会被当作 UTC 午夜，东八区之外整体差一天；
- * `dayIndexOf` 是显式 `Date.UTC`，没有这个陷阱）。
- */
-export function halfDayKey(point: LeavePoint): number {
-  return dayIndexOf(point.date) * 2 + (point.half === 'pm' ? 1 : 0)
-}
-
 /** 请假时段的半天数（含首尾：同一天上午 → 下午 = 2 个半天 = 1 天） */
-function leaveHalfDayCount(start: LeavePoint, end: LeavePoint): number {
+function leaveHalfDayCount(start: DayPoint, end: DayPoint): number {
   return halfDayKey(end) - halfDayKey(start) + 1
 }
 
 /** 时长文案：半天 / 1 天 / 1 天半（按半天折算，不出现 1.5 天这类小数） */
-export function formatLeaveDuration(start: LeavePoint, end: LeavePoint): string {
+export function formatLeaveDuration(start: DayPoint, end: DayPoint): string {
   const halves = leaveHalfDayCount(start, end)
   if (halves <= 2) return halves === 2 ? '1 天' : '半天'
   const days = Math.floor(halves / 2)
   return halves % 2 === 1 ? `${days} 天半` : `${days} 天`
 }
 
-/** 时间点文案，如「9月11日 上午」（离校 / 返校登记展示用） */
-export function formatLeavePoint(point: LeavePoint): string {
-  return `${formatMonthDay(point.date)} ${HALF_DAY_LABELS[point.half]}`
-}
-
 /** 时段文案：同一天合并为「9月11日 上午 → 下午」，跨天为「9月11日 上午 → 9月12日 下午」 */
-export function formatLeavePeriod(start: LeavePoint, end: LeavePoint): string {
+export function formatLeavePeriod(start: DayPoint, end: DayPoint): string {
   if (start.date === end.date) {
     return `${formatMonthDay(start.date)} ${HALF_DAY_LABELS[start.half]} → ${HALF_DAY_LABELS[end.half]}`
   }
-  return `${formatLeavePoint(start)} → ${formatLeavePoint(end)}`
+  return `${formatDayPoint(start)} → ${formatDayPoint(end)}`
 }
 
 /**
@@ -115,7 +72,7 @@ export function normalizeLeaveRecord(raw: unknown): LeaveRecord | null {
   if (typeof item.type !== 'string' || !KNOWN_LEAVE_TYPES.includes(item.type as LeaveType)) {
     return null
   }
-  if (!isLeavePoint(item.start) || !isLeavePoint(item.end)) return null
+  if (!isDayPoint(item.start) || !isDayPoint(item.end)) return null
   if (halfDayKey(item.end) < halfDayKey(item.start)) return null
   const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
   if (!reason) return null
@@ -124,16 +81,9 @@ export function normalizeLeaveRecord(raw: unknown): LeaveRecord | null {
       ? (item.status as LeaveStatus)
       : 'pending'
   const decisionNote = typeof item.decisionNote === 'string' ? item.decisionNote.trim() : ''
-  // 离校 / 返校：形状合法**且时间线自洽**才采用（写入路径保证「先离校、后返校」，
-  // load 路径同样要守）。被改坏的时间戳不展示，但记录本身仍保留——只留离校时间
-  // 至少是「已离校」这个说得通的状态，教师可重新登记返校。
-  const leftSchool = isLeavePoint(item.leftSchool) ? item.leftSchool : undefined
-  const backToSchool =
-    leftSchool &&
-    isLeavePoint(item.backToSchool) &&
-    halfDayKey(item.backToSchool) >= halfDayKey(leftSchool)
-      ? item.backToSchool
-      : undefined
+  // 离校 / 返校两端：公共件按「形状合法 + 时间线自洽」健壮化（读回路径的守卫，
+  // 与写入路径的 registerPointError 同源，见 utils/point.ts）
+  const { leftSchool, backToSchool } = normalizeRegisterEndpoints(item)
   return {
     id: typeof item.id === 'string' && item.id ? item.id : createId(),
     studentId: item.studentId,
@@ -172,8 +122,8 @@ export function sortLeaveRecords(records: LeaveRecord[]): LeaveRecord[] {
 
 /** 两个时段是否重叠（闭区间、含半天；供表单「已有请假记录」提示，不做拦截） */
 export function isPeriodOverlapping(
-  a: { start: LeavePoint; end: LeavePoint },
-  b: { start: LeavePoint; end: LeavePoint },
+  a: { start: DayPoint; end: DayPoint },
+  b: { start: DayPoint; end: DayPoint },
 ): boolean {
   return halfDayKey(a.start) <= halfDayKey(b.end) && halfDayKey(b.start) <= halfDayKey(a.end)
 }

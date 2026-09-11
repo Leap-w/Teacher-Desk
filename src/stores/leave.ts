@@ -8,16 +8,16 @@ import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { formatStudentShortName } from '@/utils/student'
+import { halfDayKey, isDayPoint } from '@/utils/point'
 import {
   KNOWN_LEAVE_TYPES,
-  halfDayKey,
-  isLeavePoint,
   isPeriodOverlapping,
   normalizeLeaveRecord,
   sortLeaveRecords,
 } from '@/utils/leave'
 import type { Student } from '@/types'
-import type { LeaveInput, LeavePoint, LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
+import type { DayPoint } from '@/types/point'
+import type { LeaveInput, LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 
@@ -110,7 +110,7 @@ function isLeaveInputValid(input: LeaveInput): boolean {
   if (typeof input.type !== 'string' || !KNOWN_LEAVE_TYPES.includes(input.type as LeaveType)) {
     return false
   }
-  if (!isLeavePoint(input.start) || !isLeavePoint(input.end)) return false
+  if (!isDayPoint(input.start) || !isDayPoint(input.end)) return false
   if (halfDayKey(input.end) < halfDayKey(input.start)) return false
   if (typeof input.reason !== 'string' || !input.reason.trim()) return false
   return true
@@ -195,8 +195,8 @@ export const useLeaveStore = defineStore('leave', () => {
    */
   function overlappingLeaves(
     studentId: string,
-    start: LeavePoint,
-    end: LeavePoint,
+    start: DayPoint,
+    end: DayPoint,
     excludeId?: string,
   ): LeaveRecord[] {
     return leaves.value.filter(
@@ -282,8 +282,8 @@ export const useLeaveStore = defineStore('leave', () => {
    * （那样会把审批结果、原因、返校时间一并丢掉）。登记的是既成事实，
    * 因此不限制「不早于请假开始」，只保证不晚于已登记的返校时间、时间线不颠倒。
    */
-  function registerLeftSchool(id: string, point: LeavePoint): LeaveRecord | undefined {
-    if (!isLeavePoint(point)) return undefined
+  function registerLeftSchool(id: string, point: DayPoint): LeaveRecord | undefined {
+    if (!isDayPoint(point)) return undefined
     const index = leaves.value.findIndex((item) => item.id === id)
     if (index === -1) return undefined
     const current = leaves.value[index]
@@ -297,8 +297,8 @@ export const useLeaveStore = defineStore('leave', () => {
   }
 
   /** 登记返校：需先登记离校，且返校时间不早于离校时间；同样支持覆盖修改 */
-  function registerBackToSchool(id: string, point: LeavePoint): LeaveRecord | undefined {
-    if (!isLeavePoint(point)) return undefined
+  function registerBackToSchool(id: string, point: DayPoint): LeaveRecord | undefined {
+    if (!isDayPoint(point)) return undefined
     const index = leaves.value.findIndex((item) => item.id === id)
     if (index === -1) return undefined
     const current = leaves.value[index]
