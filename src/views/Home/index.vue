@@ -9,6 +9,7 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { useTimetableStore } from '@/stores/timetable'
+import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
 import DashboardDutyCard from './components/DashboardDutyCard.vue'
 import DashboardHeader from './components/DashboardHeader.vue'
 import DashboardLeaveCard from './components/DashboardLeaveCard.vue'
@@ -63,6 +64,8 @@ const plannedCards: DashboardCard[] = [
 
 <template>
   <div class="dash-page">
+    <DashboardBackupNotice />
+
     <DashboardHeader />
 
     <div class="dash-grid">

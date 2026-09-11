@@ -172,7 +172,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-5) var(--space-5) var(--space-3);
+  /* 顶部 / 右侧安全区：抽屉贴右上角，横屏时标题不钻进刘海 */
+  padding: calc(var(--space-5) + env(safe-area-inset-top, 0px))
+    calc(var(--space-5) + env(safe-area-inset-right, 0px)) var(--space-3) var(--space-5);
 }
 
 .drawer-title {
@@ -217,7 +219,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--space-5) var(--space-5);
+  padding: 0 calc(var(--space-5) + env(safe-area-inset-right, 0px)) var(--space-5) var(--space-5);
 }
 
 /* 操作按钮常驻底部：表单再长也不用滚到底才能保存 */
@@ -226,8 +228,8 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  padding: var(--space-3) calc(var(--space-5) + env(safe-area-inset-right, 0px))
+    calc(var(--space-3) + env(safe-area-inset-bottom, 0px)) var(--space-5);
   border-top: 1px solid var(--color-border);
   background: var(--color-surface);
 }

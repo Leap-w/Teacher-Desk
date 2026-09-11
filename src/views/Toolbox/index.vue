@@ -6,11 +6,13 @@ import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import {
   LAST_BACKUP_KEY,
+  LEGACY_CLEAR_MODULES,
   applyWrites,
   clearAllKeys,
   countModules,
   createBackup,
   downloadJson,
+  isLegacyClearItem,
   parseBackup,
   planClearSamples,
   planMerge,
@@ -67,10 +69,17 @@ function readAll() {
   return readModules((key) => storage.read(key))
 }
 
+/** 旧键（历史遗留，见 LEGACY_CLEAR_MODULES）：不进概览，只在「清空示例数据」里一并清 */
+function readLegacy() {
+  return readModules((key) => storage.read(key), LEGACY_CLEAR_MODULES)
+}
+
 /** 本机数据快照：概览与各操作共用同一次读取，避免两个数字来自不同时刻 */
 const snapshot = ref(readAll())
+const legacySnapshot = ref(readLegacy())
 function refreshSnapshot(): void {
   snapshot.value = readAll()
+  legacySnapshot.value = readLegacy()
 }
 
 const overview = computed(() => countModules(snapshot.value.values))
@@ -79,9 +88,27 @@ const broken = computed(() => snapshot.value.broken)
 const lastBackupAt = ref<string>(storage.read(LAST_BACKUP_KEY) ?? '')
 
 /** 当前可清理的示例数据（按钮禁用与确认弹窗共用同一份计算结果） */
-const samplePlan = ref<ClearPlan>(planClearSamples(snapshot.value.values))
+const samplePlan = ref<ClearPlan>(
+  planClearSamples(snapshot.value.values, legacySnapshot.value.values),
+)
 const sampleTotal = computed(() =>
   samplePlan.value.removed.reduce((sum, item) => sum + item.count, 0),
+)
+/** 本次清空是否动到了旧课表存档（决定要不要多解释一句：它不是现行课表） */
+const clearsLegacy = computed(() =>
+  samplePlan.value.removed.some((item) => isLegacyClearItem(item.label)),
+)
+
+/**
+ * 旧课表存档是否还在盘上（读得出原文或读不出都算——「清空全部数据」删的是键，
+ * 连读不动的原文一起删，且它不在备份范围内，弹窗必须先说清楚）。
+ */
+const hasLegacyArchive = computed(() =>
+  LEGACY_CLEAR_MODULES.some(
+    (module) =>
+      legacySnapshot.value.values[module.key] !== undefined ||
+      legacySnapshot.value.broken.includes(module.label),
+  ),
 )
 
 const lastBackupText = computed(() => {
@@ -235,7 +262,7 @@ const clearAllOpen = ref(false)
 function openClearSamples(): void {
   // 每次打开都重算，避免页面停留期间数据已变（例如另一个标签页删了记录）
   refreshSnapshot()
-  samplePlan.value = planClearSamples(snapshot.value.values)
+  samplePlan.value = planClearSamples(snapshot.value.values, legacySnapshot.value.values)
   if (sampleTotal.value === 0) {
     toast.info(
       broken.value.length > 0
@@ -261,9 +288,12 @@ function openClearAll(): void {
   clearAllOpen.value = true
 }
 
-/** 清空全部会删掉本应用前缀下的**所有**键，故读取异常的块也要列出来 */
+/**
+ * 清空全部会删掉本应用前缀下的**所有**键，故读取异常的块也要列出来。
+ * 「还没打开过」（count === null）的块盘上没有键，没有东西可删，不列（与 0 条同处理）。
+ */
 const clearAllItems = computed(() =>
-  overview.value.filter((item) => item.count > 0 || broken.value.includes(item.label)),
+  overview.value.filter((item) => (item.count ?? 0) > 0 || broken.value.includes(item.label)),
 )
 
 function confirmClearAll(): void {
@@ -324,11 +354,14 @@ onMounted(() => {
         <li v-for="item in overview" :key="item.key" class="count-item">
           <span class="count-label">{{ item.label }}</span>
           <span v-if="broken.includes(item.label)" class="count-broken">读取异常</span>
+          <!-- 盘上没有这个键 = 模块从未打开过。写「还没打开过」而不是「未初始化」：显示 0 会让人
+               以为模块是空的（技术债 #9），而「未初始化」是开发者词，教师看不懂 -->
+          <span v-else-if="item.count === null" class="count-pending">还没打开过</span>
           <span v-else class="count-value">{{ item.count }} {{ item.unit }}</span>
         </li>
       </ul>
       <p class="footnote">
-        数字为保存在本机的全部记录（含已从列表移除、档案仍留档的学生），备份会原样保留。
+        数字为保存在本机的全部记录（含已从列表移除、档案仍留档的学生），备份会原样保留。「还没打开过」表示这个模块的数据还没在本机生成——示例数据会在第一次打开它时写入。
       </p>
       <p v-if="broken.length > 0" class="warn-text">
         本机「{{
@@ -444,6 +477,10 @@ onMounted(() => {
       <p class="warn-text">
         示例记录按首次生成时的编号识别，所以上面列出的记录都会被删除——包括你已经改成自己内容的那几条，请先核对名单。
       </p>
+      <p v-if="clearsLegacy" class="note-text">
+        「旧课表数据」是课表升级时留下的旧存档（已经不再使用，只有当年有课程没能搬过去时才会保留），
+        这里同样只删其中的示例课程，其余原文保留。
+      </p>
       <p class="note-text">删除后不可撤销，建议先导出备份。座位方案与换座日志保留。</p>
       <template #footer>
         <AppButton variant="ghost" @click="clearSampleOpen = false">取消</AppButton>
@@ -460,6 +497,9 @@ onMounted(() => {
         </li>
       </ul>
       <p v-else class="note-text">本机暂无数据。</p>
+      <p v-if="hasLegacyArchive" class="note-text">
+        课表升级时留下的「旧课表数据」存档也会一并删除——它不在备份范围内，删除后无法找回。
+      </p>
       <p class="warn-text">此操作不可撤销。若还想保留，请先导出备份。</p>
       <template #footer>
         <AppButton variant="ghost" @click="clearAllOpen = false">取消</AppButton>
@@ -527,6 +567,12 @@ onMounted(() => {
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-danger);
+}
+
+/* 「还没打开过」：不是错误也不是 0，用最轻的一档文字，避免被当成异常 */
+.count-pending {
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
 }
 
 .footnote {

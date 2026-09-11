@@ -104,33 +104,43 @@ function onSubmitGroup(payload: { name: string; studentIds: string[] }): void {
 /* ---------- 删除值日组（二次确认） ---------- */
 
 const removeOpen = ref(false)
-const removing = ref<DutyGroup | undefined>(undefined)
 
-/** 删的是起点组时，轮换会顺延到哪一组（与 store 的实际行为同源，弹窗里提前说清） */
-const removeSuccessor = computed(() =>
-  removing.value ? dutyStore.rotationSuccessorOf(removing.value.id) : undefined,
-)
+/**
+ * 待删除的值日组 + 弹窗要说的三件事，**打开时一次算好**。
+ * 关闭（含删除成功）时不清空、也不用 computed：弹窗有淡出动画、动画期间仍在渲染，
+ * 而删除成功会当场改掉 groups——拿实时状态算的话，组名与「顺延到哪一组」会在淡出中途
+ * 变空 / 消失（§9.8 记录项）。下次打开时整体覆盖。
+ */
+const removing = ref<
+  { group: DutyGroup; successorName: string; isAnchor: boolean; hasSiblings: boolean } | undefined
+>(undefined)
 
 function askRemove(group: DutyGroup): void {
-  removing.value = group
+  removing.value = {
+    group,
+    // 与 store 的实际行为同源（rotationSuccessorOf），弹窗里提前把话说明白
+    successorName: dutyStore.rotationSuccessorOf(group.id)?.name ?? '',
+    isAnchor: dutyStore.settings.startGroupId === group.id,
+    // 组数也要冻住：删除成功后 groups 当场少一个，实时读的话「后面的日子会重新排过」
+    // 这句会在淡出中途凭空消失（同 §9.8 的变空，只是少一行字）
+    hasSiblings: dutyStore.groups.length > 1,
+  }
   removeOpen.value = true
 }
 
 function confirmRemove(): void {
   const target = removing.value
-  removing.value = undefined
   removeOpen.value = false
   if (!target) return
-  const isAnchor = dutyStore.settings.startGroupId === target.id
-  const successor = dutyStore.rotationSuccessorOf(target.id)
-  if (!dutyStore.removeGroup(target.id)) {
+  const successor = dutyStore.rotationSuccessorOf(target.group.id)
+  if (!dutyStore.removeGroup(target.group.id)) {
     toast.danger('删除失败：该组可能已被删除')
     return
   }
   toast.success(
-    isAnchor && successor
-      ? `已删除「${target.name}」，轮换起点顺延到「${successor.name}」`
-      : `已删除「${target.name}」`,
+    target.isAnchor && successor
+      ? `已删除「${target.group.name}」，轮换起点顺延到「${successor.name}」`
+      : `已删除「${target.group.name}」`,
   )
 }
 
@@ -215,16 +225,13 @@ function onRotationChange(patch: Partial<Omit<DutySettings, 'id' | 'kind'>>): vo
     <AppModal v-model="removeOpen" title="删除值日组" :width="380">
       <p class="confirm-text">
         确定删除
-        <strong>{{ removing ? removing.name : '' }}</strong>
+        <strong>{{ removing ? removing.group.name : '' }}</strong>
         吗？组名与组员编排会一起删除（学生档案不受影响）。
       </p>
-      <p
-        v-if="removeSuccessor && removing && dutyStore.settings.startGroupId === removing.id"
-        class="confirm-text"
-      >
-        这一组是当前的轮换起点，删除后轮换会顺延到「{{ removeSuccessor.name }}」。
+      <p v-if="removing && removing.isAnchor && removing.successorName" class="confirm-text">
+        这一组是当前的轮换起点，删除后轮换会顺延到「{{ removing.successorName }}」。
       </p>
-      <p v-if="dutyStore.groups.length > 1" class="confirm-text">
+      <p v-if="removing && removing.hasSiblings" class="confirm-text">
         删除后组数变少，后面的日子会重新排过（顺序为上方列表的先后）。
       </p>
       <template #footer>

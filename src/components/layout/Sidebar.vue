@@ -30,13 +30,20 @@ const navItems = computed(() => routes.filter((item) => !item.redirect))
 
 <style scoped>
 .sidebar {
+  /* 内边距拆成两个局部变量：@media 里只改这两个数，安全区（左右刘海 / 底部 home 指示条）不必重复写 */
+  --sidebar-pad-y: 20px;
+  --sidebar-pad-x: 16px;
+
   width: 232px;
   flex-shrink: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 20px 16px;
+  padding: calc(var(--sidebar-pad-y) + env(safe-area-inset-top, 0px))
+    calc(var(--sidebar-pad-x) + env(safe-area-inset-right, 0px))
+    calc(var(--sidebar-pad-y) + env(safe-area-inset-bottom, 0px))
+    calc(var(--sidebar-pad-x) + env(safe-area-inset-left, 0px));
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -94,7 +101,7 @@ const navItems = computed(() => routes.filter((item) => !item.redirect))
 @media (max-width: 1024px) {
   .sidebar {
     width: 72px;
-    padding: 20px 10px;
+    --sidebar-pad-x: 10px;
   }
 
   .nav-item {

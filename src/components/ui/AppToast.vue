@@ -62,7 +62,8 @@ const ICON_PATHS: Record<ToastVariant, string[]> = {
 <style scoped>
 .toast-stack {
   position: fixed;
-  top: var(--space-5);
+  /* 顶部安全区：通知浮在最上层，viewport-fit=cover 下不加就会被状态栏盖住 */
+  top: calc(var(--space-5) + env(safe-area-inset-top, 0px));
   left: 0;
   right: 0;
   z-index: var(--z-toast);

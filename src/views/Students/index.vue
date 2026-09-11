@@ -23,6 +23,11 @@ const editingStudent = ref<Student | undefined>(undefined)
 const detailOpen = ref(false)
 const detailId = ref<string | undefined>(undefined)
 const confirmOpen = ref(false)
+/**
+ * 待删除的学生。**确认后不清空**：弹窗关闭有淡出动画，动画期间它仍在渲染，
+ * 清掉会让「确定从学生列表中移除 XXX 吗」先变成空名再消失（§9.8 记录项）。
+ * 下次打开时由 askRemove 覆盖；学生对象在 store 里是整体替换的，不会被就地改写。
+ */
 const removingStudent = ref<Student | undefined>(undefined)
 
 const activeStudents = computed(() => studentStore.activeStudents)
@@ -100,7 +105,6 @@ function askRemove(student: Student) {
 
 function confirmRemove() {
   const target = removingStudent.value
-  removingStudent.value = undefined
   confirmOpen.value = false
   if (!target) return
   if (!studentStore.removeStudent(target.id)) {

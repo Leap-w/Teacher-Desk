@@ -150,7 +150,11 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-5);
+  /* 安全区算进遮罩内边距：弹窗不贴刘海，底部也不会被 home 指示条压住 */
+  padding: calc(var(--space-5) + env(safe-area-inset-top, 0px))
+    calc(var(--space-5) + env(safe-area-inset-right, 0px))
+    calc(var(--space-5) + env(safe-area-inset-bottom, 0px))
+    calc(var(--space-5) + env(safe-area-inset-left, 0px));
   background: var(--overlay-scrim);
   backdrop-filter: blur(6px) saturate(120%);
   -webkit-backdrop-filter: blur(6px) saturate(120%);
@@ -158,7 +162,8 @@ onBeforeUnmount(() => {
 
 .modal-panel {
   max-width: 100%;
-  max-height: calc(100vh - 64px);
+  /* 64px = 遮罩上下内边距（各 20px）外再留一点余量；安全区也要减掉，否则高屏机上会顶出屏幕 */
+  max-height: calc(100vh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   padding: var(--space-6);
   background: var(--color-surface);

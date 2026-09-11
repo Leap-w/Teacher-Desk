@@ -85,6 +85,11 @@ function onSubmit(payload: LeaveInput) {
 /* ---------- 批准 / 驳回 ---------- */
 
 const decisionOpen = ref(false)
+/**
+ * 审批目标。**确认后不清空**（下面几处同理）：弹窗关闭有淡出动画，动画期间它仍在渲染，
+ * 清掉会让姓名 / 时段文案先变空再消失（§9.8 记录项）。下次打开时覆盖，
+ * 记录对象在 store 里是整体替换的，不会被就地改写。
+ */
 const decisionTarget = ref<LeaveRecord | undefined>(undefined)
 const decision = ref<'approved' | 'rejected'>('approved')
 
@@ -97,7 +102,6 @@ function askDecision(record: LeaveRecord, choice: 'approved' | 'rejected') {
 function confirmDecision(note: string) {
   const target = decisionTarget.value
   decisionOpen.value = false
-  decisionTarget.value = undefined
   if (!target) return
   const decided = leaveStore.decideLeave(target.id, decision.value, note)
   if (!decided) {
@@ -126,7 +130,6 @@ function askRegister(record: LeaveRecord, mode: 'left' | 'back') {
 function confirmRegister(point: LeavePoint) {
   const target = registerTarget.value
   registerOpen.value = false
-  registerTarget.value = undefined
   if (!target) return
   const isBack = registerMode.value === 'back'
   const saved = isBack
@@ -153,7 +156,6 @@ function askRemove(record: LeaveRecord) {
 
 function confirmRemove() {
   const target = removing.value
-  removing.value = undefined
   confirmOpen.value = false
   if (!target) return
   if (!leaveStore.removeLeave(target.id)) {

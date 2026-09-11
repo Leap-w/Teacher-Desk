@@ -43,6 +43,8 @@ const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
 const TODO_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
+/** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
+const LEGACY_TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable:lessons`
 
 /** 备份覆盖的七个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
 export const BACKUP_MODULES: BackupModule[] = [
@@ -55,6 +57,21 @@ export const BACKUP_MODULES: BackupModule[] = [
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
   { key: DUTY_KEY, label: '值日安排', unit: '条' },
 ]
+
+/**
+ * 只在「清空示例数据」里参与的历史键：**不属于七个数据块**——不进概览、不进备份、不参与合并。
+ * `teacherdesk:timetable:lessons` 是 Phase 4 的课表键，Phase 4.1 迁移到 `teacherdesk:timetable`：
+ * 迁移没有丢弃条目就顺手删掉，**还留着就说明当时有读不动的条目，原文只能从这里找回**。
+ * 它不在 BACKUP_MODULES 里，所以清空示例时要单独捎带一把，否则会残留示例课程原文（技术债 #10）。
+ */
+export const LEGACY_CLEAR_MODULES: BackupModule[] = [
+  { key: LEGACY_TIMETABLE_KEY, label: '旧课表数据', unit: '节' },
+]
+
+/** 该待删条目是否来自「旧键」（界面据此多解释一句：它不是现行数据，只是旧存档） */
+export function isLegacyClearItem(label: string): boolean {
+  return LEGACY_CLEAR_MODULES.some((module) => module.label === label)
+}
 
 /** 备份文件（导出即此形状；导入按此形状逐项校验） */
 export interface BackupFile {
@@ -69,9 +86,13 @@ export interface BackupFile {
   data: Record<string, unknown>
 }
 
-/** 单个数据块的条目数（数据概览用） */
+/**
+ * 单个数据块的条目数（数据概览用）。
+ * `count === null` = 这个键在盘上**不存在**：模块从未打开过（首次打开才播种示例数据）。
+ * 界面必须说「还没打开过」而不是 0 —— 显示 0 会让教师以为模块是空的（技术债 #9）。
+ */
 export interface ModuleCount extends BackupModule {
-  count: number
+  count: number | null
 }
 
 /** 读取器（即 localStorage.getItem 的形状）；SSR / 自检脚本下可替换 */
@@ -95,11 +116,17 @@ function labelOf(key: string): string {
   return BACKUP_MODULES.find((module) => module.key === key)?.label ?? key
 }
 
-/** 读出七个数据块的原始值：缺键 = 无数据（null），JSON 损坏的块记入 broken 并跳过 */
-export function readModules(read: RawReader): ModuleReadResult {
+/**
+ * 读出数据块的原始值：缺键 = 无数据（不进 values），JSON 损坏的块记入 broken 并跳过。
+ * 默认读七个备份数据块；传 modules 可读别的键（「清空示例数据」用它捎带旧键，见 LEGACY_CLEAR_MODULES）。
+ */
+export function readModules(
+  read: RawReader,
+  modules: BackupModule[] = BACKUP_MODULES,
+): ModuleReadResult {
   const values: Record<string, unknown[]> = {}
   const broken: string[] = []
-  for (const module of BACKUP_MODULES) {
+  for (const module of modules) {
     const raw = read(module.key)
     if (raw === null) continue
     let parsed: unknown
@@ -121,7 +148,10 @@ export function readModules(read: RawReader): ModuleReadResult {
  * 否则两个数字可能来自不同的时刻。
  */
 export function countModules(values: Record<string, unknown[]>): ModuleCount[] {
-  return BACKUP_MODULES.map((module) => ({ ...module, count: values[module.key]?.length ?? 0 }))
+  return BACKUP_MODULES.map((module) => {
+    const items = values[module.key]
+    return { ...module, count: items === undefined ? null : items.length }
+  })
 }
 
 /**
@@ -315,7 +345,8 @@ export function planMerge(
 export const CLEAR_NAME_LIMIT = 8
 
 export interface ClearPlan {
-  writes: Record<string, string>
+  /** 键 → 要写回的新值；**null = 删除该键**（旧课表键被清空时删键，不留下空数组） */
+  writes: Record<string, string | null>
   /** 逐块移除条数（0 的块不展示）；names 为待删记录的展示名（最多 CLEAR_NAME_LIMIT 条，供核对） */
   removed: { label: string; unit: string; count: number; names: string[] }[]
 }
@@ -329,7 +360,8 @@ function describeItem(key: string, item: unknown): string {
   if (!isPlainObject(item)) return '（无法识别的一条记录）'
   const textOf = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : '')
   if (key === STUDENT_KEY) return textOf(item.name) || '（未填写姓名的学生）'
-  if (key === TIMETABLE_KEY) {
+  // 旧课表键沿用同一套描述：旧条目同样有 weekday / period / subject
+  if (key === TIMETABLE_KEY || key === LEGACY_TIMETABLE_KEY) {
     const weekday = typeof item.weekday === 'number' ? item.weekday : 0
     const period = typeof item.period === 'number' ? item.period : 0
     return `周${weekday} 第 ${period} 节 ${textOf(item.subject) || '未填写科目'}`
@@ -384,12 +416,17 @@ function samplePredicate(key: string, sampleStudentIds: Set<string>): (item: unk
  *   看不到，会留下脏引用，所以必须在这里显式清；
  * - 座位方案：不动。方案里空出来的座位于**下次打开「座位表」时**由 seat store 的启动清扫释放
  *   （Phase 3B 既有能力），换座日志 / 请假记录是历史，保留姓名快照（与「删除学生记录保留」同一口径）。
+ * - 旧键（`legacy`，见 LEGACY_CLEAR_MODULES）：同样**只删其中的示例条目**，一条不剩才删键——
+ *   旧课表键还在就说明当年有课文没能迁移过去，那些原文是教师唯一的退路，不能整键抹掉。
  *
  * 注意：示例与否**只看 id 前缀**，所以被教师就地改成真实内容的示例记录也会被删——
  * 确认弹窗因此必须列出名单（removed[].names）并写明这一点，不能只说「你自己录入的不受影响」。
  */
-export function planClearSamples(current: Record<string, unknown[]>): ClearPlan {
-  const writes: Record<string, string> = {}
+export function planClearSamples(
+  current: Record<string, unknown[]>,
+  legacy: Record<string, unknown[]> = {},
+): ClearPlan {
+  const writes: Record<string, string | null> = {}
   const removed: ClearPlan['removed'] = []
 
   // 第一遍：找出被删的示例学生（座位释放与约束清理都要用）
@@ -410,6 +447,24 @@ export function planClearSamples(current: Record<string, unknown[]>): ClearPlan 
     if (kept.length === items.length) continue
     const removedItems = items.filter((item) => isSample(item))
     writes[module.key] = JSON.stringify(kept)
+    removed.push({
+      label: module.label,
+      unit: module.unit,
+      count: removedItems.length,
+      names: removedItems.slice(0, CLEAR_NAME_LIMIT).map((item) => describeItem(module.key, item)),
+    })
+  }
+
+  // 第三遍：旧键只删其中的示例条目，一条不剩时才删键——旧键不是活数据，没有 store 会在重载时
+  // 因缺键播种；七个数据块相反（整块清空要写 `[]`，删键会让 seed-on-null 把示例数据又种回来）。
+  for (const module of LEGACY_CLEAR_MODULES) {
+    const items = legacy[module.key]
+    if (items === undefined) continue
+    const isSample = samplePredicate(module.key, sampleStudentIds)
+    const kept = items.filter((item) => !isSample(item))
+    if (kept.length === items.length) continue
+    const removedItems = items.filter((item) => isSample(item))
+    writes[module.key] = kept.length > 0 ? JSON.stringify(kept) : null
     removed.push({
       label: module.label,
       unit: module.unit,
@@ -481,8 +536,11 @@ function commitAtomically(ops: CommitOp[], storage: StoragePort): CommitOutcome 
   }
 }
 
-/** 写回合并 / 清空示例的结果；失败时自动还原这一批已写入的键 */
-export function applyWrites(writes: Record<string, string>, storage: StoragePort): CommitOutcome {
+/** 写回合并 / 清空示例的结果（值 `null` = 删除该键）；失败时自动还原这一批已写入的键 */
+export function applyWrites(
+  writes: Record<string, string | null>,
+  storage: StoragePort,
+): CommitOutcome {
   const ops = Object.entries(writes).map(([key, value]) => ({ key, value }))
   return commitAtomically(ops, storage)
 }
@@ -501,6 +559,54 @@ export function clearAllKeys(
     targets.map((key) => ({ key, value: null })),
     storage,
   )
+}
+
+/* ---------- 备份提醒（稳定性增量，2026-09-11） ---------- */
+
+/** 距上次导出达到这个天数就在工作台提示（导出后自动消失） */
+export const BACKUP_REMINDER_DAYS = 14
+
+export type BackupReminder =
+  | { level: 'none' }
+  | { level: 'never'; text: string }
+  | { level: 'due'; days: number; text: string }
+
+/**
+ * 两个时间相差几个**自然日**（各取本地年月日 → `Date.UTC` 天序号）。
+ * 不拿毫秒数直接除：那样「昨天下午导出、今天早上打开」算出来是 0 天，
+ * 夏令时切换那天还会差一小时；转成日历天序号后比较，跨月 / 跨年 / 跨时区都正确
+ * （与请假时长 `halfDayKey` 同一手法，见开发手册 §9.11 的教训）。
+ */
+function daysBetween(from: Date, to: Date): number {
+  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())
+  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate())
+  return Math.round((end - start) / 86_400_000)
+}
+
+/**
+ * 备份提醒状态（纯函数，不读存储、不看时间以外的任何状态）：
+ * - 从未导出（键不存在 / 值不是合法时间）→ `never`：一直提示，导出后自动消失；
+ * - 距上次导出达到 BACKUP_REMINDER_DAYS → `due`：文案带上天数；
+ * - 其余 → `none`：不打扰。
+ *
+ * **只提醒、不代劳**：不自动导出、不写任何键（稳定性增量拍板口径）。
+ * 判定只看「上次导出时间」，不感知数据有没有改过——那需要给七个 store 的写盘路径插桩，
+ * 收益不抵风险（开发计划 §五 #7）。
+ */
+export function backupReminder(lastBackupAt: string, now: Date): BackupReminder {
+  const last = lastBackupAt ? new Date(lastBackupAt) : null
+  if (!last || Number.isNaN(last.getTime())) {
+    // 说清后果，不说「本机」「缓存」这类词：数据在哪、丢了会怎样，教师一眼要能读懂
+    return { level: 'never', text: '还没有导出过备份，数据只保存在这台设备上。' }
+  }
+  const days = daysBetween(last, now)
+  if (days < BACKUP_REMINDER_DAYS) return { level: 'none' }
+  // 醒目态也把后果写出来：只说「建议导出」等于只给了个数字，教师不知道不导出会怎样
+  return {
+    level: 'due',
+    days,
+    text: `距上次导出已 ${days} 天，数据仍只在这台设备上，建议导出备份。`,
+  }
 }
 
 /** 触发浏览器下载（与 utils/seatExport.ts 的 downloadPng 同一手法；用 Blob 而非 dataURL，避免大文件撑爆地址栏） */

@@ -30,11 +30,14 @@ const { todayLabel } = useToday()
 <style scoped>
 .app-header {
   flex-shrink: 0;
-  height: 64px;
+  /* 高度写在 height 上、安全区走内边距：内容仍占 64px，只是整体从刘海 / 状态栏下方开始 */
+  height: calc(64px + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 clamp(20px, 3vw, 36px);
+  padding: env(safe-area-inset-top, 0px)
+    calc(clamp(20px, 3vw, 36px) + env(safe-area-inset-right, 0px)) 0
+    calc(clamp(20px, 3vw, 36px) + env(safe-area-inset-left, 0px));
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);

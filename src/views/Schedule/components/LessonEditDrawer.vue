@@ -173,9 +173,9 @@ function close() {
     :width="440"
     @update:model-value="close"
   >
-    <!-- 表单仅作语义分组：保存 / 取消在抽屉 footer（表单外的兄弟节点），回车保存未接线，
-         保留 prevent 只为兜住浏览器可能的隐式提交（否则整页刷新，未保存内容全丢） -->
-    <form class="lesson-form" @submit.prevent>
+    <!-- 保存 / 取消在抽屉 footer（表单外的兄弟节点），靠 footer 保存按钮的 form="..." 关联回本表单：
+         在任一输入框里回车即触发隐式提交 → submit 事件 → 保存（prevent 兜住整页刷新，未保存内容不会丢） -->
+    <form id="lesson-edit-form" class="lesson-form" @submit.prevent="submit">
       <div class="form-grid">
         <AppField label="星期" required>
           <AppSelect v-model="form.weekday" :options="WEEKDAY_OPTIONS" />
@@ -234,7 +234,8 @@ function close() {
         删除
       </AppButton>
       <AppButton variant="ghost" @click="close">取消</AppButton>
-      <AppButton @click="submit">保存</AppButton>
+      <!-- type=submit + form 关联：点击与输入框回车走同一条提交路径（不再挂 @click，避免提交两次） -->
+      <AppButton type="submit" form="lesson-edit-form">保存</AppButton>
     </template>
   </AppDrawer>
 </template>

@@ -37,7 +37,10 @@ import { AppToast } from '@/components/ui'
 .app-content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px clamp(20px, 4vw, 44px) 56px;
+  /* 全应用唯一的滚动容器：左右 / 底部安全区都算进内边距，横屏时内容不贴刘海、滚到底不被 home 指示条压住 */
+  padding: 28px calc(clamp(20px, 4vw, 44px) + env(safe-area-inset-right, 0px))
+    calc(56px + env(safe-area-inset-bottom, 0px))
+    calc(clamp(20px, 4vw, 44px) + env(safe-area-inset-left, 0px));
 }
 
 .page-enter-active,

@@ -100,7 +100,9 @@ function confirmRemove(): void {
     return
   }
   drawerOpen.value = false
-  editing.value = undefined
+  // **确认后不清空 editing**：确认弹窗与抽屉都有淡出动画，动画期间仍在渲染——清掉会让
+  // 「确定删除「数学 高一9班」…」先变成空名，抽屉标题还会从「编辑课程」翻成「新增课程」（§9.8）。
+  // 下次打开时由 openEdit / openCreate 覆盖。
   toast.success(`已删除「${target.subject} ${target.className}」`)
 }
 </script>

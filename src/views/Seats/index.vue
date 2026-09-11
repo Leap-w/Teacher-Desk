@@ -125,8 +125,9 @@ function askRemove(plan: SeatPlan) {
 
 function confirmRemove() {
   const target = removingPlan.value
-  removingPlan.value = undefined
   confirmOpen.value = false
+  // **确认后不清空 removingPlan**：弹窗有淡出动画，动画期间仍在渲染——清掉会让
+  // 「确定删除座位方案 XXX 吗」先变成空名（§9.8）。下次打开时由 askRemove 覆盖。
   if (!target) return
   if (!seatStore.removePlan(target.id)) {
     toast.danger('删除失败：当前方案不可删除')
@@ -260,8 +261,8 @@ function askRemoveStudent(student: Student) {
 
 function confirmRemoveStudent() {
   const target = removingStudent.value
-  removingStudent.value = undefined
   confirmStudentRemoveOpen.value = false
+  // **确认后不清空**（同上）：确认弹窗淡出期间仍要显示「确定从学生列表中移除 XXX 吗」。
   if (!target) return
   if (!studentStore.removeStudent(target.id)) {
     toast.danger('删除失败：该学生不存在')
