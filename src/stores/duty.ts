@@ -28,7 +28,7 @@ const STORAGE_KEY = `${appConfig.storageKeyPrefix}:duty`
  * 从 localStorage 读取值与设置；首次启动（无缓存）时写入示例值日安排。
  *
  * 播种条件比学生 / 课表严一档（同请假）：值日组引用学生主键，
- * 只在示例学生确实还在档案中时才播种——否则从 v0.9.0 升级上来的教师
+ * 只在示例学生**都还在读**时才播种——否则从 v0.9.0 升级上来的教师
  * 会凭空多出三个自己班上没有的学生的值日组（§11.3）。不播种时不写盘。
  *
  * 缓存损坏（非 JSON / 非数组）时降级为空、**不重播示例**：编排可编辑后
@@ -39,9 +39,10 @@ function loadRecords(students: Student[]): DutyRecord[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (raw === null) {
       const seed = createSeedDuty()
-      const archiveIds = new Set(students.map((item) => item.id))
+      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
+      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
       const referenced = seed.flatMap((record) => (isDutyGroup(record) ? record.studentIds : []))
-      if (!referenced.every((id) => archiveIds.has(id))) return []
+      if (!referenced.every((id) => inSchoolIds.has(id))) return []
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
       return seed
     }

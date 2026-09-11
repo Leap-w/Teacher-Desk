@@ -1,0 +1,248 @@
+import { computed, ref, watch } from 'vue'
+import { defineStore } from 'pinia'
+
+import { appConfig } from '@/config'
+import { useNow } from '@/composables/useToday'
+import { createSeedWeekendReturns } from '@/services/mock'
+import { useStudentStore } from '@/stores/student'
+import { addDaysToDateKey, formatDateKey } from '@/utils/date'
+import { createId } from '@/utils/id'
+import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
+import {
+  currentWeekendKey,
+  isWeekendKey,
+  normalizeWeekendReturn,
+  sortWeekendReturns,
+} from '@/utils/weekend'
+import type { Student } from '@/types'
+import type { WeekendReturnRecord } from '@/types/weekend'
+
+const STORAGE_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
+
+/**
+ * 从 localStorage 读取周末返家记录；首次启动（无缓存）时写入示例数据。
+ *
+ * 与课表 / 请假 / 值日同口径：**缓存损坏（非 JSON / 非数组）时降级为空列表，不重播示例数据**
+ * ——记录可编辑后示例数据不再是唯一来源，重播会盖掉教师自己登记的返家名单（§3.2）。
+ * 非法条目逐条丢弃，并保留缓存原文（不覆盖，便于人工找回）。
+ *
+ * 播种条件比学生 / 课表严一档（同请假、值日）：`teacherdesk:weekendReturns` 是 Phase 7 新增的键，
+ * **每个存量用户第一次打开都算「首次启动」**，无条件播种会让从 v0.10.1 升级上来的教师
+ * 凭空多出别人家学生的返家记录。返家记录引用学生主键，只在示例学生**都还在读**时
+ * （即学生档案同为示例数据）才播种（§11.3）；不播种时**不写盘**，下次启动还会再判一次。
+ */
+function loadReturns(students: Student[]): WeekendReturnRecord[] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (raw === null) {
+      const seed = createSeedWeekendReturns()
+      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里，
+      // 只看 id 是否存在，会把「已把示例学生全部退档」的教师也算成「档案仍是示例数据」，
+      // 于是给人家凭空播种 5 条已退档学生的返家记录。退档不算在档案里（§9.17 审查修复）
+      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
+      if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
+      return seed
+    }
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      console.warn('[weekend] localStorage 数据格式异常，已重置为空列表')
+      return []
+    }
+    // 两重去重，都只保留首条：同一 id（重复 id 会让列表的 v-for key 冲突）；
+    // 同一「学生 + 周末」——本模块的不变量是一条记录对应一个学生一个周末，
+    // 篡改出的重复项会让名单里同一个人出现两次、并把留校人数算少（页面层按名单派生留校）
+    const seenIds = new Set<string>()
+    const seenPairs = new Set<string>()
+    const records = parsed
+      .map((item) => normalizeWeekendReturn(item))
+      .filter((item): item is WeekendReturnRecord => item !== null)
+      .filter((item) => {
+        const pair = `${item.studentId}|${item.weekendDate}`
+        if (seenIds.has(item.id) || seenPairs.has(pair)) return false
+        seenIds.add(item.id)
+        seenPairs.add(pair)
+        return true
+      })
+    if (records.length < parsed.length) {
+      console.warn(
+        `[weekend] 丢弃 ${parsed.length - records.length} 条不合法的返家记录（缓存原文保留）`,
+      )
+    }
+    return records
+  } catch (error) {
+    console.warn('[weekend] 读取 localStorage 失败：', error)
+    return []
+  }
+}
+
+/**
+ * 姓名快照维护已抽到公共件（Phase 7B：与请假记录共用同一份口径，
+ * 见 `utils/student.ts` 的 `refreshStudentNames`）——本模块只做一次类型收窄。
+ */
+function withStudentNames(
+  records: WeekendReturnRecord[],
+  students: Student[],
+): WeekendReturnRecord[] {
+  return refreshStudentNames(records, students)
+}
+
+/**
+ * 周末返家（Phase 7B）：返家记录的唯一读写入口。
+ * 数据源：`teacherdesk:weekendReturns`（Pinia → localStorage，§3.2）。
+ *
+ * 边界（§2.2）：这里存的是**某个周末的行为结果**（谁返家），
+ * 不是「谁可以返家」——能否返家从不落库，也不由学生档案的返家范围推导。
+ *
+ * 与请假的差异（Phase 7B 需求方拍板）：**不设审批**（记录建了就是定了）、
+ * **不记时长与离校 / 返校时间**。留校不落库——「本周末留校 M 人」由
+ * 「在读学生数 − 这一期名单里仍在读的人数」派生（页面层计算，不进本 store）——
+ * 减的是**名单里仍在读的**而不是「本周末已登记人数」：已从档案删除的学生记录会保留，
+ * 但他不算班里的在校生，若按记录数减会让留校人数偏少（页面 views/Weekend/index.vue 的 stayCount）。
+ *
+ * 与请假一致的两处：学生被删除时记录保留（姓名快照冻结）；同一学生同一周末只有一条记录。
+ */
+export const useWeekendStore = defineStore('weekend', () => {
+  /** 学生 store 同步实例化：供姓名快照刷新与新增时取学生用 */
+  const studentStore = useStudentStore()
+  const now = useNow()
+
+  const records = ref<WeekendReturnRecord[]>(
+    withStudentNames(loadReturns(studentStore.students), studentStore.students),
+  )
+
+  watch(
+    records,
+    (value) => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
+      } catch (error) {
+        console.warn('[weekend] 写入 localStorage 失败：', error)
+      }
+    },
+    { deep: true },
+  )
+
+  /** 今天（日期键）、本周末与下周末（周六键），与工作台 / 课表同一个共享时钟 */
+  const todayKey = computed(() => formatDateKey(now.value))
+  const currentWeekend = computed(() => currentWeekendKey(todayKey.value))
+  const nextWeekend = computed(() => addDaysToDateKey(currentWeekend.value, 7))
+
+  /** 各周末的返家人数（周末页切换条按它标注每期人数；工作台卡片只服务本周末，走 currentReturns） */
+  const countsByWeekend = computed(() => {
+    const counts = new Map<string, number>()
+    for (const record of records.value) {
+      counts.set(record.weekendDate, (counts.get(record.weekendDate) ?? 0) + 1)
+    }
+    return counts
+  })
+
+  /**
+   * 页面可切换的周末：**所有已有记录的周末 ∪ 本周末 ∪ 下周末**，按时间倒序（近的在前）。
+   * 不做「前后 N 周」的固定窗口：窗口之外的记录会变成翻不到的孤儿，
+   * 而这样列出来的每一项要么有数据、要么是教师接下来真要登记的那两个周末。
+   */
+  const weekendKeys = computed(() => {
+    const keys = new Set<string>(records.value.map((item) => item.weekendDate))
+    keys.add(currentWeekend.value)
+    keys.add(nextWeekend.value)
+    return [...keys].sort((a, b) => b.localeCompare(a))
+  })
+
+  /** 某个周末的返家名单（按姓名升序） */
+  function listReturns(weekendKey: string): WeekendReturnRecord[] {
+    return sortWeekendReturns(records.value.filter((item) => item.weekendDate === weekendKey))
+  }
+
+  /**
+   * 某个周末**已登记过的学生 id**。
+   * 「一个学生一个周末只有一条记录」这条口径的唯一来源：登记抽屉用它把已登记的人
+   * 显示成已勾选且不可再选，`addReturns` 用它跳过重复登记——两处同源，不会一边放开一边拒绝。
+   */
+  function registeredIdsOf(weekendKey: string): Set<string> {
+    return new Set(
+      records.value.filter((item) => item.weekendDate === weekendKey).map((item) => item.studentId),
+    )
+  }
+
+  /** 本周末的返家名单与人数（工作台卡片与周末页页头共用） */
+  const currentReturns = computed(() => listReturns(currentWeekend.value))
+  const currentCount = computed(() => currentReturns.value.length)
+
+  /**
+   * 本月返家人次：**周末落在本月**的记录数（按周末的周六日期键归月，跨月的那一周算在周六所在的月）。
+   * 与请假的「本月已批准 N 人次」同口径：同一个人本月返家两次记两人次。
+   */
+  const monthReturnCount = computed(() => {
+    const monthPrefix = formatDateKey(now.value).slice(0, 7)
+    return records.value.filter((item) => item.weekendDate.startsWith(monthPrefix)).length
+  })
+
+  // 学生改名 / 补学号后同步快照（只监听姓名与学号，换座位之类的改动不触发）
+  watch(
+    () => studentStore.students.map((item) => `${item.id}|${item.name}|${item.studentNo}`),
+    () => {
+      records.value = withStudentNames(records.value, studentStore.students)
+    },
+  )
+
+  /**
+   * 批量登记返家：为若干学生在某个周末各建一条记录，返回**实际新增的条数**（0 = 一条也没加）。
+   *
+   * 只加不删：已登记过的学生直接跳过（同一学生同一周末**永远只有一条记录**，判定见 registeredIdsOf），
+   * 不在档案里的学生跳过（表单只列在读学生，此处防其他写入入口绕过，§8 审查口径）。
+   * 想撤销某条登记由页面上的删除按钮负责——不做「勾选即同步」的覆盖式写入：
+   * 那会把「学生已被删除、档案里选不到」的历史记录一并抹掉（与请假保留快照的口径冲突）。
+   *
+   * 返回值说明：这是**计数型批量写**，不是单个写入的 `undefined` / `false` 契约（§3.1）——
+   * 批量登记没有「被拒」这一说，跳过若干人后其余照常写入。因此 `0` 只表示「这次一条也没加」，
+   * **不含原因**：既可能是都登记过了，也可能是名单里混进了已删除的学生。提示文案不要替它断言
+   * 是哪一个（本项目已三次复发「界面口径比实现乐观」，§11.1）。
+   */
+  function addReturns(weekendKey: string, studentIds: string[]): number {
+    if (!isWeekendKey(weekendKey)) return 0
+    const registered = registeredIdsOf(weekendKey)
+    const added: WeekendReturnRecord[] = []
+    const createdAt = new Date().toISOString()
+    for (const id of studentIds) {
+      if (typeof id !== 'string' || !id || registered.has(id)) continue
+      const student = studentStore.activeStudents.find((item) => item.id === id)
+      if (!student) continue
+      registered.add(id)
+      added.push({
+        id: createId(),
+        studentId: student.id,
+        studentName: formatStudentShortName(student),
+        weekendDate: weekendKey,
+        createdAt,
+      })
+    }
+    if (added.length === 0) return 0
+    records.value = [...records.value, ...added]
+    return added.length
+  }
+
+  /** 撤销一条返家登记（本地单人数据，无软删 / 回收站，与请假删除同口径）；目标不存在返回 false */
+  function removeReturn(id: string): boolean {
+    const index = records.value.findIndex((item) => item.id === id)
+    if (index === -1) return false
+    records.value = [...records.value.slice(0, index), ...records.value.slice(index + 1)]
+    return true
+  }
+
+  return {
+    records,
+    todayKey,
+    currentWeekend,
+    nextWeekend,
+    countsByWeekend,
+    weekendKeys,
+    listReturns,
+    registeredIdsOf,
+    currentReturns,
+    currentCount,
+    monthReturnCount,
+    addReturns,
+    removeReturn,
+  }
+})

@@ -7,7 +7,7 @@ import { createSeedLeaves } from '@/services/mock'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
-import { formatStudentShortName } from '@/utils/student'
+import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
 import { halfDayKey, isDayPoint } from '@/utils/point'
 import {
   KNOWN_LEAVE_TYPES,
@@ -31,15 +31,16 @@ const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
  * 播种条件比学生 / 课表严一档：`teacherdesk:leaves` 是 Phase 5 新增的键，
  * **每个存量用户第一次打开都算「首次启动」**，而无条件播种会让从 v0.7.0 升级上来
  * 的教师凭空多出 3 条别人家学生的请假（1 条待处理、1 条已批准）。请假记录引用学生
- * 主键，只在示例学生确实还在档案里（即学生档案同为示例数据）时才播种（§11.3）。
+ * 主键，只在示例学生**都还在读**时（即学生档案同为示例数据）才播种（§11.3）。
  */
 function loadLeaves(students: Student[]): LeaveRecord[] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (raw === null) {
       const seed = createSeedLeaves()
-      const archiveIds = new Set(students.map((item) => item.id))
-      if (!seed.every((item) => archiveIds.has(item.studentId))) return []
+      // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
+      const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
+      if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seed))
       return seed
     }
@@ -71,32 +72,11 @@ function loadLeaves(students: Student[]): LeaveRecord[] {
 }
 
 /**
- * 姓名快照维护：学生在档案里 → 按档案刷新（改名、补学号能同步）。
- * 学生被删除后仍在 `students`（软删，列表里过滤掉、档案保留），因此其快照实际
- * **冻结在删除那一刻**——这正是快照存在的意义：记录不随学生删除消失，
- * 仍能读出「这是谁的请假」（§11.3）。只有学生 id 在档案中彻底不存在时才沿用
- * 记录自带的快照；两处都拿不到姓名则无法展示归属，丢弃。
- * 无变化时返回原数组，避免无谓的写盘。
+ * 姓名快照维护已抽到公共件（Phase 7B：与周末返家记录共用同一份口径，
+ * 见 `utils/student.ts` 的 `refreshStudentNames`）——本模块只做一次类型收窄。
  */
 function withStudentNames(records: LeaveRecord[], students: Student[]): LeaveRecord[] {
-  const byId = new Map(students.map((item) => [item.id, item]))
-  let changed = false
-  const next: LeaveRecord[] = []
-  for (const record of records) {
-    const student = byId.get(record.studentId)
-    const name = student ? formatStudentShortName(student) : record.studentName
-    if (!name) {
-      changed = true
-      continue
-    }
-    if (name !== record.studentName) {
-      changed = true
-      next.push({ ...record, studentName: name })
-      continue
-    }
-    next.push(record)
-  }
-  return changed ? next : records
+  return refreshStudentNames(records, students)
 }
 
 /**

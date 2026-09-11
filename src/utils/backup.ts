@@ -6,8 +6,8 @@ import { isPlainObject } from '@/utils/object'
  * 数据备份 / 恢复（近期增量「数据管理」，tag v0.9.0）。
  *
  * 为什么存在：localStorage 是当前唯一数据载体，清缓存 / 换设备 / 换浏览器即全部丢失。
- * 本模块只做三件事——读出七个数据块的原始 JSON、校验 / 合并、写回；**条目级校验不在这里
- * 重复实现**：写回后由页面 `location.reload()`，七个 store 用各自既有的 normalize* 重新加载
+ * 本模块只做三件事——读出八个数据块的原始 JSON、校验 / 合并、写回；**条目级校验不在这里
+ * 重复实现**：写回后由页面 `location.reload()`，八个 store 用各自既有的 normalize* 重新加载
  * （字段形状、id 去重、悬空引用清理都走已验收的那一套）。这里只管两件事：
  * 结构对不对（是不是本应用的备份、每个数据块是不是列表）、哪些条目能按 id 对上。
  *
@@ -35,7 +35,7 @@ export interface BackupModule {
   unit: string
 }
 
-/** 七个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
+/** 八个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
 const STUDENT_KEY = `${appConfig.storageKeyPrefix}:students`
 const SEAT_PLAN_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 const CONSTRAINT_KEY = `${appConfig.storageKeyPrefix}:seatConstraints`
@@ -43,10 +43,11 @@ const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
 const TODO_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
+const WEEKEND_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
 /** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
 const LEGACY_TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable:lessons`
 
-/** 备份覆盖的七个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
+/** 备份覆盖的八个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
 export const BACKUP_MODULES: BackupModule[] = [
   { key: STUDENT_KEY, label: '学生档案', unit: '名' },
   { key: SEAT_PLAN_KEY, label: '座位方案', unit: '个' },
@@ -56,10 +57,11 @@ export const BACKUP_MODULES: BackupModule[] = [
   { key: LEAVE_KEY, label: '请假记录', unit: '条' },
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
   { key: DUTY_KEY, label: '值日安排', unit: '条' },
+  { key: WEEKEND_KEY, label: '周末返家', unit: '条' },
 ]
 
 /**
- * 只在「清空示例数据」里参与的历史键：**不属于七个数据块**——不进概览、不进备份、不参与合并。
+ * 只在「清空示例数据」里参与的历史键：**不属于八个数据块**——不进概览、不进备份、不参与合并。
  * `teacherdesk:timetable:lessons` 是 Phase 4 的课表键，Phase 4.1 迁移到 `teacherdesk:timetable`：
  * 迁移没有丢弃条目就顺手删掉，**还留着就说明当时有读不动的条目，原文只能从这里找回**。
  * 它不在 BACKUP_MODULES 里，所以清空示例时要单独捎带一把，否则会残留示例课程原文（技术债 #10）。
@@ -82,7 +84,7 @@ export interface BackupFile {
   appVersion: string
   /** 导出时间（ISO） */
   exportedAt: string
-  /** 数据块：localStorage 键 → 该键的值（七个数据块都是数组） */
+  /** 数据块：localStorage 键 → 该键的值（八个数据块都是数组） */
   data: Record<string, unknown>
 }
 
@@ -118,7 +120,7 @@ function labelOf(key: string): string {
 
 /**
  * 读出数据块的原始值：缺键 = 无数据（不进 values），JSON 损坏的块记入 broken 并跳过。
- * 默认读七个备份数据块；传 modules 可读别的键（「清空示例数据」用它捎带旧键，见 LEGACY_CLEAR_MODULES）。
+ * 默认读八个备份数据块；传 modules 可读别的键（「清空示例数据」用它捎带旧键，见 LEGACY_CLEAR_MODULES）。
  */
 export function readModules(
   read: RawReader,
@@ -155,7 +157,7 @@ export function countModules(values: Record<string, unknown[]>): ModuleCount[] {
 }
 
 /**
- * 生成备份：七个数据块 + 元信息。
+ * 生成备份：八个数据块 + 元信息。
  * 某个块 JSON 损坏时**跳过该块并回报**（broken），不写 null、不假装它是空的——
  * 宁可少备份一块并当场告诉教师，也不要导出一份看起来正常、实则少了数据的备份。
  */
@@ -367,7 +369,8 @@ function describeItem(key: string, item: unknown): string {
     return `周${weekday} 第 ${period} 节 ${textOf(item.subject) || '未填写科目'}`
   }
   if (key === TODO_KEY) return textOf(item.text) || '（无内容待办）'
-  if (key === LEAVE_KEY) {
+  if (key === LEAVE_KEY || key === WEEKEND_KEY) {
+    // 请假与周末返家同款带 studentName 快照，描述口径一致
     return textOf(item.studentName) || textOf(item.studentId) || '（未记录学生）'
   }
   if (key === DUTY_KEY) {
@@ -379,8 +382,9 @@ function describeItem(key: string, item: unknown): string {
 
 /**
  * 某数据块内「属于示例数据」的判定。
- * 学生 / 课程 / 待办 / 请假看 id 的示例前缀；座位约束的 id 是 UUID，
+ * 学生 / 课程 / 待办 / 请假 / 周末返家看 id 的示例前缀；座位约束的 id 是 UUID，
  * 要看它**引用的学生**是不是示例学生（被删示例学生的约束会变成脏引用）。
+ * 值日是唯一有例外的：数组里混着「轮换设置」这条非示例记录（见下）。
  */
 function samplePredicate(key: string, sampleStudentIds: Set<string>): (item: unknown) => boolean {
   if (key === DUTY_KEY) {
@@ -415,7 +419,7 @@ function samplePredicate(key: string, sampleStudentIds: Set<string>): (item: unk
  *   只在打开「座位表」时执行；约束 store 的删除监听**不是** immediate 的，跨会话的清空它
  *   看不到，会留下脏引用，所以必须在这里显式清；
  * - 座位方案：不动。方案里空出来的座位于**下次打开「座位表」时**由 seat store 的启动清扫释放
- *   （Phase 3B 既有能力），换座日志 / 请假记录是历史，保留姓名快照（与「删除学生记录保留」同一口径）。
+ *   （Phase 3B 既有能力），换座日志 / 请假记录 / 周末返家记录是历史，保留姓名快照（与「删除学生记录保留」同一口径）。
  * - 旧键（`legacy`，见 LEGACY_CLEAR_MODULES）：同样**只删其中的示例条目**，一条不剩才删键——
  *   旧课表键还在就说明当年有课文没能迁移过去，那些原文是教师唯一的退路，不能整键抹掉。
  *
@@ -456,7 +460,7 @@ export function planClearSamples(
   }
 
   // 第三遍：旧键只删其中的示例条目，一条不剩时才删键——旧键不是活数据，没有 store 会在重载时
-  // 因缺键播种；七个数据块相反（整块清空要写 `[]`，删键会让 seed-on-null 把示例数据又种回来）。
+  // 因缺键播种；八个数据块相反（整块清空要写 `[]`，删键会让 seed-on-null 把示例数据又种回来）。
   for (const module of LEGACY_CLEAR_MODULES) {
     const items = legacy[module.key]
     if (items === undefined) continue
@@ -590,7 +594,7 @@ function daysBetween(from: Date, to: Date): number {
  * - 其余 → `none`：不打扰。
  *
  * **只提醒、不代劳**：不自动导出、不写任何键（稳定性增量拍板口径）。
- * 判定只看「上次导出时间」，不感知数据有没有改过——那需要给七个 store 的写盘路径插桩，
+ * 判定只看「上次导出时间」，不感知数据有没有改过——那需要给八个 store 的写盘路径插桩，
  * 收益不抵风险（开发计划 §五 #7）。
  */
 export function backupReminder(lastBackupAt: string, now: Date): BackupReminder {

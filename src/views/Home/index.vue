@@ -9,6 +9,8 @@ import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { useTimetableStore } from '@/stores/timetable'
+import { useWeekendStore } from '@/stores/weekend'
+import { describeWeekend } from '@/utils/weekend'
 import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
 import DashboardDutyCard from './components/DashboardDutyCard.vue'
 import DashboardHeader from './components/DashboardHeader.vue'
@@ -17,6 +19,7 @@ import DashboardLessonCard from './components/DashboardLessonCard.vue'
 import DashboardLessonStats from './components/DashboardLessonStats.vue'
 import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
 import DashboardTodoCard from './components/DashboardTodoCard.vue'
+import DashboardWeekendCard from './components/DashboardWeekendCard.vue'
 import type { DashboardCard } from '@/types'
 
 const toast = useToast()
@@ -25,6 +28,7 @@ const dashboardStore = useDashboardStore()
 const dutyStore = useDutyStore()
 const leaveStore = useLeaveStore()
 const timetableStore = useTimetableStore()
+const weekendStore = useWeekendStore()
 
 /**
  * 「今天」由 timetable store 经**共享时钟**解析（Phase 5 起，全应用一个 30 秒定时器）：
@@ -46,6 +50,17 @@ const dutyNeedsSetup = computed(() => dutyStore.groups.length > 0 && !dutyStore.
 const dutyMembers = computed(() =>
   dutyStore.todayGroup ? dutyStore.membersOf(dutyStore.todayGroup) : [],
 )
+
+/**
+ * 周末返家卡片：名单与标题都取自周末 store 的同一个「本周末」计算属性——
+ * 卡片说的「本周末 N 人」与列出来的名字必须同源，否则跨零点会一个翻篇一个不翻。
+ */
+const weekendLabel = computed(() =>
+  describeWeekend(weekendStore.currentWeekend, weekendStore.todayKey),
+)
+// 直接下传记录而不是姓名数组：卡片要的是「谁返家」，而 v-for 的 key 得是记录 id
+// （姓名快照是「姓名（学号后四位）」，同名 + 学号后四位相同就会撞 key，不能拿它当身份）
+const weekendReturns = computed(() => weekendStore.currentReturns)
 
 function toggleTodo(id: string): void {
   if (!dashboardStore.toggle(id)) toast.warning('待办状态更新失败，请刷新后重试')
@@ -100,6 +115,13 @@ const plannedCards: DashboardCard[] = [
           @open="router.push('/leave')"
         />
 
+        <DashboardWeekendCard
+          :weekend-label="weekendLabel"
+          :returns="weekendReturns"
+          :month-count="weekendStore.monthReturnCount"
+          @open="router.push('/weekend')"
+        />
+
         <AppCard v-for="card in plannedCards" :key="card.key" :title="card.title">
           <template #actions>
             <span class="card-chip" aria-hidden="true">
@@ -148,8 +170,11 @@ const plannedCards: DashboardCard[] = [
     grid-column: 1 / -1;
   }
 
+  /* 自动铺满而不是写死 3 列：7B 之后这一行有 4 张卡（课时 / 请假 / 周末 / 班级概况），
+     写死 3 列会让第 4 张独自折到第二行、右侧空出 2/3。auto-fit + 200px 下限在
+     桌面宽度下正好 4 列，窄一些时回落成 3 列——与改动前的观感一致（§9.17 审查修复） */
   .cell-bottom {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
 }
 

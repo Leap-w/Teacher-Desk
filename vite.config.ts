@@ -16,7 +16,7 @@ export default defineConfig({
       manifest: {
         name: 'TeacherDesk · 班主任工作台',
         short_name: 'TeacherDesk',
-        description: '面向高中班主任的综合工作台：学生档案、座位、课程表、请假与值日管理。',
+        description: '面向高中班主任的综合工作台：学生档案、座位、课程表、请假、值日与周末管理。',
         lang: 'zh-CN',
         start_url: '/',
         display: 'standalone',

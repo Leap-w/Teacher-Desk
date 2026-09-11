@@ -6,7 +6,8 @@
  *
  * 时间一律「日期 + 上午 / 下午」，不引入时刻：班主任日常说的是「请一上午」「请三天」，
  * 精确到时刻会抬高录入门槛（Phase 5 范围拍板口径）。该时间点与离校 / 返校登记端点的
- * 定义在 `types/point.ts`（Phase 7A 起为请假与周末返家共用件）。
+ * 定义已移到公共件 `types/point.ts`（Phase 7A）——**本模块是它当前唯一的使用方**：
+ * Phase 7B 的周末返家按拍板口径不记离校 / 返校时刻，故未接（见 §9.17）。
  */
 
 import type { DayPoint, RegisterEndpoints } from './point'

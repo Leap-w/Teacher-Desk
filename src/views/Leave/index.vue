@@ -249,7 +249,7 @@ function clearFilters() {
       @confirm="confirmDecision"
     />
 
-    <!-- 登记弹窗与周末返家共用（components/flow）；上下文由本页经插槽给，
+    <!-- 登记弹窗已抽到 components/flow（Phase 7A）；上下文由本页经插槽给，
          两端时间戳直接把记录交给弹窗按 mode 取（RegisterEndpoints） -->
     <RegisterPointModal
       v-model="registerOpen"

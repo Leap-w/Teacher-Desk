@@ -15,11 +15,14 @@ import {
 import type { DayPoint, HalfDay, RegisterEndpoints, RegisterMode } from '@/types/point'
 
 /**
- * 离校 / 返校登记弹窗（Phase 7A 抽自请假的 LeaveRegisterModal，请假与周末返家共用）。
+ * 离校 / 返校登记弹窗（Phase 7A 抽自请假的 LeaveRegisterModal）。
  *
- * 只认「日期 + 上午 / 下午」这一个形状，不认识请假 / 周末返家的记录长什么样：
+ * 只认「日期 + 上午 / 下午」这一个形状，不认识具体模块的记录长什么样：
  * 记录相关的上下文（谁的、哪一段）由调用方经 `#context` 插槽给，
  * 两个端点从 `endpoints` 里按 `mode` 取——调用方直接把记录传进来即可（`RegisterEndpoints`）。
+ *
+ * 当前唯一调用方是请假模块；Phase 7B 的周末返家按拍板口径不记离校 / 返校时刻，
+ * 因此没有接到这里（见 `types/weekend.ts` 与开发手册 §9.17）。
  */
 
 interface Props {

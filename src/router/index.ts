@@ -49,6 +49,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '值日管理', icon: '🧹' },
   },
   {
+    path: '/weekend',
+    name: 'weekend',
+    component: () => import('@/views/Weekend/index.vue'),
+    meta: { title: '周末管理', icon: '🧳' },
+  },
+  {
     path: '/toolbox',
     name: 'toolbox',
     component: () => import('@/views/Toolbox/index.vue'),

@@ -1,10 +1,12 @@
 import { addDaysToDateKey, formatDateKey } from '@/utils/date'
 import { DUTY_SETTINGS_ID } from '@/utils/duty'
+import { currentWeekendKey } from '@/utils/weekend'
 import type { Student } from '@/types'
 import type { Todo } from '@/types/dashboard'
 import type { DutyRecord } from '@/types/duty'
 import type { LeaveRecord } from '@/types/leave'
 import type { Lesson } from '@/types/timetable'
+import type { WeekendReturnRecord } from '@/types/weekend'
 
 /**
  * 首次启动的示例数据（模拟后端返回，仅当本地无缓存时使用）。
@@ -308,6 +310,59 @@ export function createSeedLeaves(): LeaveRecord[] {
       createdAt: now,
       decidedAt: now,
       decisionNote: '请说明具体事由后重新提交',
+    },
+  ]
+}
+
+/**
+ * 首次启动的示例周末返家记录（Phase 7B）：本周末 3 人、上周末 2 人。
+ * 覆盖两名同名「旦增卓玛」中的一位，验证快照里的学号后四位分得开；
+ * 两个周末都有记录，是为了让「本月累计人次」与「本周末人数」不相等——
+ * 只种一个周末的数据，看不出统计口径与当前名单的区别。
+ *
+ * 日期相对「首次启动那天」生成，**不写死日期**（同 createSeedLeaves / createSeedDuty）：
+ * 「本周末」经 currentWeekendKey 归到该周周六，写死的示例过几天就成了别的周末的记录。
+ * 只在示例学生确实还在档案中时才播种（stores/weekend.ts 的 loadReturns）。
+ */
+export function createSeedWeekendReturns(): WeekendReturnRecord[] {
+  const thisWeekend = currentWeekendKey(formatDateKey(new Date()))
+  const lastWeekend = addDaysToDateKey(thisWeekend, -7)
+  const now = new Date().toISOString()
+  return [
+    {
+      id: 'weekend-01',
+      studentId: 'seed-01',
+      studentName: '旦增卓玛（0101）',
+      weekendDate: thisWeekend,
+      createdAt: now,
+    },
+    {
+      id: 'weekend-02',
+      studentId: 'seed-03',
+      studentName: '李明（0103）',
+      weekendDate: thisWeekend,
+      createdAt: now,
+    },
+    {
+      id: 'weekend-03',
+      studentId: 'seed-06',
+      studentName: '陈思远（0106）',
+      weekendDate: thisWeekend,
+      createdAt: now,
+    },
+    {
+      id: 'weekend-04',
+      studentId: 'seed-05',
+      studentName: '张浩然（0105）',
+      weekendDate: lastWeekend,
+      createdAt: now,
+    },
+    {
+      id: 'weekend-05',
+      studentId: 'seed-07',
+      studentName: '刘佳怡（0107）',
+      weekendDate: lastWeekend,
+      createdAt: now,
     },
   ]
 }

@@ -8,7 +8,7 @@ export const useAppStore = defineStore('app', () => {
   const syncing = ref(false)
   const lastSyncedAt = ref<string | null>(null)
 
-  /** 模拟同步，Phase 7 替换为真实 API 调用 */
+  /** 模拟同步，Phase 9（后端接入）替换为真实 API 调用 */
   function sync() {
     if (syncing.value) return
     syncing.value = true

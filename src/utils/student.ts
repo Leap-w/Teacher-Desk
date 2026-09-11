@@ -80,6 +80,48 @@ export function formatStudentShortName(student: Pick<Student, 'name' | 'studentN
   return lastFour ? `${student.name}（${lastFour}）` : student.name
 }
 
+/** 带学生姓名快照的记录（请假记录、周末返家记录等，见下方 refreshStudentNames 的说明） */
+export interface StudentNamedRecord {
+  studentId: string
+  studentName: string
+}
+
+/**
+ * 姓名快照维护：学生在档案里 → 按档案刷新（改名、补学号能同步）。
+ * 学生被删除后仍在 `students`（软删，列表里过滤掉、档案保留），因此其快照实际
+ * **冻结在删除那一刻**——这正是快照存在的意义：记录不随学生删除消失，
+ * 仍能读出「这是谁的记录」（§11.3）。只有学生 id 在档案中彻底不存在时才沿用
+ * 记录自带的快照；两处都拿不到姓名则无法展示归属，丢弃。
+ * 无变化时返回原数组，避免无谓的写盘。
+ *
+ * 请假记录与周末返家记录**共用这一份实现**（Phase 7B 抽自 `stores/leave.ts` 的同名私有函数）：
+ * 两者的快照口径本就相同，各存一份迟早会漂移（§9.14 合并 `isPlainObject` 的同款问题）。
+ */
+export function refreshStudentNames<T extends StudentNamedRecord>(
+  records: T[],
+  students: Student[],
+): T[] {
+  const byId = new Map(students.map((item) => [item.id, item]))
+  let changed = false
+  const next: T[] = []
+  for (const record of records) {
+    const student = byId.get(record.studentId)
+    const name = student ? formatStudentShortName(student) : record.studentName
+    if (!name) {
+      changed = true
+      continue
+    }
+    if (name !== record.studentName) {
+      changed = true
+      // 只改写 studentName 这一个既有字符串字段，形状不变（泛型收窄不到字面量组合，故断言）
+      next.push({ ...record, studentName: name } as T)
+      continue
+    }
+    next.push(record)
+  }
+  return changed ? next : records
+}
+
 /** 座位强调类别：只复用学生档案既有字段；高个由「高个」标签表达（档案暂无独立身高字段） */
 export type SeatAccent = 'cadre' | 'tall' | 'tag'
 
