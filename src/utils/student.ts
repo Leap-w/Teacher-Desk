@@ -37,6 +37,10 @@ export function normalizeStudent(raw: Student): Student {
     ...raw,
     familyAddress: typeof raw.familyAddress === 'string' ? raw.familyAddress : '',
     familyLocation,
+    // 姓名缺失（外部篡改 / 手改缓存）时给空串，理由同学号：座位图与值日卡片在渲染路径上
+    // 直接调用 `name.charAt(0)`，undefined 会抛错把整页打断。**不丢弃这条记录**——
+    // 档案里留着教师才有机会补上姓名，丢了他连「记录被吃了」都看不见（§六：安全空值）
+    name: typeof raw.name === 'string' ? raw.name : '',
     // 学号缺失（外部导入 / 手改缓存）时给空串：展示函数一律 `studentNo.slice(-4)`，
     // undefined 会直接抛错把整页渲染打断（值日卡片、座位图都在渲染路径上调用它们）
     studentNo: typeof raw.studentNo === 'string' ? raw.studentNo : '',

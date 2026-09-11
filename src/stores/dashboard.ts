@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createSeedTodos } from '@/services/mock'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import type { Todo } from '@/types/dashboard'
@@ -43,7 +43,8 @@ function loadTodos(): Todo[] {
   const stored = readList(STORAGE_KEY)
   if (stored === null) {
     const seed = createSeedTodos()
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   }
   return reviveTodos(stored)

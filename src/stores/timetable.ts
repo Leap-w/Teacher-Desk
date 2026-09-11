@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedLessons } from '@/services/mock'
-import { localStoragePort, readRaw, writeJSON } from '@/services/storage'
+import { localStoragePort, readRaw, writeJSON, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import {
@@ -166,7 +166,9 @@ function loadLessons(): Lesson[] {
     }
 
     const seed = createSeedLessons()
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
+    //（上面那条旧键迁移走 writeJSON：迁移出来的是教师自己的课表，不是示例）
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   } catch (error) {
     console.warn('[timetable] 读取本地存储失败：', error)

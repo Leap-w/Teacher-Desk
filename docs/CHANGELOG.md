@@ -6,9 +6,146 @@
 
 ---
 
-## 未发布 —— v0.14.0 之后的联调补丁（2026-09-12）
+## v0.15.0 —— Phase 12：macOS 原生 Widget（**代码已完成，待在真实 macOS 桌面上验收；未提交、未打 tag**）
 
-> **尚未打标签、尚未定版号**（要不要发成 `v0.14.1` 由需求方定；本条目先记内容）。改动来自真环境首次联调：缺口都不是自检能抓到的——它们落在 `cloudbase.ts` 与视图层，而自检覆盖的是 `cloudSync.ts` 的纯逻辑。
+> **这一条与上面所有条目的性质不同：它不是一次交付记录，而是一份「待验收」的现状。** macOS 侧的代码已写完、工程自检全绿（见下方「验证」），但**它从没在真实桌面上跑过**——Widget 能不能被系统的小组件库加载、三种尺寸渲染成什么样、刷新与点击跳转是否真的成立，**一件都没验过**（七项清单见下）。因此：**代码留在工作区、暂不提交**（§八）；验收通过再连同本节一起提交并打 tag，验收不过就只改不过的那一处。**版号 `v0.15.0` 是预留**（Xcode 工程里 `MARKETING_VERSION = 0.15.0`），最终由需求方在打 tag 时定。
+
+**位置**：全部在 `macos/`（与 Web 项目**并列**的独立 Xcode 工程），**Web/PWA 侧一行未改**——`src/`、八个业务 store、`services/cloudSync.ts`、`RemotePort` 一个字节都没动，Phase 9C 的 81 项常驻测试仍全绿。「不动 Web 项目结构来凑 Widget」是规格 §十的原话，也是本阶段的边界。
+
+### 新增
+
+- **独立的 Xcode 工程 `macos/`**（35 个文件：21 个 Swift / 2,736 行 + 2 个 shell / 224 行 + 12 个配置与文档）：两个 target——宿主 App `com.teacherdesk.mac` 与 Widget 扩展 `com.teacherdesk.mac.widget`，`MACOSX_DEPLOYMENT_TARGET = 14.0`、`SWIFT_VERSION = 5.0`（Swift 5 语言模式）、`MARKETING_VERSION = 0.15.0`。`project.pbxproj` **手写**（不引 XcodeGen 生成），另附 `project.yml` 作为「pbxproj 被改坏 / 想从头重建」的退路。**实测可用**：`plutil -lint`、`xcodebuild -list`（两个 target 都在）、`xcodebuild build` **BUILD SUCCEEDED**（宿主 + 扩展 + 嵌入 + 资源目录）。
+- **三个只读 Widget**（规格 §三指定的三类，**不增第四类**）：**今日课程**（`TeacherDeskLessonWidget`）、**今日待办**（`TeacherDeskTodoWidget`）、**班级概况**（`TeacherDeskClassWidget`），各自支持 **Small / Medium / Large** 三种尺寸。时间线按「下一个 30 分钟整点」刷新，另在宿主 App 同步成功后调 `WidgetCenter.reloadAllTimelines()` 立即重画。
+- **数据通路**（规格 §五「Widget 不联网」的落地方式）：**宿主 App 直连 CloudBase 拉那四份文档 → 组装成一份只读快照 → 写 `~/Library/Application Support/TeacherDesk/widget-snapshot.json` → Widget 只读这一个文件**。Widget 侧不联网、不写数据、不认识 CloudBase。
+- **手写的 CloudBase 协议层**（`TeacherDesk/CloudBaseClient.swift`）：**不引 `@cloudbase/js-sdk`**（Widget 侧不需要，宿主侧也没必要为四份文档拖进一整个 SDK）。协议不是猜的——网关前缀、`Basic base64("<env>:")` 凭据头、`/v1/signin`、`/v1/token`、文档查询 URL 的拼法，都是从 SDK 的 sourcemap 原文（`sourcesContent`）逐行读出来、再用 curl 在**真实网关**上验证过凭据形状的（有 Basic 头 → `INVALID_CREDENTIALS`，没有 → `MISSING_CREDENTIALS`）。**诚实记一笔：被验证的是鉴权那一段；数据库查询那一段没能这样验**——网关在路由之前就以同一个 401 拒掉任何路径，它要到第一次真机登录才第一次真跑。
+- **凭据进 Keychain**（`TeacherDesk/KeychainStore.swift`，service `com.teacherdesk.mac.cloudbase`）：access token / refresh token / 过期时刻 / 用户名 / uid 五项，`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`；退出登录逐项清干净（**别漏 refresh token**）。**与快照目录刻意分开**：快照目录谁都打得开，而 token 不该是。
+- **样例快照与铺样例脚本**：`Samples/snapshot.sample.json`（**全部是编造数据**：高一9班 / 高一7班的课、五条待办、在读 47 人、一份「9月第2周」座位方案，**没有一个真实学生姓名、学号或地址**）+ `Tools/use-sample-snapshot.sh`——**不登录也能先把三个 Widget 加到桌面看长什么样**。
+- **工程自检 `Tools/verify.sh`**（六档）：配置语法（`plutil -lint` 五个文件）→ JSON 资源（四个）→ Swift 类型检查（共享层 + Widget 15 个文件 / 共享层 + 宿主 14 个文件）→ **冒烟测试**（`Tools/SnapshotSmoke`，真编译真运行，29 项断言：快照组装 / 解码 / 星期换算 / 筛选排序 / 计数 / 深链）→ `xcodebuild -list` → `xcodebuild build`。**它同时如实列出自己证明不了的那四件事**（渲染、刷新、点击跳转、能否被组件库加载），免得「自检全绿」被读成「Widget 已经能用」。
+- **设计变量从 Web 抄来**（`Shared/DesignTokens.swift`）：松石青 `#2F8F83`（含 strong / soft）、文字三级灰、边框、圆角 8/12/16、间距 4/8/12/16/20——**逐条对应 `src/styles/theme.css`**，Widget 与 Web 目视一致。
+- **点击跳转**：`.widgetURL` / `Link` 指向 Web 页面（深链按 `SnapshotDerive` 与 `WidgetLinks` 组装）；Web 地址可在宿主 App 里改，存 `UserDefaults.standard`。
+
+### 变化
+
+- **Web / PWA 侧没有任何变化**——没有新页面、没有新路由、没有新 store、没有改动任何既有模块。本阶段是**并列新增一个 `macos/` 目录**，Web 项目结构原样不动（规格 §十）。
+
+### 边界（重要，别误会）
+
+- **宿主 App 不是「TeacherDesk 桌面版」**：它不显示课表、不显示档案、没有工作台、**一个业务页面都没有**，只干「把云端那四份文档变成一份只读快照」这一件事。窗口刻意做成「一屏就装下」的小面板，教师平时不需要打开它。**真正干活的界面仍然只有 Web/PWA 一个**（规格 §四）。
+- **快照是一份副本，不是真源**：真源是 Web 端那份。Widget 显示的是**上一次宿主 App 同步时**的样子，宿主 App 没运行就不会更新。
+- **「Widget 不联网」从系统强制降级成了代码纪律**：本项目**不开 App Sandbox、不用 App Groups**（依据：不上架、只自己用）。因此那个 JSON 放在普通目录里，**谁都能读**；Widget 侧也确实没有发过任何网络请求——但这是**代码没写**，不是系统不让。若哪天要给别的人用或上架，得把沙箱、App Groups、entitlements 一起加回来（两个 `.entitlements` 里都写了该怎么加）。
+- **同理，ad-hoc 签名就够**：不需要 Apple ID、不需要付费开发者账号（App Groups 是付费账号能力，免费账号用不了——这也正是当初放弃它的原因之一）。
+- **协议层是手写的，且数据路径未经实测**：见上「新增」最后一条。它的第一次真实运行就是教师第一次登录。
+- **`macos/` 的文件也要过 Web 项目那五项验证里的格式检查**：`prettier --check .` 覆盖到 `macos/` 下的 `README.md` / `project.yml` / 样例 JSON / 资源目录 JSON——本阶段收尾时它们**确实让 `format:check` 红过**，已按仓库统一样式格式化，**没有为了 macOS 侧去放宽任何检查标准**（没有往 `.prettierignore` 里加 `macos/`）。
+
+### 明确未做（本阶段禁止项）
+
+**逐条对照规格 §一遵守**：不加任何业务功能、不加第四个 Widget、不加 Web/PWA 页面、不改八个业务 store、不改 `cloudSync`、不改 `RemotePort`、不做作息时间系统 / 课程时间模型 / 值日算法 / 留校统计 / 统计图表 / 任务管理模块 / 家长沟通 / 通知系统 / 学生记录 / 多班级 / 多用户 / 权限系统 / 复杂同步机制；不重构 CloudBase SDK、不处理 SDK 包体（那是技术债 #12，另行拍板）；**不开沙箱**（连「提前把沙箱 + App Groups 方案做出来」也没做——见下）；不自动开工任何后续阶段。
+
+### 验证
+
+- **`sh Tools/verify.sh` 全绿**（六档全过）：配置语法 ✓ 五个文件 / JSON ✓ 四个 / 类型检查 ✓ 15 + 14 个文件 / **冒烟测试 29 项断言全过** / `xcodebuild -list` ✓ 两个 target / **`xcodebuild build` BUILD SUCCEEDED**。工具链：Xcode 26.6 + macOS 26.5 SDK（`xcode-select` 仍指向 Command Line Tools，脚本用 `DEVELOPER_DIR` 局部指定，不需要 sudo）。
+- **Web / PWA 五项验证全绿，标准一条没降**：`prettier --check .`（**收尾时因 `macos/` 的 6 个文件红过一次，已格式化，现在绿**）/ `vue-tsc --noEmit` / `eslint` / **`npm run test`（4 个文件 81 项全过）** / `npm run build`（✓ 1.99s；PWA **48** 条 / **2181.22 KiB**、入口 chunk **917.70 kB**——与 Phase 9C 交付时**逐位相同**，正是「Web 侧一行未改」的旁证）。
+
+### 待真机验收（七项，只有真实 macOS 桌面能回答）
+
+**这七项一项都还没验**，它们也正是「暂不提交」的全部理由：
+
+1. **Widget 能不能被系统的组件库发现**（组件库列表里有没有 TeacherDesk）——**不开沙箱的扩展，`chronod` 认不认，这是本阶段最大的未知**；
+2. **三个 Widget 是不是都能加到桌面上**（今日课程 / 今日待办 / 班级概况）；
+3. **Small / Medium / Large 三种尺寸渲染是否正确**（排版有没有截断 / 溢出 / 空白）；
+4. **Widget 刷新是否生效**（时间线按 30 分钟刷；宿主 App 同步成功后是否立即重画）；
+5. **点击 Widget 能否跳到对应的 Web 页面**（`.widgetURL` 的深链，含 Web 未部署时的降级表现）；
+6. **样例快照在真实桌面上显示是否正确**（`sh Tools/use-sample-snapshot.sh` 铺一份假数据，**不登录也能验第 1–5 项**）；
+7. **真实登录能否取到云端数据**（这一项会第一次真跑那段没能 curl 验证的数据库查询路径）。
+
+> **建议的验收顺序**：先跑 `sh Tools/use-sample-snapshot.sh` 铺样例 → Xcode 里 Run 一次宿主 App → 把三个 Widget 依次加到桌面（第 1–6 项）→ 再登录一次验第 7 项。**前六项不过，第七项不用试**——它们证明的是「Widget 这个壳能不能用」，与数据无关。
+
+### 文档
+
+- 开发手册新增 **§9.22**（本阶段的完整记录：工程结构、数据通路、协议层怎么反推出来的、不开沙箱的取舍 ⑯、边界与明确未做），§1 状态表与「当前结论」、§10 阶段表、§12 接手起点同步。
+- `docs/roadmap.md` 与 `docs/开发计划.md` 同步 Phase 12 的实际状态（**开发完成、待真机验收**，不写成最终完成）。
+
+### 提交与打标签
+
+**本阶段不提交**（§八）。等真机验收：
+
+- 验收**通过** → 与本节一起提交并打 tag（`git add macos docs/CHANGELOG.md docs/roadmap.md docs/开发计划.md docs/开发手册.md`，**只列明确路径、绝不 `git add -A`**；`macos/` 首次入库前先确认 `find macos -name '.DS_Store' -o -name 'xcuserdata'` 为空——工程里带了 `.gitignore` 兜这几样）；
+- 验收**不通过** → **只改不过的那一处**，不动已经通过的其余部分；若卡在第 1 项（组件库加载不了），那才轮到「App Sandbox + App Groups」方案，届时两个 `.entitlements` 里已经写好了要加哪几个键。
+
+---
+
+## v0.14.1 —— Phase 9C：稳定性与回归测试基线（2026-09-12）
+
+**不新增任何业务功能**——这一版做的是「把已经承重的东西看住」。9A / 9B 期间，每次改动都靠**临时写一份自检脚本**来确认同步判定、写盘幂等、缓存损坏后的读取行为没坏；脚本跑完就删，下一次改动又把同一件事重写一遍，漏了就没人知道。本阶段把这套看护变成**仓库里永久存在的回归测试**（`src/__tests__/`，**4 个测试文件 + 1 个替身底座**，81 项，`npm run test`），并顺手收口两件数据安全事项：**首次同步不再静默覆盖本机真实数据**，以及 `normalizeStudent` 缺 `name` 时的渲染崩溃。
+
+> **与下一条同打一个 tag（版号已定）**：`v0.14.1` 覆盖两条内容——先落的**联调补丁**（下一条，commit `2c805d2` / `f22b98c` / `084841c`）与本次 **Phase 9C**。两者都没有单独发过版、同一天、同一条线上，合成一个补丁版号更如实。**需求方 2026-09-12 定：合成 `v0.14.1` 一个 tag**，不再拆成 `v0.14.2`。
+>
+> **这个 tag 只覆盖 Web / PWA 侧**：同日随后还有 **`v1.0.0`（正式上线）**，它才把 Phase 12 的 macOS 代码（`macos/`）带进仓库——因此本 tag 的树里**没有 `macos/`**，而 docs 已经写着 Phase 12 的状态（**代码在手、待在真机验收**）：那是**对当时工作区的如实描述**，不是写错。两个 tag 同一天、前后脚，见本文件顶部 `v1.0.0` 条。
+
+### 新增
+
+- **常驻回归测试基线**（`src/__tests__/`，**4 个测试文件 + 1 个替身底座**（`helpers/env.ts`），共 5 个文件 / 1,394 行 / **81 项**，`npm run test`）：四类，各自盯一件承重的事——**同步冲突判定**（21 项：本机无数据 / 云端无键 / 本地更晚 / 云端更晚 / 时刻相同 / 本地有待发修改 / 首次同步，**七个处境分开测**）、**写盘幂等与「存储唯一出口」**（12 项：内容没变 → 不写盘 → 返回 `false` → 不发同步通知；变了 → 写一次 → 返回 `true` → 发一次；另含一条扫描全 `src/` 确认只有 `services/storage.ts` 碰 `localStorage` 的断言）、**各域 `revive*` 与 normalize**（38 项：八个模块 × 正常 / 空 / 缺字段 / 旧结构 / 非法字段 / 非法数组元素 / 损坏原文）、**断网与刷新下的同步队列 + 首次同步保护**（10 项）。
+- **测试基建**（`src/__tests__/helpers/env.ts`）：内存版存储（**可按键数写入次数**——幂等断言靠它）、**只记录不投递**的假广播通道（投递必须显式 `emit()`，那一行就代表「另一个标签页发了这条消息」）、可拨的假时钟与 `setOnline()`。**刻意不用 jsdom**：要验的恰是真实浏览器里造不出来的处境（另一个标签页的消息、断网、刷新之后盘上剩什么），jsdom 给的是真的 `localStorage` 与真的通道——跨用例串味、数不出写入次数、拨不动时钟。
+- **两条 npm 脚本**（沿用既有命名风格）：`npm run test`（= `vitest run`）与 `npm run test:watch`（= `vitest`）。`vitest.config.ts` 与 `vite.config.ts` **分开**：应用构建与测试环境各自演进，互不牵连。新增开发依赖**只有 `vitest` 一个**（不引 Jest、不引 Playwright、不为测试去改组件）。
+- **测试不依赖真实 CloudBase**：`vi.mock('@/services/cloudbase')` 把远端换成内存假云端，`vi.resetModules()` 模拟「刷新」（云端假实现跨重载存活，模块重载后重新接上），去抖窗口由假时钟推进而不是真等 1.5 秒。
+
+### 变化
+
+- **首次同步收紧（本阶段唯一涉及用户行为的调整）**：此前（9B）首次同步**以云端为准**——本机已有教师录入的数据时，那份数据会被云端那份静默覆盖。现在分两种处境：**情况 1** 本机没有真实业务数据（键不存在 / 空列表 / 仍是播种原文）→ 照旧以云端为准（新设备装上就该看到已有数据）；**情况 2** 本机已有真实数据（学生档案 / 座位方案 / 课表 / 请假 / 值日 / 周末返家 / 待办）而云端也有 → **不静默覆盖**，报出待裁决的键，**本机与云端一字未动**，等教师在工具箱里选「保留本机并上传」或「保留云端并覆盖本机」。**不做复杂合并 UI、不做字段级合并、不做自动智能合并**——两条都是真数据时，同步没有资格替教师丢掉任何一份。首次同步**之后**同一项两边都改过，仍按 9B 拍板的**最后写入胜出**（那是明示规则，不是静默丢弃）。
+- **「本机有没有真实数据」的判据是播种基线原文**，不是示例 id 前缀：id 前缀判的是「这条记录怎么来的」，原文判的是「教师动过没有」——首次同步要问的正是后者，因此教师改过任何一字就自动失配。
+- **「清空全部数据」改名为「清空本机数据」**，并在已登录时明说「不会删除云端数据，下次同步时可能重新出现在本机；要连云端一起清，得去云开发控制台删除该集合里的文档」。**文案之外没有行为改动**——「要不要加『同时清空云端』」需求方 2026-09-12 拍板**不做**（这个工具是工作台，不是记录系统）。
+- **冲突是界面上的一个状态，不是同步失败**：`cloudSyncState` 增 `conflicts`（与 `status` 正交：一个说「这一轮通不通」，一个说「有个问题只有教师能回答」）；工具箱出现冲突区块与确认弹窗，顶栏「同步」按钮遇到冲突提示一句并把人送到工具箱，`statusView` 首行显示「需要确认」。冲突列表**只活在内存**，刷新后由下一轮同步重新发现。
+
+### 缺陷修复
+
+- **`normalizeStudent` 没兜 `name`，缓存被改坏时会打断整页渲染**（数据安全级）：`SeatClassroom.vue` 与 `SeatExportGraphic.vue` 在渲染路径上直接调用 `occupantOf(seat)?.name.charAt(0)`，`name` 为 `undefined` 时抛错，**整页座位图渲染不出来**。现在缺姓名给空串（与 `studentNo` 同款口径），**不丢弃这条记录**——档案里留着教师才有机会补上姓名，丢了他连「记录被吃了」都看不见。这是写常驻测试时**顺手抓出来的真缺陷**：临时脚本从没覆盖到「缺姓名的学生」这一格。
+
+### 边界（重要，别误会）
+
+- **视图层与 `cloudbase.ts` 仍不在自检里**：9B 那次「点登录没反应」（输入框 `type="email"` 被浏览器原生校验挡在提交之前）的教训没有因此消失，**真机验证依然不可替代**。
+- **播种基线极端情况下会缺**（存储被拒写 / 教师手工清掉该键）：此时判定偏向「本机有数据」——最坏是多问教师一句「保留哪一份」，**不会丢数据**。
+- **冲突提示刷新后要等一轮同步才会再出现**（冲突列表不落盘）。**改坏了的旁路仍然存在**：直接写 `localStorage` 的代码不会被同步看见——那条断言现在有测试看护了，但它管的是「有没有人绕过去」，不是「绕过之后怎么办」。
+- **首屏体积没变**：CloudBase SDK 仍**静态进主包**。本阶段只做实测与分析——入口 chunk **917.70 kB / gzip 251.43 kB**，其中 SDK 及其依赖占 **773.32 kB 原始 / 195.55 kB gzip**（同一套源码只把 SDK 换成空壳重建，入口降到 144.38 kB / gzip 55.88 kB），且它在**首屏静态路径**上，没配云环境的构建也照付。**可行**（全应用只有一处 `import '@cloudbase/js-sdk'`，改成 `await import(...)` 即可），但**按 §十一 只分析不实施**：改打包会动到登录链路，9C 是稳定性阶段。**建议放到 Phase 12 之后或一个专门的小版本**，且先在真机上量一次「教室网络里首屏多几百 kB 值不值」。
+- 三条老边界**一条都没变**：冲突＝最后写入胜出（首次同步那一轮除外）、**无删除传播**、**本地清空 ≠ 云端清空**。
+
+### 明确未做（本阶段禁止项）
+
+Tombstone 与删除传播、字段级合并、服务器时间同步、多人协作、服务端业务逻辑、更换 CloudBase、重构 Store / storage 架构、新增 Repository / Domain 层、新增页面与业务模块、开发 Widget、提前开发 Phase 12、为「代码漂亮」大面积整理 UI——**逐条遵守**。
+
+### 验证
+
+- **五项验证全通过**：`prettier --check .` / `vue-tsc --noEmit` / `eslint` / **`npm run test`（`vitest run`）** / `npm run build`。测试 **4 个文件 / 81 项**（`decideKey` 21 / `storage` 12 / `revive` 38 / `cloudSync` 10，vitest 自己报的就是这 4 个），全绿，**不依赖真实 CloudBase、不需要网络**。
+- 源文件 **119** 个 / **22,728** 行，其中 `src/__tests__` **5 个 / 1,394 行**；**不含测试 114 个 / 21,334 行**（联调补丁后为 114 个 / 20,875 行）——本阶段**源码净 +459 行**（首次同步保护与冲突处置、冲突界面与文案、清空语义改名、`normalizeStudent` 的姓名守卫），其余全落在 `src/__tests__/` 里。
+- PWA **48** 条 / **2181.22 KiB**；入口 chunk **917.70 kB**（gzip 251.43 kB；联调补丁后为 907.97 kB，本阶段 **+9.73 kB**——即冲突界面与文案的成本）。
+- **没有新增任何业务功能、页面或模块**；版本号在这一版定为 **`0.14.1`**，两处同步改：`package.json` 的 `version` 与 `src/config/index.ts` 的 `appConfig.version`（该值会写进导出备份的 `appVersion` 元信息，纯记录用——**导入兼容判断看的是 `schemaVersion`，与它无关**，所以改它不影响任何旧备份的导入）。
+- ⚠️ **首次同步的口径与 9B 不同**：升级到这一版后第一次登录，若本机已有真实数据而云端也有，**不会自动采纳云端**，会等教师裁决。**第一次登录仍建议在「录了真实数据的那台设备」上做，并先导出一次备份**。
+
+### 文档
+
+- 开发手册新增 **§9.21**（本阶段的完整记录：三层测试底座与「不用 jsdom」的理由、四类测试各盯什么、首次同步两种处境、清空口径、SDK 包体实测、取舍 ⑬⑭⑮、边界与明确未做），§1 状态表与「当前结论」、§10 阶段表与注 1 / 注 4 / **注 5**（Phase 10 取消 / Phase 11 不作独立模块 / Phase 12 保留的口径）、§11.4 交付流程（**第五步 `npm run test` 成为交付链的一部分**）、§12 接手起点与 §13.1 提交规范同步。
+- `docs/roadmap.md` 与 `docs/开发计划.md` 同步本阶段状态与取消项；技术债清单里「临时自检脚本不可复用」一条由此结案。
+
+### 提交与打标签
+
+```bash
+# 需求方自行执行（本机 git 在沙箱里被挡，命令留给需求方跑）
+git add src/__tests__ vitest.config.ts src/config/index.ts \
+        package.json package-lock.json tsconfig.json eslint.config.js \
+        src/services src/stores src/utils/student.ts \
+        src/components/layout/AppHeader.vue src/composables/useCloudSync.ts \
+        src/views/Toolbox/index.vue \
+        docs/CHANGELOG.md docs/开发手册.md docs/roadmap.md docs/开发计划.md README.md
+git commit -m "test: phase-9c stability and regression test baseline"
+git tag -a v0.14.1 -m "Phase 9C: stability and regression test baseline"
+```
+
+> **只 `git add` 明确路径，绝不 `git add -A`**；`.claude/settings.local.json` 不提交（§11.4）。注意**逐个列文件而不是 `git add docs`**：`docs/TeacherDesk V1.0 开发框架与需求文档.docx` 在工作区里处于**被删除**状态（这不是本阶段造成的，见交付报告），`git add docs` 会顺手把这个删除也提交进去。
+
+---
+
+## v0.14.1（之一）—— v0.14.0 之后的联调补丁（2026-09-12）
+
+> **已并入 `v0.14.1`**（需求方 2026-09-12 定：与上面的 Phase 9C 合成一个 tag，不再单独发版；本条目只记内容）。改动来自真环境首次联调：缺口都不是自检能抓到的——它们落在 `cloudbase.ts` 与视图层，而自检覆盖的是 `cloudSync.ts` 的纯逻辑。
 >
 > **2026-09-12 状态更新（需求方告知）**：教师侧的**控制台准备已全部完成**——开启用户名密码登录、建 `teacherdesk` 集合、权限「仅创建者可读写」三件都已办好（原文「还剩一件应用之外的事」由此作废）。**应用侧自此可以真正登录并同步**：请**在「录了真实数据的那台设备」上做第一次登录，并先导出一次备份**——首次同步对**云端已有的键以云端为准**，在别的设备上先登录会把那份数据推上去（见开发手册 §9.20 边界①、`docs/开发计划.md` §五 #16）。**这一步是「需求方告知」而非本地验证**：我没有云环境账号，登录与同步的实际效果只有你那边能确认。
 

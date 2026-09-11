@@ -124,6 +124,100 @@ export const localStoragePort: StoragePort = {
 }
 
 /**
+ * **播种基线**：每个键「应用第一次播种时」写进盘里的那份原文（键名 → 原文），存在盘上。
+ *
+ * 为什么要有它（Phase 9C 的首次同步保护）：云端同步在「这台设备还没有任何对齐记录」时
+ * 必须分开两种处境——本机这份只是**应用播种的示例数据**（新设备装上就该看到云端已有数据），
+ * 还是**教师自己录进去的真实数据**（两边都可能是真的，不能替他决定哪份要留）。
+ * 没有这个基线就只能二选一：要么静默覆盖教师的数据，要么把示例数据当成真实数据推上云。
+ *
+ * **为什么记原文而不是「是不是示例」这个判断**：判定要精确到一字不差。按 id 前缀
+ * （`utils/id.ts` 的 `isSampleRecordId`，那是「清空示例数据」用的）不够——教师把示例学生
+ * 改名 / 改学号 / 删掉两位之后，记录 id 仍是示例 id，可那已经是他的数据了；照前缀判成
+ * 「示例」，首次同步就会把它交给云端覆盖掉，正是这一层要防的事。原文比对没有这个缺口：
+ * 教师动过任何一个字，基线自然失配，判定自动偏向「这是教师的数据」。
+ *
+ * **为什么必须落盘**：播种发生在 store 第一次被打开时，而首次同步可能在那之后的任何一次
+ * 启动里发生（教师先录了几天，再去登录）。只活在内存里的话，第二次启动就整表丢失，
+ * 判定一律偏向「本机已有数据」——不再有静默覆盖的风险，但新设备一登录就会被问一句
+ * 「本机与云端都有数据，保留哪一份」，而本机那份其实只是示例。
+ *
+ * **为什么另立一个键，而不并进 `cloud:meta`**：记账是**账号级**的（登出即清），
+ * 「这份是示例」却是**这台设备**的事实，与登录哪个账号无关。并进去的话，登出再登录
+ * 就会把本机这份示例当真实数据去和云端争。
+ *
+ * 它的失效是**自动**的：教师一编辑，盘上原文就与基线不同，比对自然不成立，
+ * 不需要任何"清除基线"的代码。它会随「清空全部数据」的前缀扫描一起被删掉，
+ * 而重载后各 store 重新播种、重新登记——正是想要的语义。
+ * **不是教师的数据**：不进备份，也不参与同步（不在 `syncPersisted` 注册表里）。
+ */
+const SEED_TEXT_KEY = `${appConfig.storageKeyPrefix}:seedText`
+
+/** 键名 → 播种原文。懒加载一次，之后以内存这份为准（本进程内不再重读） */
+let seedTexts: Record<string, string> | null = null
+
+function seedTextTable(): Record<string, string> {
+  if (seedTexts !== null) return seedTexts
+  seedTexts = {}
+  try {
+    const raw = window.localStorage.getItem(SEED_TEXT_KEY)
+    if (raw === null) return seedTexts
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return seedTexts
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === 'string') seedTexts[key] = value
+    }
+  } catch (error) {
+    // 读不出来就当作「盘上没有一份是示例」：判定偏向「本机已有数据」——
+    // 最坏是多问教师一句（本机与云端都有数据，保留哪一份），而不是静默覆盖
+    console.warn('[storage] 播种基线读不出来，本次会话按「本机数据都不是示例」处理：', error)
+  }
+  return seedTexts
+}
+
+/**
+ * 写一份**播种数据**（首次打开某个模块时生成的示例 / 初始内容），并记下基线。
+ *
+ * 与 `writeJSON` 的唯一区别就是「顺手记一笔基线」——各 store 的播种分支一律走这里，
+ * 免得日后有人照着 `writeJSON` 再写一个播种却没记基线（漏记的后果是判定偏向
+ * 「本机已有数据」：不会丢数据，但新设备一登录就要回答一次「保留哪一份」）。
+ */
+export function writeSeedJSON(key: string, value: unknown): void {
+  writeJSON(key, value)
+  let text: string | undefined
+  try {
+    text = JSON.stringify(value)
+  } catch {
+    return
+  }
+  if (text === undefined) return
+  // 只有盘上确实是这一份才登记：写盘失败（配额满 / 隐私模式）时盘上还是旧内容，
+  // 登记成「播种内容」会让首次同步把教师真正的数据当成示例交给云端覆盖
+  try {
+    if (localStoragePort.read(key) !== text) return
+  } catch {
+    return
+  }
+  const table = seedTextTable()
+  table[key] = text
+  try {
+    window.localStorage.setItem(SEED_TEXT_KEY, JSON.stringify(table))
+  } catch (error) {
+    // 记不上只是让判定更保守（见 seedTextTable 的告警），不该让一次正常播种失败
+    console.warn('[storage] 播种基线未能落盘，首次同步会按「本机已有数据」处理：', error)
+  }
+}
+
+/**
+ * 盘上这份原文是不是**当初播种的那一份**（＝教师从没动过这个键）。
+ * 键不存在、读不出来、或教师改过任何一个字都返回 `false`。
+ */
+export function isSeededText(key: string, rawText: string | null): boolean {
+  if (rawText === null) return false
+  return seedTextTable()[key] === rawText
+}
+
+/**
  * 键名末段（`teacherdesk:students` → `students`）：告警文案里当模块名用。
  * 由键名派生而不是让每个调用方传一遍：少了十个「传错名字」的机会，也不会漏传。
  *

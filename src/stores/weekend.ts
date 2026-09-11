@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedWeekendReturns } from '@/services/mock'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { addDaysToDateKey, formatDateKey } from '@/utils/date'
@@ -69,7 +69,8 @@ function loadReturns(students: Student[]): WeekendReturnRecord[] {
     // 于是给人家凭空播种 5 条已退档学生的返家记录。退档不算在档案里（§9.17 审查修复）
     const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
     if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   }
   return reviveReturns(stored)

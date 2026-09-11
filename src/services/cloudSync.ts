@@ -17,7 +17,11 @@
  *
  * **边界（写进文档，不在这里掩饰）**：
  * - 两端系统时间差会直接变成胜负偏差（`updatedAt` 由写入方产生）；
- * - 首次同步某一键时**以云端为准**（新设备装上就该看到已有数据，而不是把示例数据推上去）；
+ * - 首次同步某一键时**本机只有初始化内容**（键不存在 / 空列表 / 还是播种的那份原文）
+ *   则以云端为准（新设备装上就该看到已有数据，而不是把示例数据推上去）；
+ * - **本机已有教师录入的数据、云端也有**时**不静默覆盖**（Phase 9C 收紧的一条，见
+ *   `decideKey` 的冲突分支与 `resolveConflicts`）：两边都可能是真的，只有教师知道留哪一份。
+ *   这是 9B 交付时被审查列为待拍板的那条（手册 §9.20 边界②、开发计划 §五 #16）。
  * - 云上没有的键、本地也没改过时**不动本地**：不把「云端缺失」当成删除指令，
  *   否则云端一次误删会顺着所有设备把数据清干净。
  */
@@ -32,7 +36,14 @@ import {
   signOutCloud,
 } from '@/services/cloudbase'
 import type { RemoteDoc, RemotePort } from '@/services/remote'
-import { keyLabel, lastWriteAt, localStoragePort, readRaw, writeJSON } from '@/services/storage'
+import {
+  isSeededText,
+  keyLabel,
+  lastWriteAt,
+  localStoragePort,
+  readRaw,
+  writeJSON,
+} from '@/services/storage'
 import { applySyncKeys, broadcastKeys, onSyncDirty, syncedKeys } from '@/services/sync'
 
 /** 同步状态（界面据此显示；不含数据本身） */
@@ -68,6 +79,14 @@ export interface CloudSyncState {
   pushedCount: number
   /** 最近一轮里从云端采纳几个键 */
   adoptedCount: number
+  /**
+   * 等教师裁决的键（存储键名）：首次同步时本机有教师录入的数据、云端也有对应数据。
+   * 这些键**既不推也不采纳**，同步照常跑其余键——空数组＝没有待裁决的事。
+   *
+   * 与 `status` 正交：`status` 说的是「这一轮和云端通不通、有没有被拒」，
+   * 这一位说的是「有个问题只有教师能回答」。两个都得让教师看见（界面据此显示「需要确认」）。
+   */
+  conflicts: string[]
 }
 
 const state = ref<CloudSyncState>({
@@ -78,6 +97,7 @@ const state = ref<CloudSyncState>({
   error: null,
   pushedCount: 0,
   adoptedCount: 0,
+  conflicts: [],
 })
 
 /** 同步状态（只读；界面直接绑它） */
@@ -142,19 +162,48 @@ type Decision =
   | { kind: 'skip'; reason: string }
   | { kind: 'push' }
   | { kind: 'adopt'; doc: RemoteDoc; reason: string }
+  /**
+   * 首次同步时本机已有教师录入的数据，而云端也有这个键——**两边都不动**，等教师裁决
+   * （见 `resolveConflicts`）。这是 Phase 9C 收紧的那一条：以前这里直接采纳云端，
+   * 本机那份真实数据（不备份、不入云）就被整份换掉了。
+   */
+  | { kind: 'conflict'; doc: RemoteDoc; reason: string }
 
 /**
- * 判定一个键该推还是该采纳（纯函数：只吃「本地原文 + 远端文档 + 记账 + 当前时刻」）。
+ * 本机这一份算不算「没有教师录入的数据」：键不存在、内容是空列表、或还是**当初播种的那一份**
+ * （见 `storage.ts` 的 `isSeededText`）。
+ *
+ * 这是首次同步唯一要向本机问的问题，所以判定收在一处。空列表也算「没有」：教师把记录
+ * 清空之后本机确实没有东西可保，此时把云端那份取回来与既有口径一致——「无删除传播」
+ * 那条边界不变（一台设备上删空的意图不会传到另一台，也不反过来把本机清空）。
+ */
+function hasNoLocalData(key: string, localText: string | null): boolean {
+  if (localText === null) return true
+  if (isSeededText(key, localText)) return true
+  try {
+    const parsed: unknown = JSON.parse(localText)
+    return Array.isArray(parsed) && parsed.length === 0
+  } catch {
+    // 解析不了就是「有东西但认不出」：按「本机有数据」处理，宁可多问教师一句
+    return false
+  }
+}
+
+/**
+ * 判定一个键该推还是该采纳（纯函数：只吃「本地原文 + 远端文档 + 记账 + 当前时刻 +
+ * 本机这份是不是初始化内容」）。
  *
  * 抽成纯函数的理由与排座求解器相同：这是整个同步里唯一会出错的地方，
  * 而纯函数能在自检里被穷举各种组合（含时间先后、首次同步、云端缺失），
- * 不用去搭真实的网络和真环境。
+ * 不用去搭真实的网络和真环境。**「本机是不是初始化内容」由调用方判定后传进来**
+ * （`hasNoLocalData` 要读盘），纯函数自己不碰存储。
  */
 export function decideKey(
   localText: string | null,
   doc: RemoteDoc | undefined,
   meta: KeyMeta | undefined,
   now: number,
+  localIsInitial: boolean,
 ): Decision {
   // 本地这个键不存在（还没被任何一个 store 播种过）
   if (localText === null) {
@@ -183,9 +232,21 @@ export function decideKey(
 
   // 本地改了，云上也变了 → 这才是真正的冲突
   const firstSync = meta === undefined
-  if (firstSync || doc.updatedAt > meta.syncedAt) {
-    // 首次同步：以云端为准（新设备装上就该看到已有数据，而不是把示例数据推上去）
-    if (firstSync) return { kind: 'adopt', doc, reason: '首次同步，以云端为准' }
+  if (firstSync) {
+    // 首次同步（这台设备还没有任何对齐记录）分两种处境：
+    // - 本机只有初始化内容（新设备 / 刚清过数据）→ 以云端为准：新设备装上就该看到已有数据，
+    //   而不是把它自己播种的示例推上去把真实数据盖掉；
+    // - 本机已有教师录入的数据 → **不静默覆盖**（Phase 9C）：两边都可能是真的
+    //   （本机这份可能是没网时录了一周的，云端那份可能是另一台设备上的），
+    //   只有教师知道该留哪一份。这里只把冲突**报上去**，一个字节都不动。
+    return localIsInitial
+      ? { kind: 'adopt', doc, reason: '首次同步，本机只有初始化内容，以云端为准' }
+      : { kind: 'conflict', doc, reason: '首次同步，本机已有数据且云端也有，等教师裁决' }
+  }
+
+  if (doc.updatedAt > meta.syncedAt) {
+    // 两边都改过（非首次同步）：按拍板口径比「本地写盘时刻」与「云端写入时刻」，晚的赢；
+    // 平局判云端赢（规则写在这里，不靠巧合）
     const localAt = meta.localUpdatedAt || now
     return doc.updatedAt >= localAt
       ? { kind: 'adopt', doc, reason: '冲突：云端写入更晚' }
@@ -196,7 +257,77 @@ export function decideKey(
   return { kind: 'push' }
 }
 
+/**
+ * 采纳一个键：**先落到盘上，再让内存跟上**（内存永远以盘为准，两条路才不会分叉），
+ * 并把「本机这份已与云端对齐」记进记账。返回 `false` 表示**没有采纳**（写盘失败）。
+ *
+ * `writeJSON` 返回 false 有两种含义——内容本就相同（幂等，等于已经对齐），或写盘
+ * 失败（配额满 / 隐私模式）。**读回来比对才能分开**，而盘上实际是什么正是要记进
+ * `seen` 的东西。写失败的这一份不能算采纳：盘上还是旧内容、内存也没换，此刻若记下
+ * 「已与云端对齐」，下一轮就会把旧内容当成本地改动推上去，把云端那份盖掉。
+ */
+function adoptToDisk(key: string, doc: RemoteDoc, meta: SyncMeta): boolean {
+  const wanted = JSON.stringify(doc.payload)
+  writeJSON(key, doc.payload)
+  const onDisk = safeRead(key)
+  if (onDisk !== wanted) return false
+  meta[key] = {
+    seen: onDisk,
+    syncedAt: doc.updatedAt,
+    localUpdatedAt: meta[key]?.localUpdatedAt ?? 0,
+  }
+  return true
+}
+
+/** 推一个键的结果：成功 / 本地这份推不了（原文保留）/ 请求失败 */
+type PushResult =
+  | { kind: 'pushed' }
+  | { kind: 'skipped' }
+  | { kind: 'failed'; status: CloudSyncStatus; error: string }
+
+/**
+ * 把某个键的本地原文推上云，成功则记下记账。推不了的两种情况（不是合法 JSON / 不是列表）
+ * 只跳过、**不算失败**：那是本机盘上的内容有问题，云端没参与，报成「同步失败」会让教师
+ * 以为网络出了事（原文一律保留，原因在日志里）。
+ */
+async function pushKey(
+  port: RemotePort,
+  key: string,
+  localText: string,
+  now: number,
+  meta: SyncMeta,
+): Promise<PushResult> {
+  let payload: unknown
+  try {
+    payload = JSON.parse(localText)
+  } catch (error) {
+    console.warn(`[cloud] 「${keyLabel(key)}」本地内容解析失败，本轮不推（原文保留）：`, error)
+    return { kind: 'skipped' }
+  }
+  if (!Array.isArray(payload)) {
+    console.warn(`[cloud] 「${keyLabel(key)}」本地内容不是列表，本轮不推（原文保留）`)
+    return { kind: 'skipped' }
+  }
+  try {
+    await port.push({ key, payload, updatedAt: now })
+  } catch (error) {
+    // 一个键推失败不该让其余七个陪着失败：调用方继续走，把原因记下来，轮末据此不报「已同步」
+    return { kind: 'failed', status: statusOfError(error), error: errorText(error) }
+  }
+  meta[key] = { seen: localText, syncedAt: now, localUpdatedAt: lastWriteAt(key) ?? now }
+  return { kind: 'pushed' }
+}
+
 let remote: RemotePort | null = null
+
+/**
+ * 待裁决冲突的**云端那一份**（存储键 → 远端文档），只活在内存里。
+ *
+ * 冲突不是常驻状态：`state.conflicts` 只列键名，教师按下「保留云端」时得知道云端那份是什么。
+ * 页面刷新后这份就没了——那没关系，冲突会在下一轮同步里被重新发现（该键记账里没有条目，
+ * 走的还是「首次同步 + 本机有数据」那条分支），教师看到的是同一道题。
+ */
+const pendingConflicts = new Map<string, RemoteDoc>()
 /** 正在进行中的那一轮（空闲时为 `null`）。`await` 它就等于等「这一轮真的跑完了」 */
 let running: Promise<void> | null = null
 /** 同步进行中又来了新请求：跑完这一轮再补一轮，避免「最后一次修改刚好被丢掉」 */
@@ -265,16 +396,18 @@ async function runCycle(): Promise<void> {
     // 账号隔离来自 SDK 会话——这里置空不会「防住」写错账号，只是让「下次登录重新建一个」
     // 显式化：留着它没有害处，但会让人以为它绑定了某个账号。
     remote = null
-    setState({ status: 'signedOut', account: null, error: null })
+    // 没登录就没有「云端那份」可言：上一个账号留下的待裁决冲突到此为止
+    pendingConflicts.clear()
+    setState({ status: 'signedOut', account: null, error: null, conflicts: [] })
     return
   }
-  remote ??= createCloudBaseRemote()
+  const port = (remote ??= createCloudBaseRemote())
   setState({ account: user.username ?? user.email ?? user.uid })
 
   const keys = syncedKeys()
   let docs: RemoteDoc[]
   try {
-    docs = await remote.pull()
+    docs = await port.pull()
   } catch (error) {
     setState({ status: statusOfError(error), error: errorText(error) })
     return
@@ -284,6 +417,9 @@ async function runCycle(): Promise<void> {
   const meta = readMeta()
   const now = Date.now()
   const adopted: string[] = []
+  /** 本轮等教师裁决的键（见 `decideKey` 的冲突分支）：本机这份与云端那份都原样留着 */
+  const conflicts: string[] = []
+  pendingConflicts.clear()
   let pushed = 0
   /**
    * 本轮第一个失败（推失败 / 采纳时写盘失败）。
@@ -307,19 +443,27 @@ async function runCycle(): Promise<void> {
       record.localUpdatedAt = written
     }
 
-    const decision = decideKey(localText, byKey.get(key), record, now)
+    // 「本机这份是不是初始化内容」要读盘（播种基线存在 localStorage 里），因此在这里
+    // 判定后传进去——`decideKey` 自己不碰存储，才能被穷举着测
+    const decision = decideKey(
+      localText,
+      byKey.get(key),
+      record,
+      now,
+      hasNoLocalData(key, localText),
+    )
     if (decision.kind === 'skip') continue
 
+    if (decision.kind === 'conflict') {
+      // **一个字节都不动**：本机这份与云端那份都留着，等教师在工具箱里选（resolveConflicts）。
+      // 推上去会盖掉云端那份、采纳会盖掉本机这份——这处境下丢哪一份都不是同步该替教师做的决定。
+      conflicts.push(key)
+      pendingConflicts.set(key, decision.doc)
+      continue
+    }
+
     if (decision.kind === 'adopt') {
-      // 先落到盘上，再让内存跟上（内存永远以盘为准，两条路才不会分叉）
-      const wanted = JSON.stringify(decision.doc.payload)
-      writeJSON(key, decision.doc.payload)
-      // `writeJSON` 返回 false 有两种含义——内容本就相同（幂等，等于已经对齐），或写盘
-      // 失败（配额满 / 隐私模式）。**读回来比对才能分开**，而盘上实际是什么正是要记进
-      // `seen` 的东西。写失败的这一份不能算采纳：盘上还是旧内容、内存也没换，此刻若记下
-      // 「已与云端对齐」，下一轮就会把旧内容当成本地改动推上去，把云端那份盖掉。
-      const onDisk = safeRead(key)
-      if (onDisk !== wanted) {
+      if (!adoptToDisk(key, decision.doc, meta)) {
         console.warn(`[cloud] 「${keyLabel(key)}」取回云端内容时写盘失败，本键本轮未采纳`)
         failure ??= {
           status: 'error',
@@ -327,40 +471,14 @@ async function runCycle(): Promise<void> {
         }
         continue
       }
-      meta[key] = {
-        seen: onDisk,
-        syncedAt: decision.doc.updatedAt,
-        localUpdatedAt: meta[key]?.localUpdatedAt ?? 0,
-      }
       adopted.push(key)
       continue
     }
 
     if (localText === null) continue
-    let payload: unknown
-    try {
-      payload = JSON.parse(localText)
-    } catch (error) {
-      console.warn(`[cloud] 「${keyLabel(key)}」本地内容解析失败，本轮不推（原文保留）：`, error)
-      continue
-    }
-    if (!Array.isArray(payload)) {
-      console.warn(`[cloud] 「${keyLabel(key)}」本地内容不是列表，本轮不推（原文保留）`)
-      continue
-    }
-    try {
-      await remote.push({ key, payload, updatedAt: now })
-    } catch (error) {
-      // 一个键推失败不该让其余七个陪着失败：继续走，把原因记下来，轮末据此不报「已同步」
-      failure ??= { status: statusOfError(error), error: errorText(error) }
-      continue
-    }
-    meta[key] = {
-      seen: localText,
-      syncedAt: now,
-      localUpdatedAt: lastWriteAt(key) ?? now,
-    }
-    pushed += 1
+    const result = await pushKey(port, key, localText, now, meta)
+    if (result.kind === 'pushed') pushed += 1
+    else if (result.kind === 'failed') failure ??= { status: result.status, error: result.error }
   }
 
   if (adopted.length > 0) {
@@ -389,6 +507,7 @@ async function runCycle(): Promise<void> {
       error: failure.error,
       pushedCount: pushed,
       adoptedCount: adopted.length,
+      conflicts,
     })
     return
   }
@@ -399,6 +518,7 @@ async function runCycle(): Promise<void> {
     error: null,
     pushedCount: pushed,
     adoptedCount: adopted.length,
+    conflicts,
   })
 }
 
@@ -410,6 +530,89 @@ function safeRead(key: string): string | null {
     console.warn(`[cloud] 读取「${keyLabel(key)}」失败，本轮跳过：`, error)
     return null
   }
+}
+
+/* ---------- 首次同步冲突的处置（Phase 9C） ---------- */
+
+/** 教师在冲突提示里选的处置：留本机这份，还是留云端那份 */
+export type ConflictChoice = 'local' | 'remote'
+
+/**
+ * 处置待裁决的冲突：`local` = 把本机这份推上云，`remote` = 把云端那份取下来覆盖本机。
+ *
+ * **只在教师按了按钮之后调用**（工具箱的确认弹窗），同步流程自己永远不走这条路：
+ * 「本机与云端都有真实数据」这处境里，没有哪一份是同步可以替教师丢掉的。
+ *
+ * 逐键处理、各自成败：一个键推失败（断网）不影响其余键，失败的键**留在冲突列表里**
+ * 等下一次；处置好的摘掉。没登录 / 手上没有云端那份时什么都不动、也不清列表
+ * ——不猜教师的意图，更不假装处置过。
+ */
+export async function resolveConflicts(choice: ConflictChoice): Promise<void> {
+  const keys = [...state.value.conflicts]
+  if (keys.length === 0) return
+  // 同步正在进行就先等它跑完：并发处置会让两边的记账互相作废
+  if (running) await running
+  const port = remote
+  if (!port) {
+    console.warn('[cloud] 还没登录，冲突先留着')
+    return
+  }
+
+  const meta = readMeta()
+  const now = Date.now()
+  const adopted: string[] = []
+  const settled: string[] = []
+  let failure: { status: CloudSyncStatus; error: string } | null = null
+
+  for (const key of keys) {
+    if (choice === 'local') {
+      const localText = safeRead(key)
+      // 等待期间本机这份没了（教师清空过数据 / 手工改过缓存）：没有可推的东西，
+      // 这个键的冲突到此为止——下一轮同步按它自己的判定走
+      if (localText === null) {
+        settled.push(key)
+        continue
+      }
+      const result = await pushKey(port, key, localText, now, meta)
+      // `skipped`（本机这份不是合法列表，推不上去）也算处置过：它推不了，不该一直挂着
+      if (result.kind === 'failed') failure ??= { status: result.status, error: result.error }
+      else settled.push(key)
+      continue
+    }
+
+    const doc = pendingConflicts.get(key)
+    if (!doc) {
+      // 云端那一份只活在内存里（见 pendingConflicts 的说明）。这里的兜底是「手上没有就不动本地」，
+      // 让下一轮同步重新判定——**不拿别的东西顶替**，那会变成用一份谁都没看过的数据覆盖本机
+      failure ??= { status: 'error', error: `${keyLabel(key)}：云端那份已不在手上，请再同步一次` }
+      continue
+    }
+    if (!adoptToDisk(key, doc, meta)) {
+      failure ??= { status: 'error', error: `${keyLabel(key)}：本地写入失败，云端那份没能取回来` }
+      continue
+    }
+    adopted.push(key)
+    settled.push(key)
+  }
+
+  if (adopted.length > 0) {
+    // 与同步轮走同一条路：重读 → reviveXxx → 替换，并让同设备的其它入口也跟上
+    applySyncKeys(adopted)
+    broadcastKeys(adopted)
+    // **顺序要紧**（同 `runCycle` 的说明）：等归一化写完盘**再**记 `seen`
+    await nextTick()
+    for (const key of adopted) {
+      meta[key] = { ...(meta[key] ?? { syncedAt: now, localUpdatedAt: 0 }), seen: safeRead(key) }
+    }
+  }
+
+  writeMeta(meta)
+
+  for (const key of settled) pendingConflicts.delete(key)
+  setState({
+    conflicts: state.value.conflicts.filter((key) => !settled.includes(key)),
+    ...(failure ? { status: failure.status, error: failure.error } : {}),
+  })
 }
 
 /* ---------- 触发与生命周期 ---------- */
@@ -475,6 +678,8 @@ export async function signOutAndStop(): Promise<void> {
   await signOutCloud()
   remote = null
   clearMeta()
+  // 待裁决的冲突是**这个账号**的数据处境，跟着一起清（同一个键在新账号里该重新判定）
+  pendingConflicts.clear()
   setState({
     status: 'signedOut',
     account: null,
@@ -482,5 +687,6 @@ export async function signOutAndStop(): Promise<void> {
     lastSyncedAt: null,
     pushedCount: 0,
     adoptedCount: 0,
+    conflicts: [],
   })
 }

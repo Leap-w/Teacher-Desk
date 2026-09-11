@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedDuty } from '@/services/mock'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
@@ -76,7 +76,8 @@ function loadRecords(students: Student[]): DutyRecord[] {
     const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
     const referenced = seed.flatMap((record) => (isDutyGroup(record) ? record.studentIds : []))
     if (!referenced.every((id) => inSchoolIds.has(id))) return []
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   }
   return reviveDutyRecords(stored)

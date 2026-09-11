@@ -21,6 +21,13 @@ const { state, enabled, syncing, lastSyncedClock, syncWithFeedback } = useCloudS
 const { todayLabel } = useToday()
 
 async function onSync(): Promise<void> {
+  // 有等教师裁决的冲突（Phase 9C）：顶栏没有裁决的地方（那是工具箱那张卡片里的区块），
+  // 所以把人送过去——而不是在这儿报一句「同步不了」然后没下文
+  if (state.value.conflicts.length > 0) {
+    toast.info('有模块本机与云端都有数据，需要确认保留哪一份，去工具箱处理。')
+    await router.push('/toolbox')
+    return
+  }
   // `checked` 之前状态一律是 `signedOut`（只是还没问过云端，不代表真的没登录）。
   // 少了这一位判断，应用一启动点同步就会被喊去登录，而其实会话是好的。
   if (state.value.checked && state.value.status === 'signedOut') {

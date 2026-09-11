@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
 import { createSeedStudents } from '@/services/mock'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import { normalizeStudent } from '@/utils/student'
@@ -27,7 +27,9 @@ function loadStudents(): Student[] {
   const stored = readList(STORAGE_KEY)
   if (stored === null) {
     const seed = createSeedStudents()
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C）：首次同步据此认出「本机只有示例数据」，
+    // 从而放心采纳云端那份，而不是把示例推上去或反过来把教师的数据问一遍
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   }
   return reviveStudents(stored)

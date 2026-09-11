@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { appConfig } from '@/config'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import {
@@ -61,10 +61,17 @@ function studentProfiles() {
   }))
 }
 
-/** 首次启动（键不存在）：建一个「开学初」当前方案，学生按 seatNumber 自动就座 */
+/**
+ * 首次启动（键不存在）：建一个「开学初」当前方案，学生按 seatNumber 自动就座。
+ *
+ * 走 `writeSeedJSON` 记下基线（Phase 9C）：这一份是**应用自己生成的初始状态**，
+ * 不是教师排出来的——首次同步时它该被云端那份真方案换掉，而不是让教师去回答
+ * 「本机与云端都有座位方案，保留哪一份」。教师一旦动过这张表（拖拽 / 换方案），
+ * 盘上原文就与基线不同，保护立即生效。
+ */
 function seedPlans(): SeatPlan[] {
   const plan: SeatPlan = { ...createSeatPlan('开学初', studentProfiles()), isCurrent: true }
-  writeJSON(STORAGE_KEY, [plan])
+  writeSeedJSON(STORAGE_KEY, [plan])
   return [plan]
 }
 

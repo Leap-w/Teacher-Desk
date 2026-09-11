@@ -4,7 +4,7 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
 import { createSeedLeaves } from '@/services/mock'
-import { readList, writeJSON } from '@/services/storage'
+import { readList, writeSeedJSON } from '@/services/storage'
 import { syncPersisted } from '@/services/sync'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
@@ -62,7 +62,8 @@ function loadLeaves(students: Student[]): LeaveRecord[] {
     // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
     const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
     if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-    writeJSON(STORAGE_KEY, seed)
+    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
+    writeSeedJSON(STORAGE_KEY, seed)
     return seed
   }
   return reviveLeaves(stored)

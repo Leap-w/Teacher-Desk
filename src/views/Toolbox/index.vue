@@ -6,6 +6,7 @@ import { useCloudSync } from '@/composables/useCloudSync'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import { signInAndSync, signOutAndStop } from '@/services/cloudSync'
+import type { ConflictChoice } from '@/services/cloudSync'
 import { localStoragePort } from '@/services/storage'
 import { broadcastReload } from '@/services/sync'
 import {
@@ -81,7 +82,7 @@ const clearsLegacy = computed(() =>
 )
 
 /**
- * 旧课表存档是否还在盘上（读得出原文或读不出都算——「清空全部数据」删的是键，
+ * 旧课表存档是否还在盘上（读得出原文或读不出都算——「清空本机数据」删的是键，
  * 连读不动的原文一起删，且它不在备份范围内，弹窗必须先说清楚）。
  */
 const hasLegacyArchive = computed(() =>
@@ -115,10 +116,28 @@ const lastBackupText = computed(() => {
 const {
   state: cloud,
   busy: cloudBusy,
+  conflictLabels: cloudConflictLabels,
   statusView: cloudStatusView,
   lastSyncedText: cloudLastSyncedText,
   syncWithFeedback,
+  resolveConflict,
 } = useCloudSync()
+
+/**
+ * 冲突确认弹窗是否打开（Phase 9C）。
+ *
+ * 冲突的处置**只在弹窗里发生**：卡片上那个按钮只负责把弹窗打开。这不是多一道手续——
+ * 两个选项都要覆盖掉一边的数据，且都不可撤销（本机这份被覆盖后在别处再无副本，
+ * 云端那份被覆盖后另一台设备下次同步也会跟着换掉），点错没有回头路。
+ */
+const conflictOpen = ref(false)
+
+/** 执行冲突处置（弹窗里的两个按钮）；处置完刷新本页概览——本机数据可能整份换掉了 */
+async function doResolveConflict(choice: ConflictChoice): Promise<void> {
+  conflictOpen.value = false
+  await resolveConflict(choice)
+  refreshSnapshot()
+}
 
 const cloudUsername = ref('')
 const cloudPassword = ref('')
@@ -156,7 +175,11 @@ async function submitCloudLogin(): Promise<void> {
     // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
     // 已经在云上了，而云上什么都没有。`signInAndSync` 会等这一轮同步跑完才返回，
     // 所以这里读到的状态就是这一轮的结果，不会是中途的「正在同步」。
-    if (cloud.value.status === 'idle') {
+    if (cloud.value.conflicts.length > 0) {
+      // 登录成了、同步也跑完了，但有模块**卡在半路**等教师裁决（Phase 9C）。
+      // 这两句都不能用：报「数据已同步」是假话，报「没同步上」又会被当成故障。
+      toast.info('登录成功。有模块本机与云端都有数据，请在下方确认保留哪一份。')
+    } else if (cloud.value.status === 'idle') {
       toast.success('登录成功，数据已同步')
     } else {
       toast.danger(`登录成功，但数据没同步上：${cloud.value.error ?? '原因见下方卡片'}`)
@@ -371,7 +394,7 @@ const clearAllItems = computed(() =>
 function confirmClearAll(): void {
   const outcome = clearAllKeys(storage)
   if (!outcome.ok) {
-    reportCommitFailure(outcome, '清空全部数据')
+    reportCommitFailure(outcome, '清空本机数据')
     return
   }
   if (outcome.count === 0) {
@@ -379,7 +402,7 @@ function confirmClearAll(): void {
     toast.info('本机暂无可清空的数据')
     return
   }
-  finish('已清空本机全部数据')
+  finish('已清空本机数据')
 }
 
 /** 待删示例记录的名单文案（超出上限时补一句） */
@@ -464,11 +487,11 @@ onMounted(() => {
             删除首次打开时自动生成的示例记录（示例学生 / 课程 / 待办 / 请假 / 值日组 /
             周末返家），以及这些学生产生的座位约束。你自己新增的记录不受影响；但若你把某条示例记录改成了自己的内容，它同样会被删掉——确认前请先核对名单。座位方案保留，示例学生占用的座位会在下次打开「座位表」时自动释放。轮换设置会保留：剩下的值日组若接不上起点，值日管理页会提示重设。
           </dd>
-          <dt>清空全部数据</dt>
+          <dt>清空本机数据</dt>
           <dd>
             删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。
             <template v-if="cloud.account">
-              云端同步已登录：这里只清本机，下一轮同步会把云端那份取回来。
+              云端同步已登录：这里只清本机，不删云端。下次同步时，云端那份数据可能重新出现在本机。
             </template>
           </dd>
         </dl>
@@ -481,7 +504,7 @@ onMounted(() => {
           >
             清空示例数据{{ sampleTotal > 0 ? `（${sampleTotal} 条）` : '' }}
           </AppButton>
-          <AppButton variant="danger" @click="openClearAll">清空全部数据</AppButton>
+          <AppButton variant="danger" @click="openClearAll">清空本机数据</AppButton>
         </div>
         <p v-if="sampleTotal === 0" class="footnote">当前没有可清理的示例数据。</p>
       </section>
@@ -503,6 +526,21 @@ onMounted(() => {
         <!-- 云端给的原因原样摆出来。教师多半看不懂，但照着它去搜索、或截图发给懂的人，
              都比我们编一句「同步失败，请稍后再试」有用得多 -->
         <p v-if="cloud.error" class="cloud-error">云端返回的原因：{{ cloud.error }}</p>
+
+        <!-- 首次同步发现「本机有数据、云端也有」（Phase 9C）：同步**不会**替教师选，
+             两份都原样留着，这里把这件事说出来并给出唯一的处置入口 -->
+        <div v-if="cloud.conflicts.length > 0" class="conflict-block">
+          <p class="conflict-title">本机与云端都有数据，需要你确认保留哪一份</p>
+          <p class="footnote">
+            这些模块：{{ cloudConflictLabels.join('、') }}。同步暂时跳过了它们——本机这份和云端那份
+            都原样保留着，只是这几项没在同步。这种情况通常出现在：你在没联网的时候录了新内容，
+            而云端还存着另一台设备上同步上去的旧内容。
+          </p>
+          <div class="action-row">
+            <AppButton variant="secondary" @click="conflictOpen = true">去确认保留哪一份</AppButton>
+            <AppButton variant="ghost" @click="exportBackup">先导出本机备份</AppButton>
+          </div>
+        </div>
 
         <p v-if="!cloud.checked" class="footnote">正在检查登录状态…</p>
 
@@ -561,7 +599,7 @@ onMounted(() => {
         </div>
 
         <p class="footnote">
-          账号只在这个应用里代表你自己：云上的数据挂在你的账号下，别的老师看不到。首次在某台设备上登录时以云端为准——这样新设备一登录就能看到已有数据，而不是把本机的示例数据推上去。之后同一项两边都改过，以写得晚的一方为准。
+          账号只在这个应用里代表你自己：云上的数据挂在你的账号下，别的老师看不到。首次在某台设备上登录时，若本机还没有你自己录的数据，就以云端为准——新设备一登录就能看到已有数据，而不是把示例数据推上去；若本机已经有你录的数据、云端也有，同步不会替你覆盖，会先请你确认保留哪一份。之后同一项两边都改过，以写得晚的一方为准。
         </p>
         <p class="footnote">
           同步需要云端先做好三件事：在云开发控制台开启用户名密码登录、在「身份认证 →
@@ -648,7 +686,7 @@ onMounted(() => {
       </template>
     </AppModal>
 
-    <AppModal v-model="clearAllOpen" title="清空全部数据" :width="480">
+    <AppModal v-model="clearAllOpen" title="清空本机数据" :width="480">
       <p>将删除本机全部数据，并恢复到首次打开的状态（示例数据会重新出现）：</p>
       <ul v-if="clearAllItems.length > 0" class="remove-list">
         <li v-for="item in clearAllItems" :key="item.key">
@@ -663,12 +701,37 @@ onMounted(() => {
       <p v-if="cloud.account" class="warn-text">
         云端同步已登录（{{
           cloud.account
-        }}）：本机这份删掉后无法从本机找回，而下一轮同步会把云端那份取回来——也就是说「清空」清不掉云端。要连云端一起清，得去云开发控制台删除该集合里的文档。
+        }}）：这里清的是本机数据，不会删除云端数据。云端那份原样保留，下次同步时可能重新出现在本机。要连云端一起清，得去云开发控制台删除该集合里的文档。
       </p>
       <p v-else class="warn-text">此操作不可撤销。若还想保留，请先导出备份。</p>
       <template #footer>
         <AppButton variant="ghost" @click="clearAllOpen = false">取消</AppButton>
-        <AppButton variant="danger" @click="confirmClearAll">确认清空全部数据</AppButton>
+        <AppButton variant="danger" @click="confirmClearAll">确认清空本机数据</AppButton>
+      </template>
+    </AppModal>
+
+    <!-- 冲突处置（Phase 9C）。两个选项都会覆盖掉一边的数据，因此**不设默认动作**：
+         弹窗只说明处境与后果，选哪一份由教师点。 -->
+    <AppModal v-model="conflictOpen" title="本机与云端都有数据" :width="560">
+      <p>这些模块本机有数据、云端也有，同步没有动它们：</p>
+      <ul class="remove-list">
+        <li v-for="label in cloudConflictLabels" :key="label">{{ label }}</li>
+      </ul>
+      <p class="warn-text">
+        两边都可能是真的：本机这份可能是没联网时录的，云端那份可能是另一台设备上同步上去的。
+        请选择保留哪一份——另一份会被覆盖，且不可撤销。选之前可以先导出一份本机备份。
+      </p>
+      <p class="note-text">
+        不确定就先取消：不做选择不会丢数据，这些模块只是暂时不同步，随时可以回来再选。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="conflictOpen = false">取消</AppButton>
+        <AppButton variant="secondary" :loading="cloudBusy" @click="doResolveConflict('remote')">
+          保留云端数据（覆盖本机）
+        </AppButton>
+        <AppButton :loading="cloudBusy" @click="doResolveConflict('local')">
+          保留本机数据（上传云端）
+        </AppButton>
       </template>
     </AppModal>
   </div>
@@ -890,6 +953,26 @@ onMounted(() => {
   background: var(--color-fill-disabled);
   border-radius: var(--radius-md);
   word-break: break-word;
+}
+
+/* 待裁决的冲突（Phase 9C）：用左边框与底色把它与普通说明文字分开——
+   这是这一页唯一「不做选择就同步不下去」的事，不该长得像一条脚注。
+   用警示色而不是危险色：它不表示「你要丢数据了」，只表示「这里需要你拍板」 */
+.conflict-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-warning-soft-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+}
+
+.conflict-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-warning-strong);
 }
 
 .cloud-form {

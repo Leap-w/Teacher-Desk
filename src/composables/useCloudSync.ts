@@ -1,7 +1,10 @@
 import { computed, ref } from 'vue'
 
 import { useToast } from '@/composables/useToast'
-import { cloudSyncState, syncNow } from '@/services/cloudSync'
+import { cloudSyncState, resolveConflicts, syncNow } from '@/services/cloudSync'
+import type { ConflictChoice } from '@/services/cloudSync'
+import { keyLabel } from '@/services/storage'
+import { BACKUP_MODULES } from '@/utils/backup'
 import { formatClock, formatDateOnly } from '@/utils/date'
 
 /**
@@ -39,7 +42,14 @@ export function useCloudSync() {
   /** 这一轮同步正在跑（引擎给的事实，不是界面的猜测——谁触发的都对） */
   const syncing = computed(() => state.value.status === 'syncing')
 
+  /** 等教师裁决的模块名（Phase 9C；空数组 = 没有这回事，界面整块不显示） */
+  const conflictLabels = computed(() => state.value.conflicts.map(labelOfKey))
+
   const statusView = computed<{ text: string; tone: CloudTone }>(() => {
+    // 等教师裁决的事优先说：`status` 讲的是「通不通」，这一位讲的是「只有你能决定」。
+    // 不这么做的话，冲突会以「已同步」+ 一个绿点出现在顶栏上——教师看到一个「没事」的信号，
+    // 而实际上有一个模块卡在半路（Phase 9C）。
+    if (state.value.conflicts.length > 0) return { text: '需要确认', tone: 'warn' }
     switch (state.value.status) {
       case 'syncing':
         return { text: '正在同步…', tone: 'muted' }
@@ -83,6 +93,14 @@ export function useCloudSync() {
     try {
       await syncNow()
       const now = state.value
+      if (now.conflicts.length > 0) {
+        // 冲突＝这一轮**卡在这儿了**，不是失败也不是完成：两边都是真实数据，只有教师知道留哪一份。
+        // 报成「同步完成」会让他以为已经对齐，报成「同步没成」又会让他以为出了故障。
+        toast.info(
+          `本机与云端都有数据的模块：${conflictLabels.value.join('、')}。请先确认保留哪一份。`,
+        )
+        return
+      }
       if (now.status === 'idle') {
         const parts: string[] = []
         if (now.pushedCount > 0) parts.push(`上传 ${now.pushedCount} 个模块`)
@@ -106,16 +124,48 @@ export function useCloudSync() {
     }
   }
 
+  /**
+   * 处置首次同步的冲突（Phase 9C）：`local` = 留本机这份并推上云，`remote` = 留云端那份并覆盖本机。
+   *
+   * **只有教师按了按钮才会走到这里。** 冲突的两边都是真实数据（本机这份可能是断网期间录的，
+   * 云端那份可能是另一台设备上的），界面不替教师做这个决定，同步流程自己也不做。
+   */
+  async function resolveConflict(choice: ConflictChoice): Promise<void> {
+    busy.value = true
+    try {
+      await resolveConflicts(choice)
+      const left = state.value.conflicts.length
+      if (left > 0) {
+        // 没处置干净的键留在列表里，教师可以再按一次（断网时就是这样：
+        // 选择没有被执行，但也**没有被执行一半**）
+        toast.danger(`还有 ${left} 个模块没能处置：${state.value.error ?? '原因未知'}`)
+        return
+      }
+      toast.success(
+        choice === 'local' ? '已保留本机数据，并上传到云端。' : '已保留云端数据，本机已更新。',
+      )
+    } finally {
+      busy.value = false
+    }
+  }
+
   return {
     state,
     enabled,
     syncing,
     busy,
+    conflictLabels,
     statusView,
     lastSyncedText,
     lastSyncedClock,
     syncWithFeedback,
+    resolveConflict,
   }
+}
+
+/** 存储键 → 教师看得懂的名字：八个数据块的中文名（备份模块那张表），不在册的退回键名尾段 */
+function labelOfKey(key: string): string {
+  return BACKUP_MODULES.find((module) => module.key === key)?.label ?? keyLabel(key)
 }
 
 /** 时间戳 → Date；空的、非法的一律当「没有」处理，不让 `Invalid Date` 漏到界面上 */
