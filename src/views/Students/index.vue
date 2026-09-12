@@ -4,11 +4,12 @@ import { computed, ref } from 'vue'
 import { AppButton, AppCard, AppInput, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
-import { formatStudentDisplayName } from '@/utils/student'
+import { formatStudentShortName } from '@/utils/student'
 import type { Gender, Student, StudentInput } from '@/types'
 import StudentCard from './components/StudentCard.vue'
 import StudentDetailModal from './components/StudentDetailModal.vue'
 import StudentFormModal from './components/StudentFormModal.vue'
+import StudentImportModal from './components/StudentImportModal.vue'
 
 type StudentFilter = 'all' | Gender | 'cadre'
 
@@ -19,6 +20,7 @@ const keyword = ref('')
 const filter = ref<StudentFilter>('all')
 
 const formOpen = ref(false)
+const importOpen = ref(false)
 const editingStudent = ref<Student | undefined>(undefined)
 const detailOpen = ref(false)
 const detailId = ref<string | undefined>(undefined)
@@ -93,7 +95,7 @@ function handleFormSubmit(payload: StudentInput) {
       toast.danger('新增失败：该学号已存在')
       return
     }
-    toast.success(`已新增学生 ${formatStudentDisplayName(saved)}`)
+    toast.success(`已新增学生 ${formatStudentShortName(saved)}`)
   }
 }
 
@@ -111,8 +113,9 @@ function confirmRemove() {
     toast.danger('删除失败：该学生记录不存在，请刷新后重试')
     return
   }
-  // 同名学生在列表中常见，删除反馈用「姓名（学号后四位｜座位号）」以便区分
-  toast.success(`已从学生列表中移除 ${formatStudentDisplayName(target)}`)
+  // 同名学生在列表中常见，删除反馈用「姓名（学号后四位）」以便区分。
+  // 不带座位号：档案从 Phase 5A 起已不维护它（§2.3）
+  toast.success(`已从学生列表中移除 ${formatStudentShortName(target)}`)
 }
 
 function clearFilters() {
@@ -128,7 +131,10 @@ function clearFilters() {
         <h1 class="page-title">学生档案</h1>
         <p class="page-subtitle">共 {{ activeStudents.length }} 名学生</p>
       </div>
-      <AppButton @click="openCreate">＋ 新增学生</AppButton>
+      <div class="toolbar-actions">
+        <AppButton variant="secondary" @click="importOpen = true">批量导入</AppButton>
+        <AppButton @click="openCreate">＋ 新增学生</AppButton>
+      </div>
     </header>
 
     <div class="toolbar-row">
@@ -175,13 +181,18 @@ function clearFilters() {
         v-else
         icon="🎓"
         title="暂无学生"
-        description="点击右上角「新增学生」，创建第一名学生档案。"
+        description="已有 Excel 名单的话，用「批量导入」一次建档；也可以逐个新增。"
       >
-        <AppButton size="sm" @click="openCreate">新增学生</AppButton>
+        <div class="empty-actions">
+          <AppButton size="sm" variant="secondary" @click="importOpen = true">批量导入</AppButton>
+          <AppButton size="sm" @click="openCreate">新增学生</AppButton>
+        </div>
       </EmptyState>
     </AppCard>
 
     <StudentFormModal v-model="formOpen" :student="editingStudent" @submit="handleFormSubmit" />
+
+    <StudentImportModal v-model="importOpen" />
 
     <StudentDetailModal
       v-model="detailOpen"
@@ -193,7 +204,7 @@ function clearFilters() {
     <AppModal v-model="confirmOpen" title="删除学生" :width="380">
       <p class="confirm-text">
         确定从学生列表中移除
-        <strong>{{ removingStudent ? formatStudentDisplayName(removingStudent) : '' }}</strong>
+        <strong>{{ removingStudent ? formatStudentShortName(removingStudent) : '' }}</strong>
         吗？此操作无法撤销。
       </p>
       <template #footer>
@@ -227,6 +238,22 @@ function clearFilters() {
   margin-top: var(--space-1);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* EmptyState 的默认插槽是个裸 div，并排两个按钮会紧贴在一起 */
+.empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .toolbar-row {

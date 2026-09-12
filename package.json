@@ -1,6 +1,6 @@
 {
   "name": "teacherdesk",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "description": "TeacherDesk —— 面向高中班主任的综合工作台",
@@ -26,7 +26,8 @@
     "jspdf": "^4.2.1",
     "pinia": "^3.0.2",
     "vue": "^3.5.16",
-    "vue-router": "^4.5.1"
+    "vue-router": "^4.5.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",

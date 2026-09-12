@@ -3,7 +3,7 @@ import { computed, reactive, watch } from 'vue'
 
 import { AppButton, AppField, AppInput, AppModal, AppSelect, AppTextarea } from '@/components/ui'
 import { useStudentStore } from '@/stores/student'
-import { FAMILY_SCOPE_OPTIONS } from '@/utils/student'
+import { FAMILY_SCOPE_OPTIONS, dormitoryOptions, isValidDormitory } from '@/utils/student'
 import type { FamilyScope, Gender, SelectOption, Student, StudentInput } from '@/types'
 
 interface Props {
@@ -28,6 +28,14 @@ const GENDER_OPTIONS: SelectOption<Gender>[] = [
   { label: '男', value: 'male' },
 ]
 
+/**
+ * 「＋ 自定义」的**哨兵值，绝不写入模型**——它只负责把下面的输入框亮出来，
+ * 提交时取输入框里的文本。
+ * 之所以要绕这一下：AppSelect 包的是原生 `<select>`，没有「既可选又可输入」这一档
+ * （§11.5 不为一个表单控件引入组件库）。
+ */
+const CADRE_CUSTOM = '__custom__'
+
 const CADRE_OPTIONS: SelectOption<string>[] = [
   { label: '无', value: '' },
   { label: '班长', value: '班长' },
@@ -37,15 +45,22 @@ const CADRE_OPTIONS: SelectOption<string>[] = [
   { label: '文艺委员', value: '文艺委员' },
   { label: '劳动委员', value: '劳动委员' },
   { label: '生活委员', value: '生活委员' },
+  { label: '＋ 自定义…', value: CADRE_CUSTOM },
 ]
+
+/** 除「无」与哨兵以外的预设职务，用于判断既有值是否属于预设 */
+const PRESET_CADRES = CADRE_OPTIONS.map((option) => option.value).filter(
+  (value) => value !== '' && value !== CADRE_CUSTOM,
+)
 
 interface FormState {
   name: string
   studentNo: string
   gender: Gender
-  seatNumber: string
   dormitory: string
   cadreRole: string
+  /** 自定义职务的输入框内容；仅当 cadreRole === CADRE_CUSTOM 时参与提交 */
+  cadreCustom: string
   tags: string
   phone: string
   remark: string
@@ -61,9 +76,9 @@ function blankForm(): FormState {
     name: '',
     studentNo: '',
     gender: 'female',
-    seatNumber: '',
     dormitory: '',
     cadreRole: '',
+    cadreCustom: '',
     tags: '',
     phone: '',
     remark: '',
@@ -75,9 +90,26 @@ function blankForm(): FormState {
 }
 
 const form = reactive<FormState>(blankForm())
-const errors = reactive({ name: '', studentNo: '', seatNumber: '', scope: '' })
+const errors = reactive({ name: '', studentNo: '', scope: '' })
 
 const modalTitle = computed(() => (props.student ? '编辑学生' : '新增学生'))
+
+const isCustomCadre = computed(() => form.cadreRole === CADRE_CUSTOM)
+
+/** 宿舍选项按性别分列：男生只能选男生楼，反之亦然 */
+const dormitoryChoices = computed(() => dormitoryOptions(form.gender))
+
+/**
+ * 性别与宿舍是耦合的。改了性别后原来选中的房间可能已不在选项里——留着一个
+ * 选不中的值，原生 `<select>` 会显示空白，但提交时它仍在 form 里，等于把女生
+ * 悄悄存进了男生楼。所以一旦失配立刻清空，让教师重新选。
+ */
+watch(
+  () => form.gender,
+  (gender) => {
+    if (form.dormitory && !isValidDormitory(form.dormitory, gender)) form.dormitory = ''
+  },
+)
 
 watch(
   () => props.modelValue,
@@ -86,16 +118,21 @@ watch(
     Object.assign(form, blankForm())
     errors.name = ''
     errors.studentNo = ''
-    errors.seatNumber = ''
     errors.scope = ''
     if (!props.student) return
+
+    // 既有职务不在预设里（上一轮导入或自定义录入的）→ 回填成「＋ 自定义」+ 输入框，
+    // 否则原生 select 找不到匹配项会显示成「无」，一保存就把这个职务抹掉了
+    const cadre = props.student.cadreRole ?? ''
+    const cadreIsCustom = Boolean(cadre) && !PRESET_CADRES.includes(cadre)
+
     Object.assign(form, {
       name: props.student.name,
       studentNo: props.student.studentNo,
       gender: props.student.gender,
-      seatNumber: props.student.seatNumber === undefined ? '' : String(props.student.seatNumber),
       dormitory: props.student.dormitory ?? '',
-      cadreRole: props.student.cadreRole ?? '',
+      cadreRole: cadreIsCustom ? CADRE_CUSTOM : cadre,
+      cadreCustom: cadreIsCustom ? cadre : '',
       tags: (props.student.tags ?? []).join('，'),
       phone: props.student.phone ?? '',
       remark: props.student.remark ?? '',
@@ -111,9 +148,11 @@ watch(
 function validate(): boolean {
   errors.name = form.name.trim() ? '' : '姓名不能为空'
 
+  // 学号选填（Phase 5A）。空学号不是一个可用的身份键，因此不参与查重：
+  // 拿空串互相判重，第二个「还没填学号」的学生就存不进去了
   const studentNo = form.studentNo.trim()
   if (!studentNo) {
-    errors.studentNo = '学号不能为空'
+    errors.studentNo = ''
   } else {
     const duplicated = studentStore.activeStudents.some(
       (item) => item.studentNo === studentNo && item.id !== props.student?.id,
@@ -121,18 +160,16 @@ function validate(): boolean {
     errors.studentNo = duplicated ? '该学号已存在' : ''
   }
 
-  const seat = form.seatNumber.trim()
-  if (!seat) {
-    errors.seatNumber = ''
-  } else {
-    const seatValue = Number(seat)
-    errors.seatNumber = Number.isInteger(seatValue) && seatValue >= 0 ? '' : '座位号需为非负整数'
-  }
-
   // 返家范围是后续周末统计的基础，新增/编辑时均必选
   errors.scope = form.scope ? '' : '请选择返家范围'
 
-  return !errors.name && !errors.studentNo && !errors.seatNumber && !errors.scope
+  return !errors.name && !errors.studentNo && !errors.scope
+}
+
+/** 班委职务的最终值：自定义模式取输入框；哨兵值本身绝不入库 */
+function cadreRoleValue(): string | undefined {
+  const value = form.cadreRole === CADRE_CUSTOM ? form.cadreCustom.trim() : form.cadreRole
+  return value || undefined
 }
 
 function submit() {
@@ -141,9 +178,8 @@ function submit() {
     name: form.name.trim(),
     studentNo: form.studentNo.trim(),
     gender: form.gender,
-    seatNumber: form.seatNumber.trim() === '' ? undefined : Number(form.seatNumber),
-    dormitory: form.dormitory.trim() || undefined,
-    cadreRole: form.cadreRole || undefined,
+    dormitory: form.dormitory || undefined,
+    cadreRole: cadreRoleValue(),
     tags: form.tags
       .split(/[,，]/)
       .map((tag) => tag.trim())
@@ -157,6 +193,8 @@ function submit() {
       scope: form.scope as FamilyScope,
     },
   }
+  // 刻意不带 seatNumber：档案已不维护座位号（Phase 5A），updateStudent 是浅合并，
+  // 不传这个键就会原样保留既有值，座位方案的自动就座因此不受影响
   emit('submit', payload)
   emit('update:modelValue', false)
 }
@@ -174,7 +212,7 @@ function close() {
           <AppInput v-model="form.name" :error="!!errors.name" placeholder="学生姓名" />
         </AppField>
 
-        <AppField label="学号" required :error="errors.studentNo">
+        <AppField label="学号" :error="errors.studentNo" hint="选填">
           <AppInput
             v-model="form.studentNo"
             :error="!!errors.studentNo"
@@ -186,16 +224,13 @@ function close() {
           <AppSelect v-model="form.gender" :options="GENDER_OPTIONS" />
         </AppField>
 
-        <AppField label="座位号" :error="errors.seatNumber" hint="留空表示未排座">
-          <AppInput v-model="form.seatNumber" :error="!!errors.seatNumber" placeholder="如 12" />
-        </AppField>
-
-        <AppField label="宿舍">
-          <AppInput v-model="form.dormitory" placeholder="如 3 号楼 412" />
+        <AppField label="宿舍" hint="女生 2 栋 / 男生 1 栋">
+          <AppSelect v-model="form.dormitory" :options="dormitoryChoices" />
         </AppField>
 
         <AppField label="班委职务">
           <AppSelect v-model="form.cadreRole" :options="CADRE_OPTIONS" />
+          <AppInput v-if="isCustomCadre" v-model="form.cadreCustom" placeholder="输入职务名称" />
         </AppField>
 
         <AppField label="联系电话">

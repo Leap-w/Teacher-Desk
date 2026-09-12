@@ -1,4 +1,4 @@
-import type { FamilyLocation, FamilyScope, SelectOption, Student } from '@/types'
+import type { FamilyLocation, FamilyScope, Gender, SelectOption, Student } from '@/types'
 
 /** 返家范围代码 → 中文文案（列表 Badge / 详情 / 统计共用） */
 export const FAMILY_SCOPE_LABELS: Record<FamilyScope, string> = {
@@ -16,6 +16,42 @@ export const FAMILY_SCOPE_OPTIONS: SelectOption<FamilyScope>[] = [
 
 function isFamilyScope(value: unknown): value is FamilyScope {
   return typeof value === 'string' && value in FAMILY_SCOPE_LABELS
+}
+
+function isGender(value: unknown): value is Gender {
+  return value === 'male' || value === 'female'
+}
+
+/**
+ * 宿舍房间（Phase 5A）：班级实际只占这 8 间，档案里不再接受自由文本。
+ * **按性别分列**——宿舍分配本身就是按性别的，把男生排进女生楼是真实会犯的错，
+ * 让选项表替教师挡掉，比事后发现再改便宜。
+ */
+export const DORMITORIES: Record<Gender, readonly string[]> = {
+  female: ['女生2栋113', '女生2栋114', '女生2栋115', '女生2栋116'],
+  male: ['男生1栋209', '男生1栋210', '男生1栋211', '男生1栋212'],
+}
+
+/**
+ * 拍平后的全部合法房间。**只给「判断合法性」用**（迁移收敛、Excel 导入校验）：
+ * 这两条路径上性别未必可信或未必已知，放宽到 8 间才不会把一个字段的问题连坐给另一个。
+ * 表单/下拉一律走 `dormitoryOptions()`，那里才按性别收窄。
+ */
+export const ALL_DORMITORIES: readonly string[] = [...DORMITORIES.female, ...DORMITORIES.male]
+
+/** 宿舍下拉选项：当前性别的 4 间 + 首项「未分配」（宿舍可选，留空合法） */
+export function dormitoryOptions(gender: Gender): SelectOption<string>[] {
+  return [
+    { label: '未分配', value: '' },
+    ...DORMITORIES[gender].map((room) => ({ label: room, value: room })),
+  ]
+}
+
+/** 宿舍是否合法：性别可识别时只认该性别的房间，否则放宽到全部 8 间 */
+export function isValidDormitory(value: unknown, gender?: unknown): value is string {
+  if (typeof value !== 'string' || value === '') return false
+  const rooms = isGender(gender) ? DORMITORIES[gender] : ALL_DORMITORIES
+  return rooms.includes(value)
 }
 
 /**
@@ -48,6 +84,12 @@ export function normalizeStudent(raw: Student): Student {
   // Phase 2.1 收敛：历史 localStorage 中可能残留 boarding 键（全班统一住校，模型已移除），
   // 升级时一并剔除，保证该键不再随 deep watch 写回持久层
   delete normalized.boarding
+  // Phase 5A 收敛：宿舍改为固定 8 间后，历史自由文本（「3 号楼 412」「5 号楼 208」等）一律剔除。
+  // **刻意用白名单而不是「升级时清一次 + 迁移标记」**：本函数在首屏加载、跨标签页同步、
+  // 云同步三条路径上都会跑，白名单是幂等的——从备份文件恢复、或新设备拉回一份旧云端快照，
+  // 旧值同样会被清掉；一次性标记只在升级那一刻生效，之后旧值会重新冒出来且永不再清。
+  // 性别不可识别时放宽到全部 8 间：gender 自己有问题，不该连坐宿舍
+  if (!isValidDormitory(normalized.dormitory, normalized.gender)) delete normalized.dormitory
   return normalized
 }
 
@@ -59,6 +101,11 @@ export function familyScopeLabel(location: FamilyLocation | undefined): string |
 /**
  * 学生展示名：姓名（学号后四位｜座位号）。
  * 同名学生可凭学号后四位与座位号区分，如「旦增卓玛（0101｜1 号）」。
+ *
+ * **Phase 5A 起只用于座位图与请假模块**（座位格提示 / 换座与删除 toast / 请假抽屉的学生下拉）——
+ * 那些场景里座位是当场有效的。**学生档案模块一律走 `formatStudentShortName()`**：
+ * 档案从 Phase 5A 起不再维护 `seatNumber`，在档案里摆一个只读不写的座位号，
+ * 教师会以为它还在起作用。两个函数刻意都留着，见 §2.3。
  */
 export function formatStudentDisplayName(student: Student): string {
   const parts: string[] = []
@@ -69,15 +116,14 @@ export function formatStudentDisplayName(student: Student): string {
   return `${student.name}（${parts.join('｜')}）`
 }
 
-/** 座位展示文案 */
-export function formatSeatLabel(student: Student): string {
-  return student.seatNumber !== undefined ? `${student.seatNumber} 号座位` : '未排座'
-}
-
 /**
- * 换座场景的学生短名：姓名（学号后四位），如「旦增卓玛（0101）」。
- * 与 formatStudentDisplayName 的区别：不携带座位号——换座 / 日志发生瞬间座位号即刻失真。
- * 用于换座 toast、SeatChangeLog 快照与「本次调整」摘要（重名可凭后四位区分）；学号后四位缺失时仅姓名。
+ * 学生短名：姓名（学号后四位），如「旦增卓玛（0101）」。
+ * 学号后四位缺失时仅姓名（Phase 5A 起学号可为空，这条路径不再是异常）。
+ *
+ * 两处用途，共用同一份重名消歧规则（§2.3「重名靠学号后四位区分」）：
+ * ① 换座 / 日志 / 快照——座位号在那里即刻失真，本就不能带（原始理由）；
+ * ② 学生档案模块——座位号已退出该模块的界面（Phase 5A）。
+ * **不再新写第三个格式化函数**：规则多一份就多一处会漂移的地方（§11.1）。
  */
 export function formatStudentShortName(student: Pick<Student, 'name' | 'studentNo'>): string {
   const lastFour = student.studentNo.slice(-4)

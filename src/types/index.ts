@@ -45,10 +45,24 @@ export interface FamilyLocation {
 export interface Student {
   id: string
   name: string
+  /**
+   * 学号。**可为空**（Phase 5A：Excel 导入时学号是选填列；不编造占位值，教师后续自行补）。
+   * 非空时全局唯一；**空值之间不查重**——空串不是一个可用的身份键，拿它互相判重会把
+   * 「两个都还没填学号的学生」变成写入失败。
+   */
   studentNo: string
   gender: Gender
+  /**
+   * 座位号。**Phase 5A 起已从界面移除、不再维护**，保留字段只因为座位方案的
+   * 「开学初」播种与「＋ 新建方案」（`utils/seat.ts` 的 `buildOccupantMap`）仍按它自动就座。
+   * 座位图上显示的第 N 号来自座椅行列几何位置（`seatOrdinal`），与这里无关。
+   */
   seatNumber?: number
-  /** 宿舍（展示用，如「3 号楼 412」；后续可迁移为实体 ID）。全班统一住校，住校状态不入模型 */
+  /**
+   * 宿舍。**Phase 5A 起为固定 8 间之一**（见 `utils/student.ts` 的 `DORMITORIES`），
+   * 空 = 未分配；不在清单内的历史值由 `normalizeStudent` 收敛为空。
+   * 全班统一住校，住校状态不入模型
+   */
   dormitory?: string
   /** 班委职务；留空表示非班委 */
   cadreRole?: string

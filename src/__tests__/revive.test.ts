@@ -230,6 +230,53 @@ describe('逐域最小规范化：认得出的留下，认不出的丢弃，缺�
     expect(store.activeStudents).toHaveLength(0)
   })
 
+  it('学生：宿舍非固定清单内的值被清空，清单内的值原样保留', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        { id: 's1', name: '甲', gender: 'male', dormitory: '3 号楼 412' },
+        { id: 's2', name: '乙', gender: 'female', dormitory: '女生2栋113' },
+        { id: 's3', name: '丙', gender: 'female', dormitory: '男生1栋209' },
+      ]),
+    )
+
+    const students = useStudentStore().students
+
+    // Phase 5A 起宿舍是固定 8 间的下拉，历史自由文本留着就是界面上一个选不中的值
+    expect(students[0]!.dormitory).toBeUndefined()
+    expect(students[1]!.dormitory).toBe('女生2栋113')
+    // 性别与房间对不上同样不合法：女生不能住男生楼
+    expect(students[2]!.dormitory).toBeUndefined()
+  })
+
+  it('学生：宿舍收敛是幂等的——合法值在一次重载之后依然在', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([{ id: 's1', name: '甲', gender: 'female', dormitory: '女生2栋114' }]),
+    )
+    expect(useStudentStore().students[0]!.dormitory).toBe('女生2栋114')
+
+    // 重新装载一次（模拟刷新页面 / 新设备拉回云端那份）。
+    // 收敛写在 normalizeStudent 里，它同时跑在首屏加载、跨标签页同步、云同步三条路径上——
+    // 一旦有人把它改成「无条件清空」，教师刚选好的宿舍会在下一次同步时凭空消失，
+    // 而界面上只表现为「宿舍又没了」，看不出是谁清的
+    setActivePinia(createPinia())
+    expect(useStudentStore().students[0]!.dormitory).toBe('女生2栋114')
+  })
+
+  it('学生：空学号不参与查重——第二个还没填学号的学生也要能存进去', () => {
+    browser.localStorage.seed(STUDENTS_KEY, JSON.stringify([]))
+    const store = useStudentStore()
+
+    expect(store.addStudent({ name: '甲', studentNo: '', gender: 'female' })).toBeDefined()
+    // 空串不是一个可用的身份键。若拿它互相判重，教师导入一份学号列空着的名单时，
+    // 第一个学生之后每一个都会被拒绝写入
+    expect(store.addStudent({ name: '乙', studentNo: '', gender: 'male' })).toBeDefined()
+    // 非空学号照旧拦重复
+    expect(store.addStudent({ name: '丙', studentNo: '0101', gender: 'male' })).toBeDefined()
+    expect(store.addStudent({ name: '丁', studentNo: '0101', gender: 'male' })).toBeUndefined()
+  })
+
   it('课程表：非法星期 / 节次 / 缺科目或班级的条目逐条丢弃，合法的留下', () => {
     browser.localStorage.seed(
       `${prefix}:timetable`,

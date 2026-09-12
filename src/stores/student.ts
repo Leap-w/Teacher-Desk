@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { appConfig } from '@/config'
 import { createSeedStudents } from '@/services/mock'
 import { readList, writeSeedJSON } from '@/services/storage'
+import type { StudentImportPlan } from '@/services/studentImport'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import { normalizeStudent } from '@/utils/student'
@@ -66,10 +67,16 @@ export const useStudentStore = defineStore('student', () => {
     return [...matched].sort((a, b) => a.studentNo.localeCompare(b.studentNo))
   }
 
-  /** 学号占用检查（数据层兜底；表单已做提示，此处防其他写入入口绕过） */
+  /**
+   * 学号占用检查（数据层兜底；表单已做提示，此处防其他写入入口绕过）。
+   * **空学号一律不算占用**（Phase 5A）：学号改为选填后，若拿空串互相判重，
+   * 第二个「还没填学号」的学生就会被拒绝写入——空串不是一个可用的身份键。
+   */
   function isStudentNoTaken(studentNo: string, excludeId?: string): boolean {
+    const key = studentNo.trim()
+    if (!key) return false
     return students.value.some(
-      (item) => !item.deletedAt && item.studentNo === studentNo && item.id !== excludeId,
+      (item) => !item.deletedAt && item.studentNo === key && item.id !== excludeId,
     )
   }
 
@@ -95,6 +102,34 @@ export const useStudentStore = defineStore('student', () => {
     return updated
   }
 
+  /**
+   * 批量导入落库：把一份预先算好的增改计划一次性写入（§11.3：组件不得直接写 `students.value`）。
+   *
+   * **刻意一次替换整个数组，而不是循环调用 addStudent/updateStudent**——那样每行都会触发
+   * 一次写盘 + 一次跨标签页广播，63 行就是 126 次。导入只该写一次。
+   *
+   * 计划由 `services/studentImport.ts` 的纯函数算出（按学号分流、字段覆盖口径都在那边，
+   * 因此可脱离浏览器单测）；这里只负责「应用」，不做任何判断。
+   */
+  function applyStudentImport(plan: StudentImportPlan): { added: number; updated: number } {
+    const patchById = new Map(plan.updates.map((item) => [item.id, item.patch]))
+    const next: Student[] = []
+    let updated = 0
+    for (const student of students.value) {
+      const patch = patchById.get(student.id)
+      if (!patch) {
+        next.push(student)
+        continue
+      }
+      updated += 1
+      // 展开合并：计划里没提到的字段（含 deletedAt、seatNumber）原样保留
+      next.push({ ...student, ...patch })
+    }
+    const adds = plan.adds.map((data) => ({ ...data, id: createId() }) as Student)
+    students.value = [...next, ...adds]
+    return { added: adds.length, updated }
+  }
+
   /** 软删除：标记 deletedAt 并从活跃列表移除（当前无回收站入口，仅本地留档） */
   function removeStudent(id: string): boolean {
     const index = students.value.findIndex((item) => item.id === id && !item.deletedAt)
@@ -108,5 +143,13 @@ export const useStudentStore = defineStore('student', () => {
     return true
   }
 
-  return { students, activeStudents, searchStudents, addStudent, updateStudent, removeStudent }
+  return {
+    students,
+    activeStudents,
+    searchStudents,
+    addStudent,
+    updateStudent,
+    removeStudent,
+    applyStudentImport,
+  }
 })

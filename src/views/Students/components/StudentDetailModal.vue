@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import { AppBadge, AppButton, AppModal } from '@/components/ui'
-import { familyScopeLabel, formatSeatLabel, formatStudentDisplayName } from '@/utils/student'
+import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 import StudentAvatar from './StudentAvatar.vue'
 
@@ -51,7 +51,8 @@ function onRemove() {
       <header class="detail-head">
         <StudentAvatar :name="student.name" size="lg" />
         <div class="detail-intro">
-          <h3 class="detail-name">{{ formatStudentDisplayName(student) }}</h3>
+          <!-- 档案模块用短名（姓名 + 学号后四位）：座位号已退出本模块的界面（Phase 5A） -->
+          <h3 class="detail-name">{{ formatStudentShortName(student) }}</h3>
           <div class="detail-badges">
             <AppBadge v-if="student.cadreRole" variant="primary">{{ student.cadreRole }}</AppBadge>
             <AppBadge variant="neutral">{{ student.gender === 'male' ? '男' : '女' }}</AppBadge>
@@ -65,11 +66,7 @@ function onRemove() {
       <dl class="detail-list">
         <div class="detail-item">
           <dt>学号</dt>
-          <dd>{{ student.studentNo }}</dd>
-        </div>
-        <div class="detail-item">
-          <dt>座位</dt>
-          <dd>{{ formatSeatLabel(student) }}</dd>
+          <dd>{{ student.studentNo || '—' }}</dd>
         </div>
         <div class="detail-item">
           <dt>宿舍</dt>
