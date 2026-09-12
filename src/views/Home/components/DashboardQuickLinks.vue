@@ -20,7 +20,7 @@ const toast = useToast()
 /** 四个快捷入口：前三项为既有路由，家校沟通尚未开放（Phase 4 不新增路由） */
 const quickLinks: QuickLink[] = [
   { key: 'students', label: '学生档案', icon: PeopleOutline, to: '/students' },
-  { key: 'seats', label: '座位管理', icon: GridOutline, to: '/seats' },
+  { key: 'seats', label: '座位管理', icon: GridOutline, to: '/class/seats' },
   { key: 'contact', label: '家校沟通', icon: ChatbubblesOutline },
   { key: 'schedule', label: '我的课表', icon: CalendarOutline, to: '/schedule' },
 ]

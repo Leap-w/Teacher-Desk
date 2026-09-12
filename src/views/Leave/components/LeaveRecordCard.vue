@@ -11,6 +11,10 @@ import {
 } from '@/utils/leave'
 import type { LeaveRecord } from '@/types/leave'
 
+/**
+ * 请假记录卡（V1.1.5 记录口径）：**没有批准 / 驳回**——记录即事实，
+ * 教师在这里做的是「补录 / 修改 / 登记离校返校 / 删除」，不是审批。
+ */
 interface Props {
   record: LeaveRecord
 }
@@ -19,8 +23,6 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   edit: [record: LeaveRecord]
-  approve: [record: LeaveRecord]
-  reject: [record: LeaveRecord]
   /** 登记 / 修改离校时间 */
   registerLeft: [record: LeaveRecord]
   /** 登记 / 修改返校时间 */
@@ -29,17 +31,19 @@ const emit = defineEmits<{
 }>()
 
 /**
- * 状态徽标配色：待处理用警示色（需要教师处理）；已驳回用中性色——
- * 驳回是正常的审批结果，标成危险色会让人误以为记录出了错。
+ * 状态徽标配色：生效中的记录用成功色；「已作废」（旧审批流驳回的历史遗留）用中性色——
+ * 它不代表记录出错，只是这次请假最终没有发生。
  */
 const statusVariant = computed(() => {
-  if (props.record.status === 'pending') return 'warning'
   if (props.record.status === 'approved') return 'success'
   return 'neutral'
 })
 
 const periodText = computed(() => formatLeavePeriod(props.record.start, props.record.end))
 const durationText = computed(() => formatLeaveDuration(props.record.start, props.record.end))
+
+/** 「已作废」的记录不再开放登记（这次请假最终没有发生）；其余都可补录 / 修改 */
+const isActive = computed(() => props.record.status !== 'rejected')
 
 /** 返校登记需先有离校时间（时间线起点），否则按钮点了也只会被 store 拒绝 */
 const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
@@ -61,43 +65,13 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
     <p class="reason">原因：{{ record.reason }}</p>
 
     <p v-if="record.status === 'rejected' && record.decisionNote" class="note">
-      驳回说明：{{ record.decisionNote }}
+      备注：{{ record.decisionNote }}
     </p>
 
-    <RegisterStatusLine
-      v-if="record.status === 'approved'"
-      class="register-line"
-      :endpoints="record"
-    />
+    <RegisterStatusLine v-if="isActive" class="register-line" :endpoints="record" />
 
     <div class="actions">
-      <template v-if="record.status === 'pending'">
-        <AppButton
-          size="sm"
-          :aria-label="`批准${record.studentName}的请假`"
-          @click="emit('approve', record)"
-        >
-          批准
-        </AppButton>
-        <AppButton
-          size="sm"
-          variant="secondary"
-          :aria-label="`驳回${record.studentName}的请假`"
-          @click="emit('reject', record)"
-        >
-          驳回
-        </AppButton>
-        <AppButton
-          size="sm"
-          variant="ghost"
-          :aria-label="`编辑${record.studentName}的请假`"
-          @click="emit('edit', record)"
-        >
-          编辑
-        </AppButton>
-      </template>
-
-      <template v-else-if="record.status === 'approved'">
+      <template v-if="isActive">
         <AppButton
           size="sm"
           variant="secondary"
@@ -116,7 +90,16 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
         >
           {{ record.backToSchool ? '修改返校' : '登记返校' }}
         </AppButton>
+        <AppButton
+          size="sm"
+          variant="ghost"
+          :aria-label="`编辑${record.studentName}的请假`"
+          @click="emit('edit', record)"
+        >
+          编辑
+        </AppButton>
       </template>
+      <span v-else class="archived-note">已作废的记录保留备查，可删除。</span>
 
       <AppButton
         size="sm"
@@ -182,6 +165,11 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-4);
+}
+
+.archived-note {
+  font-size: var(--text-sm);
+  color: var(--color-text-faint);
 }
 
 /* 删除与常用操作拉开距离，避免误点 */

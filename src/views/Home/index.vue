@@ -107,7 +107,7 @@ function toggleTodo(id: string): void {
         :needs-setup="dutyNeedsSetup"
         :upcoming="dutyStore.upcomingDays"
         :today-key="dutyStore.todayKey"
-        @open="router.push('/duty')"
+        @open="router.push('/class/duty')"
       />
 
       <DashboardQuickLinks class="cell-links" />
@@ -116,9 +116,9 @@ function toggleTodo(id: string): void {
         <DashboardLessonStats :count="timetableStore.weekLessonCount" />
 
         <DashboardLeaveCard
-          :pending="leaveStore.pendingLeaves"
+          :out="leaveStore.outLeaves"
           :month-count="leaveStore.monthLeaveCount"
-          @open="router.push('/leave')"
+          @open="router.push('/class/leave')"
         />
 
         <DashboardWeekendCard
@@ -126,7 +126,7 @@ function toggleTodo(id: string): void {
           :returns="weekendReturns"
           :month-count="weekendStore.monthReturnCount"
           :stale-count="weekendStaleCount"
-          @open="router.push('/weekend')"
+          @open="router.push('/class/weekend')"
         />
 
         <DashboardClassCard

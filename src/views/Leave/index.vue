@@ -3,49 +3,53 @@ import { computed, ref } from 'vue'
 
 import RegisterPointModal from '@/components/flow/RegisterPointModal.vue'
 import { AppButton, AppCard, AppInput, AppModal, EmptyState } from '@/components/ui'
+import { useNow } from '@/composables/useToday'
 import { useToast } from '@/composables/useToast'
 import { useLeaveStore } from '@/stores/leave'
+import { formatDateKey } from '@/utils/date'
 import { formatLeavePeriod } from '@/utils/leave'
 import { REGISTER_MODE_LABELS, formatDayPoint } from '@/utils/point'
-import type { LeaveInput, LeaveRecord, LeaveStatus } from '@/types/leave'
+import type { LeaveInput, LeaveRecord } from '@/types/leave'
 import type { DayPoint, RegisterMode } from '@/types/point'
-import LeaveDecisionModal from './components/LeaveDecisionModal.vue'
+import { LEAVE_FILTER_LABELS, filterLeaveRecords } from '@/utils/leave'
+import type { LeaveFilter } from '@/utils/leave'
 import LeaveFormDrawer from './components/LeaveFormDrawer.vue'
 import LeaveRecordCard from './components/LeaveRecordCard.vue'
 
-type LeaveFilter = 'all' | LeaveStatus
-
+/**
+ * 请假管理（V1.1.5 记录口径）：只做「请假记录」——新建 / 编辑 / 删除 / 查询 /
+ * 登记离校返校。**没有审批**：应用不替班主任决定「批不批」，记录本身就是事实。
+ */
 const leaveStore = useLeaveStore()
 const toast = useToast()
+/** 今天（共享时钟，跨零点自动翻篇；与 store 的 monthLeaveCount 同一口径） */
+const now = useNow()
+const today = computed(() => formatDateKey(now.value))
 
 const keyword = ref('')
 const filter = ref<LeaveFilter>('all')
 
-const records = computed(() =>
-  leaveStore.listRecords({
-    status: filter.value === 'all' ? undefined : filter.value,
-    keyword: keyword.value,
-  }),
-)
+const FILTER_OPTIONS = Object.entries(LEAVE_FILTER_LABELS).map(([value, label]) => ({
+  value: value as LeaveFilter,
+  label,
+}))
 
-const filterOptions = computed(() => [
-  { value: 'all' as const, label: '全部', count: leaveStore.leaves.length },
-  {
-    value: 'pending' as const,
-    label: '待处理',
-    count: leaveStore.leaves.filter((item) => item.status === 'pending').length,
-  },
-  {
-    value: 'approved' as const,
-    label: '已批准',
-    count: leaveStore.leaves.filter((item) => item.status === 'approved').length,
-  },
-  {
-    value: 'rejected' as const,
-    label: '已驳回',
-    count: leaveStore.leaves.filter((item) => item.status === 'rejected').length,
-  },
-])
+/** 按筛选 + 关键词过滤（筛选是纯函数 filterLeaveRecords，关键词走 store） */
+const records = computed(() => {
+  const matched = leaveStore.listRecords({ keyword: keyword.value })
+  return filterLeaveRecords(matched, filter.value, today.value)
+})
+
+const filterCounts = computed(() => {
+  const all = leaveStore.leaves
+    return {
+    all: all.length,
+    today: filterLeaveRecords(all, 'today', today.value).length,
+    week: filterLeaveRecords(all, 'week', today.value).length,
+    out: filterLeaveRecords(all, 'out', today.value).length,
+    back: filterLeaveRecords(all, 'back', today.value).length,
+  } satisfies Record<LeaveFilter, number>
+})
 
 /* ---------- 新增 / 编辑抽屉 ---------- */
 
@@ -68,11 +72,11 @@ function onSubmit(payload: LeaveInput) {
   if (current) {
     const updated = leaveStore.updateLeave(current.id, payload)
     if (!updated) {
-      toast.danger('保存失败：该记录可能已被处理，请刷新后重试')
+      toast.danger('保存失败：请检查填写内容，或该学生已不在档案中')
       return
     }
     formOpen.value = false
-    toast.success(`已更新 ${updated.studentName} 的请假申请`)
+    toast.success(`已更新 ${updated.studentName} 的请假记录`)
     return
   }
   const created = leaveStore.addLeave(payload)
@@ -81,40 +85,7 @@ function onSubmit(payload: LeaveInput) {
     return
   }
   formOpen.value = false
-  toast.success(`已新增 ${created.studentName} 的请假申请`)
-}
-
-/* ---------- 批准 / 驳回 ---------- */
-
-const decisionOpen = ref(false)
-/**
- * 审批目标。**确认后不清空**（下面几处同理）：弹窗关闭有淡出动画，动画期间它仍在渲染，
- * 清掉会让姓名 / 时段文案先变空再消失（§9.8 记录项）。下次打开时覆盖，
- * 记录对象在 store 里是整体替换的，不会被就地改写。
- */
-const decisionTarget = ref<LeaveRecord | undefined>(undefined)
-const decision = ref<'approved' | 'rejected'>('approved')
-
-function askDecision(record: LeaveRecord, choice: 'approved' | 'rejected') {
-  decisionTarget.value = record
-  decision.value = choice
-  decisionOpen.value = true
-}
-
-function confirmDecision(note: string) {
-  const target = decisionTarget.value
-  decisionOpen.value = false
-  if (!target) return
-  const decided = leaveStore.decideLeave(target.id, decision.value, note)
-  if (!decided) {
-    toast.danger('操作失败：该记录可能已被处理，请刷新后重试')
-    return
-  }
-  toast.success(
-    decision.value === 'approved'
-      ? `已批准 ${decided.studentName} 的请假申请`
-      : `已驳回 ${decided.studentName} 的请假申请`,
-  )
+  toast.success(`已新增 ${created.studentName} 的请假记录`)
 }
 
 /* ---------- 离校 / 返校登记 ---------- */
@@ -178,10 +149,11 @@ function clearFilters() {
       <div>
         <h1 class="page-title">请假管理</h1>
         <p class="page-subtitle">
-          待处理 {{ leaveStore.pendingCount }} 条 · 本月已批准 {{ leaveStore.monthLeaveCount }} 人次
+          本月已记录 {{ leaveStore.monthLeaveCount }} 人次 · 未返校
+          {{ leaveStore.outLeaves.length }} 人
         </p>
       </div>
-      <AppButton @click="openCreate">＋ 新增请假</AppButton>
+      <AppButton @click="openCreate">＋ 新增请假记录</AppButton>
     </header>
 
     <div class="toolbar-row">
@@ -191,9 +163,9 @@ function clearFilters() {
         placeholder="搜索学生姓名或学号后四位"
         clearable
       />
-      <div class="segmented" role="group" aria-label="请假状态筛选">
+      <div class="segmented" role="group" aria-label="请假记录筛选">
         <button
-          v-for="option in filterOptions"
+          v-for="option in FILTER_OPTIONS"
           :key="option.value"
           type="button"
           class="segmented-item"
@@ -202,7 +174,7 @@ function clearFilters() {
           @click="filter = option.value"
         >
           {{ option.label }}
-          <span class="segmented-count">{{ option.count }}</span>
+          <span class="segmented-count">{{ filterCounts[option.value] }}</span>
         </button>
       </div>
     </div>
@@ -213,8 +185,6 @@ function clearFilters() {
         :key="record.id"
         :record="record"
         @edit="openEdit"
-        @approve="askDecision($event, 'approved')"
-        @reject="askDecision($event, 'rejected')"
         @register-left="askRegister($event, 'left')"
         @register-back="askRegister($event, 'back')"
         @remove="askRemove"
@@ -234,20 +204,13 @@ function clearFilters() {
         v-else
         icon="📝"
         title="暂无请假记录"
-        description="点击右上角「新增请假」，记录第一条学生请假。"
+        description="点击右上角「新增请假记录」，记录第一条学生请假。"
       >
-        <AppButton size="sm" @click="openCreate">新增请假</AppButton>
+        <AppButton size="sm" @click="openCreate">新增请假记录</AppButton>
       </EmptyState>
     </AppCard>
 
     <LeaveFormDrawer v-model="formOpen" :record="editing" @submit="onSubmit" />
-
-    <LeaveDecisionModal
-      v-model="decisionOpen"
-      :record="decisionTarget"
-      :decision="decision"
-      @confirm="confirmDecision"
-    />
 
     <!-- 登记弹窗已抽到 components/flow（Phase 7A）；上下文由本页经插槽给，
          两端时间戳直接把记录交给弹窗按 mode 取（RegisterEndpoints） -->

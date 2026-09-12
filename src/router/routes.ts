@@ -1,0 +1,98 @@
+/**
+ * 全部路由表（独立成模块：侧边栏 / 常驻测试都要直接读它——
+ * router/index.ts 里的 createWebHistory 依赖 window，node 测试环境碰不得）。
+ */
+import { RouterView } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
+
+/** 全部路由；侧边导航由本表驱动（过滤 redirect 项） */
+export const routes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('@/views/Home/index.vue'),
+    meta: { title: '首页', icon: '🏠' },
+  },
+  {
+    path: '/students',
+    name: 'students',
+    component: () => import('@/views/Students/index.vue'),
+    meta: { title: '学生档案', icon: '🎓' },
+  },
+  {
+    // 「班级管理」父级只负责布局出口：直接复用 vue-router 的 RouterView 组件
+    // （**不能用** `{ template: '<router-view />' }`——本项目 Vue 构建不含运行时模板编译器，
+    //  内联 template 会整页空白且无报错弹窗，V1.1.3 真机验收时才暴露）
+    path: '/class',
+    component: RouterView,
+    meta: { title: '班级管理', icon: '🎒' },
+    children: [
+      {
+        path: '',
+        redirect: '/class/seats',
+      },
+      {
+        path: 'seats',
+        name: 'seats',
+        component: () => import('@/views/Seats/index.vue'),
+        meta: { title: '座位管理', icon: '🪑' },
+      },
+      {
+        path: 'leave',
+        name: 'leave',
+        component: () => import('@/views/Leave/index.vue'),
+        meta: { title: '请假管理', icon: '📝' },
+      },
+      {
+        path: 'duty',
+        name: 'duty',
+        component: () => import('@/views/Duty/index.vue'),
+        meta: { title: '值日管理', icon: '🧹' },
+      },
+      {
+        path: 'weekend',
+        name: 'weekend',
+        component: () => import('@/views/Weekend/index.vue'),
+        meta: { title: '周末管理', icon: '🧳' },
+      },
+    ],
+  },
+  {
+    path: '/work',
+    // 「工作管理」父级只负责布局出口：直接复用 vue-router 的 RouterView 组件
+    // （**不能用** `{ template: '<router-view />' }`——本项目 Vue 构建不含运行时模板编译器，
+    //  内联 template 会整页空白且无报错弹窗，真机验收时才暴露）
+    component: RouterView,
+    meta: { title: '工作管理', icon: '📋' },
+    children: [
+      {
+        path: '',
+        redirect: '/work/schedule',
+      },
+      {
+        path: 'schedule',
+        name: 'schedule',
+        component: () => import('@/views/Schedule/index.vue'),
+        meta: { title: '课程表', icon: '📅' },
+      },
+      {
+        path: 'works',
+        name: 'works',
+        component: () => import('@/views/Works/index.vue'),
+        meta: { title: '工作清单', icon: '✅' },
+      },
+    ],
+  },
+  /* ---- 旧路径兼容（V1.1.5 前的稳定 URL）：重定向到班级管理层级，旧链接不失效 ---- */
+  { path: '/seats', redirect: '/class/seats' },
+  { path: '/leave', redirect: '/class/leave' },
+  { path: '/duty', redirect: '/class/duty' },
+  { path: '/weekend', redirect: '/class/weekend' },
+  {
+    path: '/toolbox',
+    name: 'toolbox',
+    component: () => import('@/views/Toolbox/index.vue'),
+    meta: { title: '工具箱', icon: '🧰' },
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/' },
+]

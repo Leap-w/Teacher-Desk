@@ -19,7 +19,7 @@ import {
 } from '@/utils/leave'
 import type { Student } from '@/types'
 import type { DayPoint } from '@/types/point'
-import type { LeaveInput, LeaveRecord, LeaveStatus, LeaveType } from '@/types/leave'
+import type { LeaveInput, LeaveRecord, LeaveType } from '@/types/leave'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 
@@ -124,22 +124,26 @@ export const useLeaveStore = defineStore('leave', () => {
     return studentStore.activeStudents.find((item) => item.id === id)
   }
 
-  /** 待处理的请假（按开始时间升序：最早请假的先批） */
-  const pendingLeaves = computed(() =>
-    sortLeaveRecords(leaves.value.filter((item) => item.status === 'pending')),
+  /**
+   * 未返校的记录（已登记离校、还没登记返校），按开始时段倒序。
+   * 工作台「请假管理」卡片与请假页「未返校」筛选共用同一口径。
+   */
+  const outLeaves = computed(() =>
+    sortLeaveRecords(
+      leaves.value.filter(
+        (item) => item.status !== 'rejected' && item.leftSchool && !item.backToSchool,
+      ),
+    ),
   )
 
-  /** 待处理条数（页头与工作台「请假审批」卡片共用） */
-  const pendingCount = computed(() => pendingLeaves.value.length)
-
   /**
-   * 本月请假人次：**已批准**且开始日期落在本月的记录数（待处理 / 已驳回不计——
-   * 未批准的申请还不是一次请假）。「人次」= 记录数，同一学生本月请两次记两人次。
+   * 本月请假人次：开始日期落在本月、且不是「已作废」（旧审批流驳回的历史遗留）的记录数。
+   * 「人次」= 记录数，同一学生本月请两次记两人次。
    */
   const monthLeaveCount = computed(() => {
     const monthPrefix = formatDateKey(now.value).slice(0, 7)
     return leaves.value.filter(
-      (item) => item.status === 'approved' && item.start.date.startsWith(monthPrefix),
+      (item) => item.status !== 'rejected' && item.start.date.startsWith(monthPrefix),
     ).length
   })
 
@@ -152,15 +156,18 @@ export const useLeaveStore = defineStore('leave', () => {
   )
 
   /**
-   * 列表查询：按状态与关键词过滤后排序（关键词匹配姓名快照，
+   * 列表查询：按关键词过滤后排序（关键词匹配姓名快照，
    * 即「姓名」或「学号后四位」都能命中，与列表展示的信息一致）。
+   * 状态维度的筛选（今日 / 本周 / 未返校 / 已返校）在页面用 utils/leave 的
+   * filterLeaveRecords 完成——那是纯函数，测试可以直接喂数组跑。
    */
-  function listRecords(options: { status?: LeaveStatus; keyword?: string } = {}): LeaveRecord[] {
+  function listRecords(options: { keyword?: string } = {}): LeaveRecord[] {
     const query = (options.keyword ?? '').trim().toLowerCase()
-    const matched = leaves.value
-      .filter((item) => (options.status ? item.status === options.status : true))
-      .filter((item) => (query ? item.studentName.toLowerCase().includes(query) : true))
-    return sortLeaveRecords(matched)
+    return sortLeaveRecords(
+      leaves.value.filter((item) =>
+        query ? item.studentName.toLowerCase().includes(query) : true,
+      ),
+    )
   }
 
   /**
@@ -182,7 +189,11 @@ export const useLeaveStore = defineStore('leave', () => {
     )
   }
 
-  /** 新增请假：内容不合法或学生不在档案中时拒绝写入并返回 undefined；状态恒为待处理 */
+  /**
+   * 新增请假：内容不合法或学生不在档案中时拒绝写入并返回 undefined。
+   * V1.1.5 起状态恒为 'approved'（记录语义：记录即生效，可直接登记离校 / 返校）——
+   * 应用不再替班主任做「批不批」的决定（§11.5）。
+   */
   function addLeave(input: LeaveInput): LeaveRecord | undefined {
     if (!isLeaveInputValid(input)) return undefined
     const student = findStudent(input.studentId)
@@ -195,19 +206,23 @@ export const useLeaveStore = defineStore('leave', () => {
       start: { ...input.start },
       end: { ...input.end },
       reason: input.reason.trim(),
-      status: 'pending',
+      status: 'approved',
       createdAt: new Date().toISOString(),
     }
     leaves.value = [...leaves.value, record]
     return record
   }
 
-  /** 更新请假：**仅待处理可改**（已审批的记录是既成事实）；内容不合法时返回 undefined */
+  /**
+   * 更新请假（记录口径：任何记录都可改——教师改个错字不该被历史状态卡住；
+   * 「已作废」的记录改完仍是已作废，要重新生效请删除后重建）。
+   * 内容不合法时返回 undefined。
+   */
   function updateLeave(id: string, patch: Partial<LeaveInput>): LeaveRecord | undefined {
     const index = leaves.value.findIndex((item) => item.id === id)
     if (index === -1) return undefined
     const current = leaves.value[index]
-    if (!current || current.status !== 'pending') return undefined
+    if (!current) return undefined
     const next: LeaveRecord = {
       ...current,
       studentId: patch.studentId ?? current.studentId,
@@ -228,32 +243,8 @@ export const useLeaveStore = defineStore('leave', () => {
   }
 
   /**
-   * 批准 / 驳回：**仅待处理可流转**（重复处理返回 undefined，由调用方提示）。
-   * 审批说明只对驳回有意义，批准时一律不保存——避免留下无意义的备注。
-   */
-  function decideLeave(
-    id: string,
-    decision: 'approved' | 'rejected',
-    note?: string,
-  ): LeaveRecord | undefined {
-    const index = leaves.value.findIndex((item) => item.id === id)
-    if (index === -1) return undefined
-    const current = leaves.value[index]
-    if (!current || current.status !== 'pending') return undefined
-    const trimmed = note?.trim() ?? ''
-    const next: LeaveRecord = {
-      ...current,
-      status: decision,
-      decidedAt: new Date().toISOString(),
-      decisionNote: decision === 'rejected' && trimmed ? trimmed : undefined,
-    }
-    leaves.value = [...leaves.value.slice(0, index), next, ...leaves.value.slice(index + 1)]
-    return next
-  }
-
-  /**
-   * 登记离校：仅已批准可登记。**重复调用即覆盖修改**——日期写错时不必「删掉记录重建」
-   * （那样会把审批结果、原因、返校时间一并丢掉）。登记的是既成事实，
+   * 登记离校：非「已作废」的记录都可登记。**重复调用即覆盖修改**——日期写错时不必
+   * 「删掉记录重建」（那样会把原因、返校时间一并丢掉）。登记的是既成事实，
    * 因此不限制「不早于请假开始」，只保证不晚于已登记的返校时间、时间线不颠倒。
    */
   function registerLeftSchool(id: string, point: DayPoint): LeaveRecord | undefined {
@@ -261,7 +252,7 @@ export const useLeaveStore = defineStore('leave', () => {
     const index = leaves.value.findIndex((item) => item.id === id)
     if (index === -1) return undefined
     const current = leaves.value[index]
-    if (!current || current.status !== 'approved') return undefined
+    if (!current || current.status === 'rejected') return undefined
     if (current.backToSchool && halfDayKey(point) > halfDayKey(current.backToSchool)) {
       return undefined
     }
@@ -276,7 +267,7 @@ export const useLeaveStore = defineStore('leave', () => {
     const index = leaves.value.findIndex((item) => item.id === id)
     if (index === -1) return undefined
     const current = leaves.value[index]
-    if (!current || current.status !== 'approved' || !current.leftSchool) return undefined
+    if (!current || current.status === 'rejected' || !current.leftSchool) return undefined
     if (halfDayKey(point) < halfDayKey(current.leftSchool)) return undefined
     const next: LeaveRecord = { ...current, backToSchool: { ...point } }
     leaves.value = [...leaves.value.slice(0, index), next, ...leaves.value.slice(index + 1)]
@@ -293,14 +284,12 @@ export const useLeaveStore = defineStore('leave', () => {
 
   return {
     leaves,
-    pendingLeaves,
-    pendingCount,
+    outLeaves,
     monthLeaveCount,
     listRecords,
     overlappingLeaves,
     addLeave,
     updateLeave,
-    decideLeave,
     registerLeftSchool,
     registerBackToSchool,
     removeLeave,

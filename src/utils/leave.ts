@@ -25,11 +25,14 @@ export const LEAVE_TYPE_OPTIONS: SelectOption<LeaveType>[] = [
   { label: LEAVE_TYPE_LABELS.other, value: 'other' },
 ]
 
-/** 审批状态中文文案（列表徽标、筛选共用） */
+/** 状态中文文案（列表徽标共用）。V1.1.5 起请假管理只做**记录**、不做审批：
+ * 数据值保持不变（历史数据兼容），仅展示词改为记录口径——
+ * 「记录中」= 记录已建、还没登记离校；「已记录」= 生效的请假记录（V1.1.5 起新建即此状态）；
+ * 「已作废」= 旧版审批流驳回的记录（保留只读，不算一次请假） */
 export const LEAVE_STATUS_LABELS: Record<LeaveStatus, string> = {
-  pending: '待处理',
-  approved: '已批准',
-  rejected: '已驳回',
+  pending: '记录中',
+  approved: '已记录',
+  rejected: '已作废',
 }
 
 /** 全部已知请假类型（load 守卫与写入校验共用；类型值扩展时同步） */
@@ -76,10 +79,13 @@ export function normalizeLeaveRecord(raw: unknown): LeaveRecord | null {
   if (halfDayKey(item.end) < halfDayKey(item.start)) return null
   const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
   if (!reason) return null
-  const status =
+  // V1.1.5 起不再有审批：旧「待处理」在读取时归一为「已记录」（记录即生效，可登记离校 / 返校）；
+  // 旧「已驳回」保留原值——那是一次「最终没有发生的请假」，改成就成了编造历史
+  const rawStatus =
     typeof item.status === 'string' && KNOWN_LEAVE_STATUSES.includes(item.status as LeaveStatus)
       ? (item.status as LeaveStatus)
-      : 'pending'
+      : 'approved'
+  const status: LeaveStatus = rawStatus === 'pending' ? 'approved' : rawStatus
   const decisionNote = typeof item.decisionNote === 'string' ? item.decisionNote.trim() : ''
   // 离校 / 返校两端：公共件按「形状合法 + 时间线自洽」健壮化（读回路径的守卫，
   // 与写入路径的 registerPointError 同源，见 utils/point.ts）
@@ -105,19 +111,71 @@ export function normalizeLeaveRecord(raw: unknown): LeaveRecord | null {
 }
 
 /**
- * 列表排序：**待处理置顶**，组内按开始时间升序（最早请假的先批）；
- * 其余（已批准 / 已驳回）按开始时间倒序（最近发生的先看）。
- * 同一天开始的按提交时间升序，保证顺序确定、刷新不变。
+ * 列表排序（记录口径）：按开始时段**倒序**（最近发生 / 即将发生的在前），
+ * 同时段按提交时间升序，保证顺序确定、刷新不变。
  */
 export function sortLeaveRecords(records: LeaveRecord[]): LeaveRecord[] {
   return [...records].sort((a, b) => {
-    const groupA = a.status === 'pending' ? 0 : 1
-    const groupB = b.status === 'pending' ? 0 : 1
-    if (groupA !== groupB) return groupA - groupB
-    const diff = halfDayKey(a.start) - halfDayKey(b.start)
-    const ordered = groupA === 0 ? diff : -diff
-    return ordered !== 0 ? ordered : a.createdAt.localeCompare(b.createdAt)
+    const diff = halfDayKey(b.start) - halfDayKey(a.start)
+    return diff !== 0 ? diff : a.createdAt.localeCompare(b.createdAt)
   })
+}
+
+/* ========== V1.1.5：记录筛选（全部 / 今日 / 本周 / 未返校 / 已返校） ========== */
+
+/** 列表筛选（需求给定的五项；后两项按离校 / 返校登记判定，不看日期） */
+export type LeaveFilter = 'all' | 'today' | 'week' | 'out' | 'back'
+
+export const LEAVE_FILTER_LABELS: Record<LeaveFilter, string> = {
+  all: '全部',
+  today: '今日',
+  week: '本周',
+  out: '未返校',
+  back: '已返校',
+}
+
+/** 请假时段是否与「今天」相交（含首尾半天） */
+export function isLeaveToday(record: LeaveRecord, today: string): boolean {
+  return record.start.date <= today && record.end.date >= today
+}
+
+/** 该日期键所在周的周日（与值日 / 工作清单同一 ISO 周口径） */
+function weekEndOfDate(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  const d = new Date(year ?? 2026, (month ?? 1) - 1, day ?? 1)
+  const weekday = d.getDay() === 0 ? 7 : d.getDay()
+  d.setDate(d.getDate() + (7 - weekday))
+  const month2 = `${d.getMonth() + 1}`.padStart(2, '0')
+  const day2 = `${d.getDate()}`.padStart(2, '0')
+  return `${d.getFullYear()}-${month2}-${day2}`
+}
+
+/** 请假时段是否与「本周」（今天 ~ 周日）相交 */
+export function isLeaveThisWeek(record: LeaveRecord, today: string): boolean {
+  return record.start.date <= weekEndOfDate(today) && record.end.date >= today
+}
+
+/** 按筛选条件取子集（纯函数；'out' / 'back' 只看登记端点，与日期无关） */
+export function filterLeaveRecords(
+  records: LeaveRecord[],
+  filter: LeaveFilter,
+  today: string,
+): LeaveRecord[] {
+  const sorted = sortLeaveRecords(records)
+  switch (filter) {
+    case 'today':
+      return sorted.filter((item) => isLeaveToday(item, today))
+    case 'week':
+      return sorted.filter((item) => isLeaveThisWeek(item, today))
+    case 'out':
+      return sorted.filter(
+        (item) => item.leftSchool !== undefined && item.backToSchool === undefined,
+      )
+    case 'back':
+      return sorted.filter((item) => item.backToSchool !== undefined)
+    default:
+      return sorted
+  }
 }
 
 /** 两个时段是否重叠（闭区间、含半天；供表单「已有请假记录」提示，不做拦截） */

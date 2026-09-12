@@ -5,10 +5,14 @@ import { AppBadge, AppButton, AppCard, EmptyState } from '@/components/ui'
 import { LEAVE_TYPE_LABELS, formatLeavePeriod } from '@/utils/leave'
 import type { LeaveRecord } from '@/types/leave'
 
+/**
+ * 工作台「请假管理」卡片（V1.1.5 记录口径）：关注「谁还没回来」，
+ * 没有审批概念（应用不替班主任做决定）。
+ */
 interface Props {
-  /** 待处理的请假（store 已按开始时间升序——最早请假的先批） */
-  pending: LeaveRecord[]
-  /** 本月已批准的请假人次 */
+  /** 未返校的记录（已登记离校、还没登记返校；store 已按开始时段倒序） */
+  out: LeaveRecord[]
+  /** 本月已记录的请假人次 */
   monthCount: number
 }
 
@@ -19,24 +23,24 @@ const emit = defineEmits<{
   open: []
 }>()
 
-/** 卡片篇幅有限：最多列 3 条，其余在页脚提示「还有 N 条」 */
+/** 卡片篇幅有限：最多列 3 条，其余在页脚提示「还有 N 人」 */
 const MAX_ROWS = 3
 
-const visible = computed(() => props.pending.slice(0, MAX_ROWS))
-const restCount = computed(() => props.pending.length - visible.value.length)
+const visible = computed(() => props.out.slice(0, MAX_ROWS))
+const restCount = computed(() => props.out.length - visible.value.length)
 
 const footNote = computed(() =>
   restCount.value > 0
-    ? `本月已批准 ${props.monthCount} 人次 · 还有 ${restCount.value} 条待处理`
-    : `本月已批准 ${props.monthCount} 人次`,
+    ? `本月已记录 ${props.monthCount} 人次 · 还有 ${restCount.value} 人未返校`
+    : `本月已记录 ${props.monthCount} 人次`,
 )
 </script>
 
 <template>
-  <AppCard title="请假审批">
+  <AppCard title="请假管理">
     <template #actions>
-      <AppBadge :variant="pending.length > 0 ? 'warning' : 'neutral'" size="sm">
-        待处理 {{ pending.length }}
+      <AppBadge :variant="out.length > 0 ? 'warning' : 'neutral'" size="sm">
+        未返校 {{ out.length }}
       </AppBadge>
     </template>
 
@@ -54,16 +58,14 @@ const footNote = computed(() =>
 
     <EmptyState
       v-else
-      icon="🎉"
-      title="没有待处理的请假"
+      icon="✅"
+      title="没有未返校的学生"
       description="需要记录学生请假时，点下方进入请假管理。"
     />
 
     <div class="card-foot">
       <p class="foot-note">{{ footNote }}</p>
-      <AppButton size="sm" variant="secondary" @click="emit('open')">
-        {{ pending.length > 0 ? '去审批' : '去请假管理' }}
-      </AppButton>
+      <AppButton size="sm" variant="secondary" @click="emit('open')">去请假管理</AppButton>
     </div>
   </AppCard>
 </template>

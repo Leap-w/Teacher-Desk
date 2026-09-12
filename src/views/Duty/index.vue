@@ -9,6 +9,7 @@ import { useStudentStore } from '@/stores/student'
 import { formatDateOnly, formatWeekdayLabel, isWeekendDateKey } from '@/utils/date'
 import DutyGroupCard from './components/DutyGroupCard.vue'
 import DutyGroupEditModal from './components/DutyGroupEditModal.vue'
+import DutyImportModal from './components/DutyImportModal.vue'
 import DutyRotationPanel from './components/DutyRotationPanel.vue'
 import DutyTodayCard from './components/DutyTodayCard.vue'
 import DutyUpcomingList from './components/DutyUpcomingList.vue'
@@ -158,6 +159,16 @@ function onRotationChange(patch: Partial<Omit<DutySettings, 'id' | 'kind'>>): vo
   }
   toast.success('轮换设置已更新')
 }
+
+/* ---------- Excel 批量导入（V1.1.5：分组 / 安排） ---------- */
+
+const importOpen = ref(false)
+const importMode = ref<'groups' | 'arrange'>('groups')
+
+function openImport(mode: 'groups' | 'arrange'): void {
+  importMode.value = mode
+  importOpen.value = true
+}
 </script>
 
 <template>
@@ -167,7 +178,11 @@ function onRotationChange(patch: Partial<Omit<DutySettings, 'id' | 'kind'>>): vo
         <h1 class="page-title">值日管理</h1>
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
-      <AppButton @click="openCreate">＋ 新建值日组</AppButton>
+      <div class="toolbar-actions">
+        <AppButton variant="secondary" @click="openImport('groups')">📥 导入分组</AppButton>
+        <AppButton variant="secondary" @click="openImport('arrange')">📥 导入安排</AppButton>
+        <AppButton @click="openCreate">＋ 新建值日组</AppButton>
+      </div>
     </header>
 
     <div class="duty-stack">
@@ -222,6 +237,9 @@ function onRotationChange(patch: Partial<Omit<DutySettings, 'id' | 'kind'>>): vo
       @submit="onSubmitGroup"
     />
 
+    <!-- Excel 批量导入（分组 / 安排共用一个弹窗，按 mode 切换管道） -->
+    <DutyImportModal v-model="importOpen" :mode="importMode" />
+
     <AppModal v-model="removeOpen" title="删除值日组" :width="380">
       <p class="confirm-text">
         确定删除
@@ -253,6 +271,14 @@ function onRotationChange(patch: Partial<Omit<DutySettings, 'id' | 'kind'>>): vo
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .page-title {

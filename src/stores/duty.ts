@@ -22,9 +22,18 @@ import {
   normalizeStudentIds,
 } from '@/utils/duty'
 import type { DutyGroup, DutyMember, DutyRecord, DutySettings } from '@/types/duty'
+import type { DutyArrangeImportPlan, DutyGroupImportPlan } from '@/services/dutyImport'
 import type { Student } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:duty`
+
+/** 分组导入落库结果（失败时数据一个字节都不改） */
+export type DutyGroupImportOutcome =
+  { ok: true; updated: number; created: number; members: number } | { ok: false; reason: string }
+
+/** 安排导入落库结果（失败时数据一个字节都不改） */
+export type DutyArrangeImportOutcome =
+  { ok: true; startDate: string; days: number } | { ok: false; reason: string }
 
 /**
  * 把盘上的原始列表规范成内存里的值日记录（**首屏加载与跨标签页同步共用**，§11.1）。
@@ -264,6 +273,104 @@ export const useDutyStore = defineStore('duty', () => {
     return true
   }
 
+  /* ========== V1.1.5：Excel 批量导入（唯一落库入口，失败整批拒绝） ========== */
+
+  /**
+   * 应用分组导入计划：**按 Excel 更新 / 写入提到的组，未涉及的组保持不变**（不整班清空）。
+   * 兜底校验：更新目标必须存在、新建组名非空、同一学生只进一个组——导入层已校验，
+   * 这里防其他入口绕过。整批一次赋值 = 一次写盘 + 一次广播；首个组自动成为轮换起点
+   * （与 addGroup 同一口径，正常用不到：有组的班级导入不会走到这一支）。
+   */
+  function applyDutyGroupImport(plan: DutyGroupImportPlan): DutyGroupImportOutcome {
+    const seenStudent = new Set<string>()
+    for (const update of plan.updates) {
+      if (!records.value.some((record) => isDutyGroup(record) && record.id === update.id)) {
+        return { ok: false, reason: `要更新的组不存在（${update.name}）` }
+      }
+      for (const id of update.studentIds) {
+        if (seenStudent.has(id)) return { ok: false, reason: '同一学生被安排进了多个组' }
+        seenStudent.add(id)
+      }
+    }
+    for (const create of plan.creates) {
+      if (!create.name.trim()) return { ok: false, reason: '新组组名不能为空' }
+      for (const id of create.studentIds) {
+        if (seenStudent.has(id)) return { ok: false, reason: '同一学生被安排进了多个组' }
+        seenStudent.add(id)
+      }
+    }
+
+    let updated = 0
+    let created = 0
+    let members = 0
+    let next = records.value.map((record) => {
+      if (!isDutyGroup(record)) return record
+      const hit = plan.updates.find((update) => update.id === record.id)
+      if (!hit) return record
+      updated += 1
+      members += hit.studentIds.length
+      return { ...record, studentIds: normalizeStudentIds(hit.studentIds) }
+    })
+    for (const create of plan.creates) {
+      next = [
+        ...next,
+        {
+          id: createId(),
+          kind: 'group',
+          name: create.name.trim(),
+          studentIds: normalizeStudentIds(create.studentIds),
+        } satisfies DutyGroup,
+      ]
+      created += 1
+      members += create.studentIds.length
+    }
+    // 首次建组的班级导入后立即有轮换起点（与 addGroup 同一口径）；已有组时不动起点
+    const isFirst = groups.value.length === 0
+    const anchor: Partial<DutySettings> = {
+      startDate: todayKey.value,
+      startGroupId: plan.updates[0]?.id ?? '',
+    }
+    next = isFirst ? withSettings(next, anchor) : withSettings(next)
+    records.value = next
+    return { ok: true, updated, created, members }
+  }
+
+  /**
+   * 应用安排导入计划：把「日期 → 组」表翻译成轮换的**起点 + 组顺序**。
+   * 组顺序 = 表序在前、未提到的组保持相对顺序排在其后；改组序会改变整条轮换的走向，
+   * 预览里已明确说明。组序变更与起点更新合并为一次赋值 = 一次写盘 + 一次广播。
+   */
+  function applyDutyArrangeImport(plan: DutyArrangeImportPlan): DutyArrangeImportOutcome {
+    if (!plan.startDate || !plan.startGroupId) {
+      return { ok: false, reason: '导入计划缺少轮换起点' }
+    }
+    if (!isDutyDateKey(plan.startDate)) {
+      return { ok: false, reason: `起点日期不合法（${plan.startDate}）` }
+    }
+    const orderIds = plan.order.filter((id) => groups.value.some((group) => group.id === id))
+    if (orderIds.length !== groups.value.length || !orderIds.includes(plan.startGroupId)) {
+      return { ok: false, reason: '导入的组顺序与现有组对不上，请刷新后重试' }
+    }
+
+    const groupById = new Map(
+      records.value.filter(isDutyGroup).map((group) => [group.id, group] as const),
+    )
+    const reordered = orderIds.map((id) => groupById.get(id)).filter((group) => group !== undefined)
+    const reorderedIds = new Set(reordered.map((group) => group.id))
+    // 组卡按新顺序重排；设置记录原地更新起点；其余记录（不会有的）保持
+    const merged: DutyRecord[] = [...reordered]
+    for (const record of records.value) {
+      if (isDutyGroup(record) && reorderedIds.has(record.id)) continue
+      merged.push(
+        isDutySettings(record)
+          ? { ...record, startDate: plan.startDate, startGroupId: plan.startGroupId }
+          : record,
+      )
+    }
+    records.value = merged
+    return { ok: true, startDate: plan.startDate, days: orderIds.length }
+  }
+
   return {
     records,
     groups,
@@ -279,5 +386,7 @@ export const useDutyStore = defineStore('duty', () => {
     removeGroup,
     rotationSuccessorOf,
     setRotation,
+    applyDutyGroupImport,
+    applyDutyArrangeImport,
   }
 })
