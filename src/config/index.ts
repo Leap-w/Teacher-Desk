@@ -20,7 +20,7 @@ export const appConfig: AppConfig = {
    * 应用版本：与 package.json 的 version 保持同步（交付打 tag 时一起改）。
    * 备份文件的元信息会带上它，用于日后诊断「这份备份出自哪个版本」（utils/backup.ts）。
    */
-  version: '1.3.1',
+  version: '1.3.2',
   storageKeyPrefix: 'teacherdesk',
   /**
    * 环境 ID 不是秘密（它本来就会随前端代码发到浏览器里，访问与否由云端身份认证与

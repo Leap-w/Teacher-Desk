@@ -29,10 +29,10 @@ describe('「我的」路由（V1.1.6）', () => {
     expect(my?.meta?.title).toBe('我的')
   })
 
-  it('设置页 /my/settings 存在且**不在侧边栏**（hidden）', () => {
+  it('设置入口 /my/settings 重定向到「我的」并保留 ?module= 直达分组（V1.3.2 设置并入我的页）', () => {
     const settings = byPath('/my/settings')
     expect(settings).toBeDefined()
-    expect(settings?.meta?.hidden).toBe(true)
+    expect(String(settings?.redirect)).toContain('/my')
   })
 
   it('工具箱整页迁到 /my/tools（复用原组件），且不在侧边栏', () => {

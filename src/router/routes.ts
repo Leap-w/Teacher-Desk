@@ -98,9 +98,8 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/my/settings',
-    name: 'my-settings',
-    component: () => import('@/views/My/Settings.vue'),
-    meta: { title: '设置', hidden: true },
+    // V1.3.2：设置并入「我的」页功能设置 Tab（?module=xxx 直达对应分组，URL 兼容）
+    redirect: (to) => ({ path: '/my', query: to.query }),
   },
   {
     path: '/my/tools',
