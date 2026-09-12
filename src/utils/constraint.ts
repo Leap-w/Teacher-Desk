@@ -1,5 +1,11 @@
 import { formatStudentShortName } from '@/utils/student'
-import { seatBlockLabel } from '@/utils/seat'
+import {
+  areSeatsAdjacent,
+  areSeatsSameDesk,
+  isBackRowSeat,
+  isFrontRowSeat,
+  seatBlockLabel,
+} from '@/utils/seat'
 import type { SeatConstraint, SeatConstraintType } from '@/types/constraint'
 import type { Seat, SeatBlock } from '@/types/seat'
 import type { Student } from '@/types'
@@ -58,13 +64,6 @@ export interface ConstraintIssue {
 
 /** 高个学生由「高个」标签表达（档案暂无独立身高字段，同座位图强调标记） */
 const TALL_TAG = '高个'
-/** 视为前排的排数（第 1–2 排靠近讲台） */
-const FRONT_ROW_LIMIT = 2
-/**
- * 视为后排的起始排数（第 5–7 排）：back-row 规则的满足线，只用于检查器的「应坐后排」判定；
- * 自动排座对坐后排 / 坐前排用的是连续排号打分（越靠后 / 越靠前分越高），不引用该阈值。
- */
-export const BACK_ROW_MIN = 5
 
 /**
  * 已有「坐后排 / 坐前排」显式规则的学生（显式规则优先，判定与自动排座同源）：
@@ -82,15 +81,10 @@ export function explicitRowRuleStudentIds(constraints: SeatConstraint[]): Set<st
   )
 }
 
-/** 同桌判定：同一行、同一列块内的左右紧邻两座 */
-export function areDeskmates(a: Seat, b: Seat): boolean {
-  return a.row === b.row && a.block === b.block && Math.abs(a.col - b.col) === 1
-}
-
-/** 相邻判定：左右前后（同一格网的 4 邻域，跨排 / 跨列块均计入） */
-export function areAdjacent(a: Seat, b: Seat): boolean {
-  return Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1
-}
+/* 同桌 / 相邻 / 前排 / 后排的判定**不在这里**：唯一实现是 `utils/seat.ts`
+ * （`areSeatsSameDesk` / `areSeatsAdjacent` / `isFrontRowSeat` / `isBackRowSeat`）。
+ * Phase 3C/3D 曾在本文件里另写一套「同列块内左右紧邻 = 同桌」的算法，
+ * V1.1.2 Phase 2 已删除：同一个词在两处给出不同判定，教师会在两个面板上看到互相矛盾的结论。 */
 
 /**
  * 对当前方案执行五类检查（纯函数，实时调用，不做任何座位调整）：
@@ -129,7 +123,9 @@ export function checkSeatConstraints(ctx: {
     if (!seatA || !seatB) continue // 任一方未就座（当前方案）则无事发生
     const label = CONSTRAINT_TYPE_LABELS[constraint.type]
     const violated =
-      constraint.type === 'no-deskmate' ? areDeskmates(seatA, seatB) : areAdjacent(seatA, seatB)
+      constraint.type === 'no-deskmate'
+        ? areSeatsSameDesk(seatA, seatB)
+        : areSeatsAdjacent(seatA, seatB)
     if (!violated) continue
     issues.push({
       key: constraint.id,
@@ -150,7 +146,7 @@ export function checkSeatConstraints(ctx: {
     if (HARD_CONSTRAINT_TYPES.includes(constraint.type)) continue
     const seatA = studentSeat.get(constraint.studentA)
     if (!seatA) continue // 未就座则无从判定（与关系型一致）
-    if (constraint.type === 'back-row' && seatA.row < BACK_ROW_MIN) {
+    if (constraint.type === 'back-row' && !isBackRowSeat(seatA)) {
       issues.push({
         key: constraint.id,
         group: 'rules',
@@ -161,7 +157,7 @@ export function checkSeatConstraints(ctx: {
       })
       continue
     }
-    if (constraint.type === 'front-row' && seatA.row > FRONT_ROW_LIMIT) {
+    if (constraint.type === 'front-row' && !isFrontRowSeat(seatA)) {
       issues.push({
         key: constraint.id,
         group: 'rules',
@@ -194,7 +190,7 @@ export function checkSeatConstraints(ctx: {
   for (const [studentId, seat] of studentSeat) {
     const student = ctx.students.get(studentId)
     if (!student || !student.tags?.includes(TALL_TAG)) continue
-    if (seat.row > FRONT_ROW_LIMIT) continue
+    if (!isFrontRowSeat(seat)) continue
     // 教师已用「坐前排」规则明确让该生坐前排 → 不再报派生提醒（否则与自动排座打架）
     if (explicitRowRuleIds.has(studentId)) continue
     const list = tallByRow.get(seat.row) ?? []

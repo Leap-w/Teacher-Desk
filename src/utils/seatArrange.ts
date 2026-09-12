@@ -1,12 +1,10 @@
 import {
-  areAdjacent,
-  areDeskmates,
   CONSTRAINT_TYPE_LABELS,
   explicitRowRuleStudentIds,
   HARD_CONSTRAINT_TYPES,
   isPairConstraintType,
 } from '@/utils/constraint'
-import { buildSeatGrid } from '@/utils/seat'
+import { areSeatsAdjacent, areSeatsSameDesk, buildSeatGrid } from '@/utils/seat'
 import { formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
@@ -18,7 +16,10 @@ import type { Student } from '@/types'
  * 自动排座求解器（Phase 3D，纯函数，无 store 依赖）。
  *
  * 输入 = 学生档案既有字段（学号 / 姓名 / 标签）+ 约束表 + 教室配置；输出 = 一份完整座位网格。
- * - 硬约束（不能同桌 / 不能相邻）：绝不违反；找不到解时不产出方案，改为报告冲突来源；
+ * - 硬约束（不能同桌 / 不能相邻）：绝不违反；找不到解时不产出方案，改为报告冲突来源。
+ *   判定**只用** `utils/seat.ts` 的关系函数（V1.1.2 Phase 2 统一，本模块不自带任何几何算法）：
+ *   「不能同桌」= 不同坐一张长桌（同排同列块，1 号与 3 号隔着一个人也算同桌）；
+ *   「不能相邻」= 四邻域（上下左右），不含对角、不含跨过道（3 与 4 / 6 与 7 不算相邻）；
  * - 软规则（坐后排 / 坐前排 / 同区块）与「高个」标签派生的后排偏好：尽量满足，
  *   未满足的部分由 `checkSeatConstraints` 的 rules 分组逐条提示（判定与消息单一来源）；
  * - 确定性：同一输入 + 同一种子 = 同一结果（换种子 = 换一种排法）；排序键一律在函数内部计算，
@@ -194,8 +195,8 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
       const otherOrdinal = otherId ? target.position.get(otherId) : undefined
       if (!otherOrdinal) continue
       const otherSeat = grid[otherOrdinal - 1]
-      if (constraint.type === 'no-deskmate' && areDeskmates(seat, otherSeat)) return false
-      if (constraint.type === 'no-adjacent' && areAdjacent(seat, otherSeat)) return false
+      if (constraint.type === 'no-deskmate' && areSeatsSameDesk(seat, otherSeat)) return false
+      if (constraint.type === 'no-adjacent' && areSeatsAdjacent(seat, otherSeat)) return false
     }
     return true
   }
@@ -208,8 +209,8 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
       if (!ordinalA || !ordinalB) continue
       const seatA = grid[ordinalA - 1]
       const seatB = grid[ordinalB - 1]
-      if (constraint.type === 'no-deskmate' && areDeskmates(seatA, seatB)) return false
-      if (constraint.type === 'no-adjacent' && areAdjacent(seatA, seatB)) return false
+      if (constraint.type === 'no-deskmate' && areSeatsSameDesk(seatA, seatB)) return false
+      if (constraint.type === 'no-adjacent' && areSeatsAdjacent(seatA, seatB)) return false
     }
     return true
   }

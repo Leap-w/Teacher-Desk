@@ -2,9 +2,17 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import { seatAccentOf, formatStudentDisplayName } from '@/utils/student'
-import { seatIdOf, seatOrdinal } from '@/utils/seat'
+import { seatOrdinal } from '@/utils/seat'
+import {
+  doorSidesOf,
+  viewRoomItems,
+  viewRowUnits,
+  windowSideOf,
+  VIEW_NOTES,
+} from '@/utils/seatView'
+import type { RowUnit } from '@/utils/seatView'
 import type { ClassroomConfig } from '@/types/classroom'
-import type { Seat } from '@/types/seat'
+import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
 import SeatQuickCard from './SeatQuickCard.vue'
 
@@ -18,8 +26,8 @@ interface Props {
   seats: Seat[]
   /** 学生查询表（id → Student）；已删除学生查不到时按空位展示 */
   students: Map<string, Student>
-  /** 视角：老师（站在讲台面向全班）/ 学生（从座位望向讲台） */
-  view: 'teacher' | 'student'
+  /** 视角：老师（讲台在上、第 1 排最先）/ 学生（180° 旋转：前后 + 左右都翻转） */
+  view: SeatView
   /** 当前选中座位 id（切换视角时保持不变，仅改变排布顺序） */
   selectedId?: string
   /** “点击换座”模式的源座位 id（长按卡「开始换座」触发）；空 = 未在换座模式 */
@@ -53,57 +61,31 @@ const emit = defineEmits<{
 /** 组件根节点（定位滚动 / 信息卡锚点换算用） */
 const classroomRoot = ref<HTMLElement>()
 
-/** 排布单元：视角只改变这些单元的上下顺序，不重建座位数据 */
-type RoomItem =
-  | { key: string; kind: 'row'; row: number }
-  | { key: string; kind: 'podium' }
-  | { key: string; kind: 'door-front' }
-  | { key: string; kind: 'door-back' }
-
-/** 单排布局单元（判别联合）：过道与列块位置来自 config.blocks，不写死 */
-type ResolvedRowUnit =
-  { key: string; kind: 'block'; seats: Seat[] } | { key: string; kind: 'aisle' }
+/** 座位查表：同一批 63 个 Seat 引用，视角切换零数据变更、零重建 */
+const seatsById = computed(() => new Map(props.seats.map((seat) => [seat.id, seat])))
 
 /**
- * 解析某排的渲染布局：按过道切分三个列块，座位即时从 seatsById 解析（复用同一批 Seat 引用）。
- * 每一排调一次；63 个座位全程只读引用，不重建数据。
+ * 双视角显示顺序（computed 生成，不复制座位）——**与导出图共用同一份实现**
+ * （`utils/seatView.ts`，V1.1.2 Phase 1 起的唯一事实来源）：
+ * - 老师视角：讲台 → 前门 → 第 1 排 … 第 7 排 → 后门；
+ * - 学生视角：上一行整体旋转 180°。
  */
-function rowLayout(row: number): ResolvedRowUnit[] {
-  const layout: ResolvedRowUnit[] = []
-  let offset = 0
-  props.config.blocks.forEach((width, index) => {
-    const seats: Seat[] = []
-    for (let i = 0; i < width; i++) {
-      const seat = seatsById.value.get(seatIdOf(row, offset + i + 1))
-      if (seat) seats.push(seat)
-    }
-    layout.push({ key: `block-${index}`, kind: 'block', seats })
-    offset += width
-    if (index < props.config.blocks.length - 1)
-      layout.push({ key: `aisle-${index}`, kind: 'aisle' })
-  })
-  return layout
+const roomItems = computed(() => viewRoomItems(props.view, props.config))
+
+/**
+ * 解析某一**显示排**的渲染布局（列块 + 过道按视角排列）：
+ * 座位即时从 seatsById 解析，63 个座位全程只读引用，不重建数据。
+ */
+function rowUnits(row: number): RowUnit[] {
+  return viewRowUnits(row, props.view, props.config, seatsById.value)
 }
 
-/**
- * 双视角显示顺序（computed 生成，不复制座位）：
- * - 学生视角：讲台在顶，第 1 排紧随其后 … 第 7 排收底；
- * - 老师视角：后门（教室尾部）在顶，第 7 排 → 第 1 排，前门贴近讲台沉底。
- */
-const roomItems = computed<RoomItem[]>(() => {
-  const rows: RoomItem[] = []
-  for (let row = 1; row <= props.config.rows; row++) {
-    rows.push({ key: `row-${row}`, kind: 'row', row })
-  }
-  const podium: RoomItem = { key: 'podium', kind: 'podium' }
-  const doorFront: RoomItem = { key: 'door-front', kind: 'door-front' }
-  const doorBack: RoomItem = { key: 'door-back', kind: 'door-back' }
-  if (props.view === 'teacher') return [doorBack, ...rows.reverse(), doorFront, podium]
-  return [podium, doorFront, ...rows, doorBack]
-})
+/** 门 / 窗挂哪面墙：老师视角取教室配置原值，学生视角随 180° 旋转镜像到另一面墙 */
+const doorSides = computed(() => doorSidesOf(props.view, props.config))
+const windowsSide = computed(() => windowSideOf(props.view, props.config))
 
-/** 座位查表：同一批 63 个 Seat 引用，视角切换零数据变更 */
-const seatsById = computed(() => new Map(props.seats.map((seat) => [seat.id, seat])))
+/** 当前视角的一句话说明（图下提示，讲清切换后画面到底怎么变） */
+const viewNote = computed(() => VIEW_NOTES[props.view])
 
 function occupantOf(seat: Seat): Student | undefined {
   return seat.studentId ? props.students.get(seat.studentId) : undefined
@@ -358,7 +340,7 @@ defineExpose({ revealSeat, openQuickCard })
   <div ref="classroomRoot" class="seat-classroom" :class="{ 'is-dragging': drag }">
     <div class="room-scroll">
       <div class="room">
-        <span class="windows" aria-hidden="true">
+        <span class="windows" :class="`is-${windowsSide}`" aria-hidden="true">
           <i class="windows-bar"></i>
           <em class="windows-text">窗户</em>
         </span>
@@ -370,17 +352,25 @@ defineExpose({ revealSeat, openQuickCard })
               <span class="podium-sub">前方中央</span>
             </div>
 
-            <div v-else-if="item.kind === 'door-front'" class="doorline is-front">
+            <div
+              v-else-if="item.kind === 'door-front'"
+              class="doorline is-front"
+              :class="`is-${doorSides.front}`"
+            >
               <span class="door">前门</span>
             </div>
 
-            <div v-else-if="item.kind === 'door-back'" class="doorline is-back">
+            <div
+              v-else-if="item.kind === 'door-back'"
+              class="doorline is-back"
+              :class="`is-${doorSides.back}`"
+            >
               <span class="door">后门</span>
             </div>
 
             <div v-else-if="item.kind === 'row' && item.row !== undefined" class="room-row">
               <span class="row-label">第 {{ item.row }} 排</span>
-              <template v-for="unit in rowLayout(item.row)" :key="unit.key">
+              <template v-for="unit in rowUnits(item.row)" :key="unit.key">
                 <span v-if="unit.kind === 'aisle'" class="aisle" aria-hidden="true"></span>
                 <span v-else class="seat-block">
                   <template v-for="seat in unit.seats" :key="seat.id">
@@ -428,6 +418,7 @@ defineExpose({ revealSeat, openQuickCard })
       @constraint="onQuickConstraint"
     />
 
+    <p class="room-note">{{ viewNote }}</p>
     <p class="room-note">
       第 {{ config.totalSeats }} 号座位（末排末尾）默认留空，自动就座不占此座，可手动拖入。
       拖动已就座学生可交换 / 移入空位；长按（约 0.4 秒）查看学生信息。
@@ -448,19 +439,28 @@ defineExpose({ revealSeat, openQuickCard })
   position: relative;
   width: fit-content;
   margin: 0 auto;
-  padding: var(--space-4) var(--space-4);
+  /* 左右各留出墙面装饰（窗户 / 门签）的位置：学生视角下窗户换到左墙，
+     若不留白，纵向的「窗户」二字会压在第 N 排的排号上 */
+  padding: var(--space-4) 26px;
 }
 
-/* 右墙窗户：细窗条 + 纵向文字（静态装饰，两视角都在右侧） */
+/* 右墙 / 左墙的窗户：细窗条 + 纵向文字（静态装饰；学生视角随 180° 旋转换到另一面墙） */
 .windows {
   position: absolute;
   top: 50%;
-  right: 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
   transform: translateY(-50%);
+}
+
+.windows.is-right {
+  right: 4px;
+}
+
+.windows.is-left {
+  left: 4px;
 }
 
 .windows-bar {
@@ -540,12 +540,12 @@ defineExpose({ revealSeat, openQuickCard })
   transform: translateY(-50%);
 }
 
-/* 前门挂右墙（与窗户同侧），后门挂左墙 */
-.doorline.is-front .door {
+/* 前门 / 后门都挂在教室「右墙」（配置 frontDoor/backDoor 同侧），学生视角镜像到左墙 */
+.doorline.is-right .door {
   right: 4px;
 }
 
-.doorline.is-back .door {
+.doorline.is-left .door {
   left: 4px;
 }
 

@@ -33,12 +33,13 @@ const OPTIONS: ExportOption[] = [
   {
     kind: 'png-teacher',
     title: 'PNG 图片 · 老师视角',
-    desc: '讲台在下方 · 适合微信发送 / 打印',
+    // V1.1.2 Phase 1：两个视角是 180° 旋转关系，老师视角讲台在上、学生视角讲台在下
+    desc: '讲台在上方、第 1 排最靠前 · 适合打印张贴',
   },
   {
     kind: 'png-student',
     title: 'PNG 图片 · 学生视角',
-    desc: '讲台在上方 · 贴教室门口 / 讲台旁',
+    desc: '整间教室旋转 180°（前后 + 左右翻转）· 讲台在下方',
   },
   {
     kind: 'pdf-teacher',

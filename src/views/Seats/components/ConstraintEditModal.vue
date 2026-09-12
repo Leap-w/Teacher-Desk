@@ -5,7 +5,14 @@ import { AppButton, AppModal, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useConstraintStore } from '@/stores/constraint'
 import { CONSTRAINT_TYPE_LABELS, isPairConstraintType } from '@/utils/constraint'
+import {
+  ADJACENT_RULE_NOTE,
+  BACK_ROW_MIN,
+  FRONT_ROW_LIMIT,
+  SAME_DESK_RULE_NOTE,
+} from '@/utils/seat'
 import { formatStudentShortName } from '@/utils/student'
+import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { Student } from '@/types'
 import type { SeatConstraintType } from '@/types/constraint'
 
@@ -41,12 +48,16 @@ const TYPE_ORDER: readonly SeatConstraintType[] = [
   'same-block',
 ]
 
-/** 各类型的一句话说明（硬约束 = 必须满足，软规则 = 自动排座尽量满足） */
+/**
+ * 各类型的一句话说明（硬约束 = 必须满足，软规则 = 自动排座尽量满足）。
+ * 「同桌 / 相邻」的说法与判定**同源**（`utils/seat.ts` 的文案常量，V1.1.2 Phase 2 统一）：
+ * 说明里少写一句「隔着过道不算」，教师就会按错的预期去提约束。
+ */
 const TYPE_DESCRIPTIONS: Record<SeatConstraintType, string> = {
-  'no-deskmate': '两人不得坐在同一桌',
-  'no-adjacent': '两人不得左右 / 前后相邻',
-  'back-row': '尽量安排在第 5–7 排',
-  'front-row': '尽量安排在第 1–2 排',
+  'no-deskmate': `${SAME_DESK_RULE_NOTE}`,
+  'no-adjacent': `${ADJACENT_RULE_NOTE}`,
+  'back-row': `尽量安排在第 ${BACK_ROW_MIN}–${DEFAULT_CLASSROOM_CONFIG.rows} 排`,
+  'front-row': `尽量安排在第 1–${FRONT_ROW_LIMIT} 排`,
   'same-block': '两人尽量在同一列块',
 }
 

@@ -1,8 +1,12 @@
 /**
  * 座位约束领域类型（Phase 3C 引入，Phase 3D 扩展为五类全部可录入）。
  * - 关系型 no-deskmate / no-adjacent：**硬约束**，自动排座必须满足，违反即冲突；
+ *   判定**唯一来源**是 `utils/seat.ts`（V1.1.2 Phase 2 统一）：
+ *   「不能同桌」= 不坐同一张长桌（同排同列块，每桌 3 座），「不能相邻」= 四邻域（上下左右，
+ *   不含对角、不含跨过道）——与方案级排座约束（`types/seat.ts` 的 `SeatPlanConstraints`）同一套定义；
  * - 规则型 back-row / front-row / same-block：**软规则**，自动排座尽量满足、未满足逐条报告
- *   （3C 预留的三个类型位在 3D 落地）；
+ *   （3C 预留的三个类型位在 3D 落地）；前排 / 后排阈值见 `utils/seat.ts` 的
+ *   `FRONT_ROW_LIMIT` / `BACK_ROW_MIN`（两个检查器共用一份数字）；
  * - 检查器对五类一律只读，不做自动调整。
  */
 

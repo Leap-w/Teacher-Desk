@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 
 import { seatAccentOf } from '@/utils/student'
-import { seatIdOf, seatOrdinal } from '@/utils/seat'
+import { seatOrdinal } from '@/utils/seat'
+import { doorSidesOf, viewRoomItems, viewRowUnits, windowSideOf } from '@/utils/seatView'
+import type { RoomItem, RowUnit } from '@/utils/seatView'
 import type { ClassroomConfig } from '@/types/classroom'
-import type { Seat } from '@/types/seat'
+import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
 
 /**
@@ -17,7 +19,7 @@ interface Props {
   seats: Seat[]
   /** 学生查询表（id → Student）：只读引用，不创建副本 */
   students: Map<string, Student>
-  view: 'teacher' | 'student'
+  view: SeatView
   /** 大标题（默认「高一9班 座位表」，由页面按导出场景传入） */
   title: string
   /** 副标题行：当前方案名 · 导出日期 · 视角，自动拼接 */
@@ -39,19 +41,18 @@ function occupantOf(seat: Seat): Student | undefined {
   return seat.studentId ? props.students.get(seat.studentId) : undefined
 }
 
-type ExportItem =
-  { kind: 'row'; row: number } | { kind: 'podium' } | { kind: 'door-front' } | { kind: 'door-back' }
+type ExportItem = RoomItem
 
-/** 与页面同语义的视角翻转：老师视角讲台在下，学生视角讲台在上（不做两套布局） */
-const items = computed<ExportItem[]>(() => {
-  const rows: ExportItem[] = []
-  for (let row = 1; row <= props.config.rows; row++) rows.push({ kind: 'row', row })
-  const podium: ExportItem = { kind: 'podium' }
-  const doorFront: ExportItem = { kind: 'door-front' }
-  const doorBack: ExportItem = { kind: 'door-back' }
-  if (props.view === 'teacher') return [doorBack, ...rows.reverse(), doorFront, podium]
-  return [podium, doorFront, ...rows, doorBack]
-})
+/**
+ * 与页面**同一份**视角逻辑（`utils/seatView.ts`，V1.1.2 Phase 1）：
+ * 老师视角讲台在上、第 1 排最先；学生视角为整间教室的 180° 旋转。
+ * 两处共用实现，导出与页面不可能再对不上。
+ */
+const items = computed<ExportItem[]>(() => viewRoomItems(props.view, props.config))
+
+/** 门 / 窗挂哪面墙（学生视角镜像） */
+const doorSides = computed(() => doorSidesOf(props.view, props.config))
+const windowsSide = computed(() => windowSideOf(props.view, props.config))
 
 function seatChanged(seat: Seat): boolean {
   return Boolean(seat.studentId && props.changedStudentIds?.has(seat.studentId))
@@ -70,20 +71,9 @@ function exSeatClass(seat: Seat): Record<string, boolean> {
   }
 }
 
-/** 某一排的列块：按 config.blocks 切分（3-3-3），过道插在列块之间 */
-function blocksOf(row: number): Seat[][] {
-  const blocks: Seat[][] = []
-  let offset = 0
-  props.config.blocks.forEach((width) => {
-    const block: Seat[] = []
-    for (let i = 0; i < width; i++) {
-      const seat = seatsById.value.get(seatIdOf(row, offset + i + 1))
-      if (seat) block.push(seat)
-    }
-    offset += width
-    blocks.push(block)
-  })
-  return blocks
+/** 某一显示排的列块与过道：按视角排列（与页面 seat 布局同源） */
+function rowUnits(row: number): RowUnit[] {
+  return viewRowUnits(row, props.view, props.config, seatsById.value)
 }
 </script>
 
@@ -101,17 +91,25 @@ function blocksOf(row: number): Seat[][] {
     </header>
 
     <div class="ex-room">
-      <span class="ex-windows" aria-hidden="true"><em>窗户</em></span>
-      <template v-for="item in items" :key="item.kind === 'row' ? `row-${item.row}` : item.kind">
+      <span class="ex-windows" :class="`is-${windowsSide}`" aria-hidden="true"><em>窗户</em></span>
+      <template v-for="item in items" :key="item.key">
         <div v-if="item.kind === 'podium'" class="ex-podium">讲台</div>
-        <div v-else-if="item.kind === 'door-front'" class="ex-door is-front"></div>
-        <div v-else-if="item.kind === 'door-back'" class="ex-door is-back"></div>
+        <div
+          v-else-if="item.kind === 'door-front'"
+          class="ex-door is-front"
+          :class="`is-${doorSides.front}`"
+        ></div>
+        <div
+          v-else-if="item.kind === 'door-back'"
+          class="ex-door is-back"
+          :class="`is-${doorSides.back}`"
+        ></div>
         <div v-else class="ex-row">
           <span class="ex-row-label">第 {{ item.row }} 排</span>
-          <template v-for="(block, index) in blocksOf(item.row)" :key="index">
-            <span v-if="index > 0" class="ex-aisle" aria-hidden="true"></span>
-            <span class="ex-block">
-              <template v-for="seat in block" :key="seat.id">
+          <template v-for="unit in rowUnits(item.row)" :key="unit.key">
+            <span v-if="unit.kind === 'aisle'" class="ex-aisle" aria-hidden="true"></span>
+            <span v-else class="ex-block">
+              <template v-for="seat in unit.seats" :key="seat.id">
                 <div v-if="occupantOf(seat)" class="ex-seat" :class="exSeatClass(seat)">
                   <i class="ex-avatar" aria-hidden="true">{{ occupantOf(seat)?.name.charAt(0) }}</i>
                   <span class="ex-name">{{ occupantOf(seat)?.name }}</span>
@@ -206,18 +204,26 @@ function blocksOf(row: number): Seat[][] {
   position: relative;
   width: fit-content;
   margin: 0 auto;
-  padding: 10px 14px 6px;
+  /* 同页面：左右留出墙面装饰的位置（学生视角下窗户在左，避免压住排号） */
+  padding: 10px 20px 6px;
 }
 
 .ex-windows {
   position: absolute;
   top: 50%;
-  right: 2px;
   transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
+}
+
+.ex-windows.is-right {
+  right: 2px;
+}
+
+.ex-windows.is-left {
+  left: 2px;
 }
 
 .ex-windows::before {
@@ -267,13 +273,20 @@ function blocksOf(row: number): Seat[][] {
   white-space: nowrap;
 }
 
+/* 门签文案与挂墙分开写：文案只看前 / 后，位置只看左 / 右（学生视角镜像） */
 .ex-door.is-front::after {
   content: '前门';
-  right: 2px;
 }
 
 .ex-door.is-back::after {
   content: '后门';
+}
+
+.ex-door.is-right::after {
+  right: 2px;
+}
+
+.ex-door.is-left::after {
   left: 2px;
 }
 

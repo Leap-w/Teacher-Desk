@@ -10,8 +10,11 @@ export type PodiumPosition = 'front-center'
 /** 前门方位（固定：右前） */
 export type FrontDoorPosition = 'right-front'
 
-/** 后门方位（固定：左后） */
-export type BackDoorPosition = 'left-back'
+/**
+ * 后门方位（V1.1.2 Phase 1：固定右后——与需求给定的真实教室布局一致，
+ * 前门 / 后门同在右墙，学生视角下随 180° 旋转镜像到左墙）。
+ */
+export type BackDoorPosition = 'right-back'
 
 /** 窗户方位（固定：右侧） */
 export type WindowSide = 'right'
@@ -46,6 +49,6 @@ export const DEFAULT_CLASSROOM_CONFIG = {
   occupiedSeats: 62,
   podium: 'front-center',
   frontDoor: 'right-front',
-  backDoor: 'left-back',
+  backDoor: 'right-back',
   windows: 'right',
 } as const satisfies ClassroomConfig

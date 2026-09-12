@@ -8,8 +8,11 @@ import { useSeatStore } from '@/stores/seat'
 import { useConstraintStore } from '@/stores/constraint'
 import { seatPositionLong, compareSeatPlans } from '@/utils/seat'
 import { checkSeatConstraints } from '@/utils/constraint'
+import { countSeatPlanConstraints } from '@/utils/seatPlanConstraint'
+import type { SeatPlanConstraintReport } from '@/utils/seatPlanConstraint'
 import { arrangeSeats } from '@/utils/seatArrange'
 import type { ConstraintIssue } from '@/utils/constraint'
+import { VIEW_NOTES } from '@/utils/seatView'
 import {
   exportDateLabel,
   exportDateStamp,
@@ -35,6 +38,8 @@ import SeatExportGraphic from './components/SeatExportGraphic.vue'
 import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
 import SeatArrangeModal from './components/SeatArrangeModal.vue'
+import SeatImportModal from './components/SeatImportModal.vue'
+import SeatConstraintModal from './components/SeatConstraintModal.vue'
 
 type SeatView = 'teacher' | 'student'
 
@@ -145,6 +150,10 @@ function changeFailed() {
 /**
  * 执行一次换座：两座均有学生 = 交换（各记一条日志）；源有学生且目标为空 = 移动（记一条）。
  * 源为空 / 拖回原位等情况在此静默返回（不提示、不记录）。
+ *
+ * V1.1.2 Phase 1：换座完成后**立刻重跑排座约束检查**——违反也允许操作完成（不自动撤销、
+ * 不拦截），但必须马上让教师看见（闪烁涉及座位 + 提示条 + toast）。前排 / 后排偏好
+ * 只是提醒，永不阻止拖拽。
  */
 function applySeatChange(fromId: string, toId: string) {
   const fromSeat = seatsById.value.get(fromId)
@@ -153,6 +162,7 @@ function applySeatChange(fromId: string, toId: string) {
   const fromStudent = seatStudent(fromId)
   const toStudent = seatStudent(toId)
   if (!fromStudent) return
+  const reportBefore = seatStore.constraintReport
   if (toStudent) {
     if (!seatStore.swapSeats(fromId, toId)) {
       changeFailed()
@@ -161,6 +171,7 @@ function applySeatChange(fromId: string, toId: string) {
     toast.success(
       `已交换：${formatStudentShortName(fromStudent)} ↔ ${formatStudentShortName(toStudent)}`,
     )
+    announceConstraintWarnings(reportBefore)
     return
   }
   if (!seatStore.moveStudent(fromId, toId)) {
@@ -170,6 +181,52 @@ function applySeatChange(fromId: string, toId: string) {
   toast.success(
     `已移动：${formatStudentShortName(fromStudent)} → ${seatPositionLong(toSeat.row, toSeat.col)}`,
   )
+  announceConstraintWarnings(reportBefore)
+}
+
+/* ========== V1.1.2 Phase 1：排座约束（方案级）与 Excel 导入 ========== */
+
+const importOpen = ref(false)
+const constraintOpen = ref(false)
+
+/** 当前方案的约束条数与检查结论（约束属于方案，切方案即换一套） */
+const planConstraintCount = computed(() => countSeatPlanConstraints(seatStore.currentConstraints))
+const planIssues = computed(() => seatStore.constraintReport.issues)
+const planErrorCount = computed(() => seatStore.constraintReport.errors.length)
+
+/** 约束提示条上的文案（错误优先说明） */
+const planIssueSummary = computed(() => {
+  const errors = seatStore.constraintReport.errors.length
+  const warnings = seatStore.constraintReport.warnings.length
+  const parts: string[] = []
+  if (errors > 0) parts.push(`${errors} 项冲突`)
+  if (warnings > 0) parts.push(`${warnings} 项提醒`)
+  return parts.join(' · ')
+})
+
+/**
+ * 换座后的即时约束提示：只报**这次操作新产生的**冲突（操作前就存在的老问题不重复喊），
+ * 闪烁涉及座位并弹一条提示；**不撤销、不阻止**。
+ */
+function announceConstraintWarnings(before: SeatPlanConstraintReport) {
+  const beforeKeys = new Set(before.errors.map((issue) => issue.key))
+  const added = seatStore.constraintReport.errors.filter((issue) => !beforeKeys.has(issue.key))
+  if (added.length === 0) return
+  flashSeats(added.flatMap((issue) => issue.seatIds))
+  const first = added[0]!
+  toast.warning(
+    added.length === 1
+      ? `换座后违反排座约束：${first.message}`
+      : `换座后违反 ${added.length} 条排座约束：${first.message} 等`,
+  )
+}
+
+/** 约束弹窗内点「定位」：闪烁涉及座位并滚动到第一个 */
+function locateConstraintSeats(seatIds: string[]) {
+  if (seatIds.length === 0) return
+  constraintOpen.value = false
+  flashSeats(seatIds)
+  classroomRef.value?.revealSeat(seatIds[0]!)
 }
 
 /** 普通点击座位：选中 / 再次点击取消选中（选中态跨视角保持） */
@@ -774,6 +831,24 @@ async function runCompareExport() {
         </AppButton>
         <AppButton
           v-if="!compareActive"
+          variant="secondary"
+          :disabled="!seatStore.currentPlan"
+          title="从 Excel 批量导入座位安排（先预览后写入）"
+          @click="importOpen = true"
+        >
+          导入座位
+        </AppButton>
+        <AppButton
+          v-if="!compareActive"
+          variant="secondary"
+          :disabled="!seatStore.currentPlan"
+          title="不能同桌 / 三人不能相邻 / 前排后排标记"
+          @click="constraintOpen = true"
+        >
+          排座约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
+        </AppButton>
+        <AppButton
+          v-if="!compareActive"
           :disabled="!seatStore.currentPlan"
           title="导出当前方案座位图为图片 / PDF"
           @click="exportOpen = true"
@@ -803,6 +878,9 @@ async function runCompareExport() {
           学生视角
         </button>
       </div>
+
+      <!-- 视角切换要「非常明显」：控件旁直接写明当前视角意味着什么（V1.1.2 Phase 1） -->
+      <span class="view-note">{{ VIEW_NOTES[view] }}</span>
 
       <div class="plan-switch">
         <span class="plan-switch-label">当前方案</span>
@@ -870,6 +948,31 @@ async function runCompareExport() {
           撤销
         </AppButton>
         <AppButton size="sm" @click="arrangeResult = undefined">关闭</AppButton>
+      </span>
+    </div>
+
+    <!-- V1.1.2 Phase 1：方案级排座约束的结果条（错误红 / 提醒琥珀；换座后自动刷新） -->
+    <div
+      v-if="planIssues.length > 0 && !compareActive"
+      class="plan-constraint-hint"
+      :class="{ 'is-error': planErrorCount > 0 }"
+      role="status"
+    >
+      <span class="plan-constraint-text">
+        排座约束：<strong>{{ planIssueSummary }}</strong>
+        <template v-if="planErrorCount === 0"> · 仅排座偏好提醒，不影响拖拽换座</template>
+        <template v-else> · 冲突需自行调整座位（不会自动撤销你的操作）</template>
+        <span class="plan-constraint-detail">——{{ planIssues[0]?.message }}</span>
+      </span>
+      <span class="plan-constraint-actions">
+        <AppButton
+          size="sm"
+          variant="ghost"
+          @click="locateConstraintSeats(planIssues[0]?.seatIds ?? [])"
+        >
+          定位
+        </AppButton>
+        <AppButton size="sm" @click="constraintOpen = true">管理约束</AppButton>
       </span>
     </div>
 
@@ -1067,6 +1170,10 @@ async function runCompareExport() {
       :conflicts="arrangeConflicts"
       @generate="generateArrange"
     />
+
+    <!-- V1.1.2 Phase 1：Excel 座位导入 + 方案级排座约束 -->
+    <SeatImportModal v-model="importOpen" />
+    <SeatConstraintModal v-model="constraintOpen" @locate="locateConstraintSeats" />
   </div>
 </template>
 
@@ -1146,6 +1253,13 @@ async function runCompareExport() {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* 视角说明（V1.1.2 Phase 1）：切换视角时这句话跟着变，教师一眼看出画面为何不同 */
+.view-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  max-width: 320px;
 }
 
 .plan-switch-label {
@@ -1264,6 +1378,47 @@ async function runCompareExport() {
   display: flex;
   align-items: flex-start;
   gap: var(--space-5);
+}
+
+/* 方案级排座约束结果条（V1.1.2 Phase 1）：默认琥珀（提醒），有冲突转红 */
+.plan-constraint-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding: 8px 14px;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.plan-constraint-hint.is-error {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.plan-constraint-hint strong {
+  color: var(--color-warning-strong);
+}
+
+.plan-constraint-hint.is-error strong {
+  color: var(--color-danger-strong);
+}
+
+.plan-constraint-detail {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+.plan-constraint-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .room-card {

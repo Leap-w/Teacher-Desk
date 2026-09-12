@@ -7,19 +7,37 @@ import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
 import {
   buildSeatGrid,
+  createEmptySeatPlanConstraints,
   createSeatPlan,
+  getSeatKey,
+  isValidSeatPosition,
   normalizeSeatPlan,
+  normalizeSeatPlanConstraints,
   seatOrdinal,
   seatPositionShort,
 } from '@/utils/seat'
+import { validateSeatPlanConstraints } from '@/utils/seatPlanConstraint'
 import { formatStudentShortName } from '@/utils/student'
 import { useStudentStore } from '@/stores/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
-import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
+import type { Seat, SeatChangeLog, SeatPlan, SeatPlanConstraints } from '@/types/seat'
+import type { SeatImportAssignment } from '@/services/seatImport'
+import type { SeatPlanConstraintReport } from '@/utils/seatPlanConstraint'
 import type { Student } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
+
+/** Excel 座位导入结果：失败时**当前方案完全不改变** */
+export interface SeatImportOutcome {
+  ok: boolean
+  /** 实际安排的座位数 */
+  applied: number
+  /** 座位发生变动的学生数 */
+  relocated: number
+  /** 失败原因（页面直接 toast 出来） */
+  reason?: string
+}
 
 /**
  * 求解器结果 → 座位号映射（createPlanFromSeats / replacePlanSeats 共用）。
@@ -176,6 +194,7 @@ export const useSeatStore = defineStore('seat', () => {
       isCurrent: true,
       seats: buildSeatGrid(occupantsFromSeats(seats, config), config),
       changeLogs: [],
+      constraints: createEmptySeatPlanConstraints(),
     }
     plans.value = plans.value
       .map((item) => (item.isCurrent ? { ...item, isCurrent: false } : item))
@@ -384,6 +403,8 @@ export const useSeatStore = defineStore('seat', () => {
       return { ...item, updatedAt: new Date().toISOString(), seats }
     })
     if (touched) plans.value = next
+    // 排座约束里的学生引用同样要清（示例数据清理会整批删学生，不留脏引用）
+    pruneDanglingConstraints(activeStudentIds)
   }
 
   /** 已加载的活跃学生 id 快照：与后续活跃列表对比，检测「学生被删除」事件 */
@@ -400,8 +421,251 @@ export const useSeatStore = defineStore('seat', () => {
       }
       activeStudentIds.clear()
       for (const id of next) activeStudentIds.add(id)
+      pruneDanglingConstraints(activeStudentIds)
     },
   )
+
+  /* ========== V1.1.2 Phase 1：方案级排座约束（不能同桌 / 三人不能相邻 / 前排 / 后排） ========== */
+
+  /** 当前方案的排座约束（无方案时回空约束，只读消费方不必判空） */
+  const currentConstraints = computed<SeatPlanConstraints>(
+    () => currentPlan.value?.constraints ?? createEmptySeatPlanConstraints(),
+  )
+
+  /** 学生查询表（检查结论要显示姓名；只依赖 activeStudents，学生表变化即重算） */
+  const studentMap = computed(
+    () => new Map(studentStore.activeStudents.map((item) => [item.id, item])),
+  )
+
+  /**
+   * 排座约束检查结论（实时的 computed：约束 / 座位 / 学生任一变化即重算）。
+   * **只检查，不改座位**；错误（不能同桌 / 三人相邻）与警告（前排 / 后排）都由页面提示。
+   */
+  const constraintReport = computed<SeatPlanConstraintReport>(() =>
+    validateSeatPlanConstraints(currentPlan.value, studentMap.value),
+  )
+
+  /** 约束变更结果：失败时给出可读原因（页面直接 toast 出来） */
+  type ConstraintMutation = { ok: true } | { ok: false; reason: string }
+
+  /**
+   * 把新的约束写回当前方案（**唯一写入口**：一次赋值 = 一次写盘 + 一次广播）。
+   * 写入前统一规范化（去重、剔除自相约束、前后排互斥），保证盘上的数据与检查器口径一致。
+   */
+  function writeConstraints(next: SeatPlanConstraints): boolean {
+    const plan = currentPlan.value
+    if (!plan) return false
+    const normalized = normalizeSeatPlanConstraints(next)
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) =>
+      item.id === plan.id ? { ...item, updatedAt: now, constraints: normalized } : item,
+    )
+    return true
+  }
+
+  /** 新增「不能同桌」（同一对学生不计方向，重复即拒绝） */
+  function addSameDeskForbidden(studentA: string, studentB: string): ConstraintMutation {
+    const plan = currentPlan.value
+    if (!plan) return { ok: false, reason: '当前没有座位方案' }
+    if (!studentA || !studentB) return { ok: false, reason: '请选择两名学生' }
+    if (studentA === studentB) return { ok: false, reason: '请选择两名不同的学生' }
+    const exists = plan.constraints.sameDeskForbidden.some(
+      (rule) =>
+        (rule.studentA === studentA && rule.studentB === studentB) ||
+        (rule.studentA === studentB && rule.studentB === studentA),
+    )
+    if (exists) return { ok: false, reason: '这两名学生已在「不能同桌」中' }
+    return writeConstraints({
+      ...plan.constraints,
+      sameDeskForbidden: [
+        ...plan.constraints.sameDeskForbidden,
+        { id: createId(), studentA, studentB },
+      ],
+    })
+      ? { ok: true }
+      : { ok: false, reason: '写入失败：方案已变化，请刷新后重试' }
+  }
+
+  /** 删除一条「不能同桌」 */
+  function removeSameDeskForbidden(ruleId: string): boolean {
+    const plan = currentPlan.value
+    if (!plan) return false
+    const list = plan.constraints.sameDeskForbidden
+    if (!list.some((rule) => rule.id === ruleId)) return false
+    return writeConstraints({
+      ...plan.constraints,
+      sameDeskForbidden: list.filter((rule) => rule.id !== ruleId),
+    })
+  }
+
+  /** 新增「三人不能相邻组」（必须三名互异学生；同一组不计顺序，重复即拒绝） */
+  function addAdjacentGroupForbidden(students: readonly string[]): ConstraintMutation {
+    const plan = currentPlan.value
+    if (!plan) return { ok: false, reason: '当前没有座位方案' }
+    const ids = [...new Set(students.filter(Boolean))]
+    if (ids.length !== 3) return { ok: false, reason: '请选择三名不同的学生' }
+    const key = [...ids].sort().join('|')
+    const exists = plan.constraints.adjacentGroupForbidden.some(
+      (rule) => [...rule.students].sort().join('|') === key,
+    )
+    if (exists) return { ok: false, reason: '这组学生已在「三人不能相邻」中' }
+    return writeConstraints({
+      ...plan.constraints,
+      adjacentGroupForbidden: [
+        ...plan.constraints.adjacentGroupForbidden,
+        { id: createId(), students: [ids[0]!, ids[1]!, ids[2]!] },
+      ],
+    })
+      ? { ok: true }
+      : { ok: false, reason: '写入失败：方案已变化，请刷新后重试' }
+  }
+
+  /** 删除一条「三人不能相邻组」 */
+  function removeAdjacentGroupForbidden(ruleId: string): boolean {
+    const plan = currentPlan.value
+    if (!plan) return false
+    const list = plan.constraints.adjacentGroupForbidden
+    if (!list.some((rule) => rule.id === ruleId)) return false
+    return writeConstraints({
+      ...plan.constraints,
+      adjacentGroupForbidden: list.filter((rule) => rule.id !== ruleId),
+    })
+  }
+
+  /**
+   * 批量设置前排 / 后排标记（**一次写入**，不分学生逐条写）：
+   * - `front` / `back`：把这些学生标到该名单，并**从另一份名单移除**（互斥）；
+   * - `clear`：从两份名单一起移除（批量取消）。
+   * 返回实际处理的学生数。前排 / 后排只是排座偏好，**不会自动移动任何学生**。
+   */
+  function setRowPreference(
+    studentIds: readonly string[],
+    target: 'front' | 'back' | 'clear',
+  ): number {
+    const plan = currentPlan.value
+    if (!plan) return 0
+    const ids = [...new Set(studentIds.filter(Boolean))]
+    if (ids.length === 0) return 0
+    const targetSet = new Set(ids)
+    let front = plan.constraints.frontRowStudents.filter((id) => !targetSet.has(id))
+    let back = plan.constraints.backRowStudents.filter((id) => !targetSet.has(id))
+    if (target === 'front') front = [...front, ...ids]
+    if (target === 'back') back = [...back, ...ids]
+    return writeConstraints({ ...plan.constraints, frontRowStudents: front, backRowStudents: back })
+      ? ids.length
+      : 0
+  }
+
+  /**
+   * 剔除约束里指向「已不存在的学生」的条目（方案级约束随学生删除 / 示例数据清理同步收敛，
+   * 与座位释放同一策略：不留脏引用，检查器也就不必替它们兜底）。
+   * 返回被剔除的条目数。
+   */
+  function pruneDanglingConstraints(validIds: ReadonlySet<string>): number {
+    let removed = 0
+    let touched = false
+    const next = plans.value.map((plan) => {
+      const constraints = plan.constraints
+      if (!constraints) return plan
+      const sameDeskForbidden = constraints.sameDeskForbidden.filter(
+        (rule) => validIds.has(rule.studentA) && validIds.has(rule.studentB),
+      )
+      const adjacentGroupForbidden = constraints.adjacentGroupForbidden.filter((rule) =>
+        rule.students.every((id) => validIds.has(id)),
+      )
+      const frontRowStudents = constraints.frontRowStudents.filter((id) => validIds.has(id))
+      const backRowStudents = constraints.backRowStudents.filter((id) => validIds.has(id))
+      const dropped =
+        constraints.sameDeskForbidden.length -
+        sameDeskForbidden.length +
+        (constraints.adjacentGroupForbidden.length - adjacentGroupForbidden.length) +
+        (constraints.frontRowStudents.length - frontRowStudents.length) +
+        (constraints.backRowStudents.length - backRowStudents.length)
+      if (dropped === 0) return plan
+      removed += dropped
+      touched = true
+      return {
+        ...plan,
+        updatedAt: new Date().toISOString(),
+        constraints: {
+          sameDeskForbidden,
+          adjacentGroupForbidden,
+          frontRowStudents,
+          backRowStudents,
+        },
+      }
+    })
+    if (touched) plans.value = next
+    return removed
+  }
+
+  /* ========== V1.1.2 Phase 1：Excel 座位导入（唯一落库入口） ========== */
+
+  /**
+   * 应用一次 Excel 座位导入（**组件不得自行改 `seats`、不得直接 `localStorage.setItem`**）。
+   *
+   * 语义：逐条应用表格里的「学生 → 座位」指派——被指派的学生先离开原座位，再坐到目标座位；
+   * 表格未提到的座位保持原样。**整批只赋值一次 `plans`**，因此只有一次写盘 + 一次广播。
+   *
+   * 数据层兜底校验（组件已经校验过一遍，这里防其他入口绕过）：坐标非法 / 学生不存在 → 丢弃该条；
+   * 整批内坐标或学生自相冲突 → **整批拒绝**，不改动任何数据。**失败一律不改数据。**
+   */
+  function applySeatImport(assignments: ReadonlyArray<SeatImportAssignment>): SeatImportOutcome {
+    const plan = currentPlan.value
+    if (!plan) return { ok: false, applied: 0, relocated: 0, reason: '当前没有座位方案' }
+
+    const valid: SeatImportAssignment[] = []
+    const seatsTaken = new Set<string>()
+    const studentsTaken = new Set<string>()
+    for (const item of assignments) {
+      if (!isValidSeatPosition(item.row, item.col, config)) continue
+      if (!item.studentId || !activeStudentIds.has(item.studentId)) continue
+      const seatKey = getSeatKey(item.row, item.col)
+      if (seatsTaken.has(seatKey) || studentsTaken.has(item.studentId)) {
+        return { ok: false, applied: 0, relocated: 0, reason: '导入数据自相冲突，已取消本次导入' }
+      }
+      seatsTaken.add(seatKey)
+      studentsTaken.add(item.studentId)
+      valid.push(item)
+    }
+    if (valid.length === 0) {
+      return { ok: false, applied: 0, relocated: 0, reason: '没有可应用的座位' }
+    }
+
+    /** 目标座位 id → 学生；以及本次被指派的学生集合（用于释放他们原来的座位） */
+    const assignmentBySeat = new Map<string, string>()
+    for (const item of valid) assignmentBySeat.set(getSeatKey(item.row, item.col), item.studentId)
+    const assignedStudents = new Set(valid.map((item) => item.studentId))
+
+    /** 导入前的「学生 → 座位」快照：用于统计真正换了座位的人数 */
+    const before = new Map<string, string>()
+    for (const seat of plan.seats) {
+      if (seat.studentId && !before.has(seat.studentId)) before.set(seat.studentId, seat.id)
+    }
+
+    const seats = plan.seats.map((seat) => {
+      const nextStudentId = assignmentBySeat.get(seat.id)
+      if (nextStudentId !== undefined) {
+        return seat.studentId === nextStudentId ? seat : { ...seat, studentId: nextStudentId }
+      }
+      // 未在导入范围内的座位：其上的学生本次被安排到了别处 → 释放原座位
+      if (seat.studentId && assignedStudents.has(seat.studentId)) {
+        return { ...seat, studentId: undefined }
+      }
+      return seat
+    })
+
+    const relocated = valid.filter(
+      (item) => before.get(item.studentId) !== getSeatKey(item.row, item.col),
+    ).length
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) =>
+      item.id === plan.id ? { ...item, updatedAt: now, seats } : item,
+    )
+    // 导入是整表改写，与「本次调整」（描述导入前的排法）不再相关，清掉避免误存
+    clearCurrentLogs()
+    return { ok: true, applied: valid.length, relocated }
+  }
 
   /** 把「本次调整」归档进当前方案 changeLogs 并清空待提交；返回刚归档的记录（供摘要展示） */
   function commitPendingLogs(): SeatChangeLog[] {
@@ -430,6 +694,15 @@ export const useSeatStore = defineStore('seat', () => {
     currentSeats,
     occupiedCount,
     pendingLogsCount,
+    // V1.1.2 Phase 1：方案级排座约束 + Excel 座位导入
+    currentConstraints,
+    constraintReport,
+    addSameDeskForbidden,
+    removeSameDeskForbidden,
+    addAdjacentGroupForbidden,
+    removeAdjacentGroupForbidden,
+    setRowPreference,
+    applySeatImport,
     createPlan,
     createPlanFromSeats,
     replacePlanSeats,
