@@ -6,6 +6,15 @@
 
 ---
 
+## v1.1.6.2 —— 刷新深层路由 404（NoSuchKey）修复（2026-09-12，随修复提交）
+
+- **现象**：线上 `/class/duty` 等深层路由刷新 / 直接输入 → `404 NoSuchKey`（Key: class/duty）。History 路由未被静态托管回退到 `index.html`。
+- **根因**：tcloudbaseapp.com 静态托管（gateway 型）**没有 Vercel 式 rewrite 配置**——CLI 无子命令、`tcb api tcb ModifyStaticStore` 返回 InvalidAction、官方文档亦无重写入口。Router 本身正确（`createWebHistory(import.meta.env.BASE_URL)`，不改）。
+- **修复**：把 `dist/index.html` 按路由路径上传为同名对象（实测网关按 `text/html` 服务，200）；请求命中对象 → 返回应用 HTML → vue-router 接管。同步脚本固化为 **`scripts/sync-spa-routes.sh`**（覆盖全部 18 条路由，**新增路由后必须补进 ROUTES 并重跑**）。
+- **验证**：14 条路径 curl 全 200 `text/html`（唯一例外 `/work/tasks`——它不是本项目的路由，404 是正确行为；工作清单是 `/work/works`）；无头 Chrome 实测 `/class/duty`、`/class/seats`、`/work/works`、`/students`、`/my` 直接打开 + F5 全部真实渲染（`值日管理 · TeacherDesk` 等标题逐页确认）。CloudBase 测试域名首访提示页（「风险提醒」）与其无关，点「继续访问」后不再出现。
+
+---
+
 ## v1.2.1 —— CDL 视觉重构 + 导航 IA 收敛 + 官方图标（2026-09-12，tag `v1.2.1`）
 
 > 本 tag 覆盖三件事：**V1.2.0 视觉**（接入 Changdu Design Language）、**V1.2.1 导航 IA**（侧边栏收敛为 4 个全局入口）、**官方图标接入**。**零业务改动**：Store / 数据结构 / 路由行为 / 组件接口全部不动，纯视觉层与导航入口位置变化。详细设计见开发手册 **§9.32 / §9.33**。
