@@ -201,13 +201,16 @@
   --app-icon-size-md: 20px;
   --app-icon-size-lg: 24px;
 
-  /* ========== 15. 导航 / 页面宽度令牌（V5.2 胶囊导航 + 1440px 居中） ========== */
-  --nav-height: 64px;
+  /* ========== 15. 导航 / 壳层令牌（UI-2 App Shell：72px 毛玻璃工具栏 + 侧栏） ========== */
+  --nav-height: 72px;
   --nav-radius: 32px;
   --nav-blur: 20px;
+  --sidebar-width: 232px;
+  --glass-bg-scrolled: rgba(255, 255, 255, 0.88); /* Header 滚动后透明度略增 */
   --bottom-nav-height: 64px;
   --page-max-width: 1440px;
   --page-pad-x: 40px; /* 页面左右留白 */
+  --page-top-gap: 32px; /* 页面标题距导航的统一间距（UI-2） */
   --card-gap: 24px; /* 卡片间距 */
   --section-gap: 32px; /* 区块间距 */
 }

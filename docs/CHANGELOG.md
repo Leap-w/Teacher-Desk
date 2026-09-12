@@ -6,6 +6,27 @@
 
 ---
 
+## v2.0.1-alpha —— Phase UI-2 · App Shell（原生 App 框架）（2026-09-13，tag `v2.0.1-alpha`）
+
+> 只重构应用框架：Header / Sidebar / Footer / 页面容器 / 切换动画；路由结构、Store、localStorage Key、CloudBase、业务功能零改动。详见开发手册 **§9.39**。
+
+### 变化
+
+- **Header 重构**：64px 悬浮胶囊 → **72px 全宽毛玻璃工具栏**（backdrop blur20+saturate150%）；左 = 36px Logo + TeacherDesk + **班主任工作台副标题**，中 = 留白（预留搜索），右 = 搜索（预留，点击轻提示）/ 云同步 / 头像；**滚动后透明度略增**（`--glass-bg-scrolled` 0.75→0.88 + hairline 底线）。
+- **侧边栏新增**（`AppSidebar.vue`）：一级五项（首页/学生档案/班级管理/工作管理/我的，Lucide 图标 18px）+ 班级/工作**二级展开菜单**（grid-rows 0fr→1fr，200ms ease-out 高度渐变 + chevron 旋转）；Active = 松石青柔和高亮（`--color-primary-soft`）+ **左侧 3px 细强调条**，Hover = 轻微背景；进入分组自动展开。桌面（≥1024px）常驻 232px；小屏为抽屉（汉堡唤起 + 毛玻璃遮罩 + 路由跳转自动收起）。ModuleLayout 的二级胶囊 Tab 在桌面端隐藏（侧栏接管），小屏保留。
+- **页面容器统一**：内容区让位侧栏（`padding-left: 232px`）后 1440px 居中 + 40px 留白；顶部间距统一为 `导航 72 + 32`（`--page-top-gap`），所有页面无需单独调。
+- **Footer 新增**（`AppFooter.vue`）：左 = TeacherDesk · 当前版本；右 = 构建信息（CDL v6.0 · UI-2）/ 云同步状态（复用 `useCloudSync.statusView`，云同步未启用显示「本地模式」）/ GitHub 图标（预留）；hairline 上边框 + 辅助文字色，不抢视觉。
+- **页面切换**：进入 200ms Fade + 8px 上滑，退出 150ms 更轻（-4px）。
+- **滚动体验**：全局统一细滚动条（8px 圆角 thumb，webkit + Firefox）；Header 固定 + 滚动毛玻璃增强。
+- **壳层令牌**：`--nav-height` 64→72px、新增 `--sidebar-width: 232px`、`--glass-bg-scrolled`、`--page-top-gap`。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- 无头 Chrome 双尺寸实测：桌面 1440px 五页（Header 72px fixed + blur(20px) saturate(1.5) / Logo 36px / 副标题 / 侧栏 232px·5 一级·二级自动展开 4+2 项 / active 随路由 / main padding-left 232px / 页脚三段）；移动 390px（汉堡出现 / 侧栏 off-canvas / 副标题隐藏 / 胶囊 Tab 保留）+ 截图人眼复核。
+
+---
+
 ## v2.0.0-alpha —— Phase UI-1 · Design System Foundation（V2.0 视觉重构起点）（2026-09-13，tag `v2.0.0-alpha`）
 
 > 只动视觉底层：Design Token / UnoCSS Theme / 基础组件 / 图标；路由、Store、数据结构、localStorage Key、CloudBase、业务功能零改动。详见开发手册 **§9.38**。

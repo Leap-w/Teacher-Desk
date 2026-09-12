@@ -102,6 +102,17 @@ const tabs = computed(() => {
   align-self: flex-start;
 }
 
+/* UI-2：桌面端二级导航由侧栏接管，胶囊 Tab 只在小屏（<1024px）显示 */
+@media (min-width: 1024px) {
+  .module-page__tabs {
+    display: none;
+  }
+
+  .module-page__head {
+    margin-bottom: var(--spacing-lg);
+  }
+}
+
 .module-page__tab {
   padding: 7px 18px;
   border: none;
