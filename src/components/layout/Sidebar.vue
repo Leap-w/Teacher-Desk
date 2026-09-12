@@ -11,6 +11,8 @@ const navItems = computed(() => {
   const items = []
   for (const route of routes) {
     if (route.redirect) continue
+    // hidden：不在侧边栏出现的页面（如 /my/settings、/my/tools——由「我的」页的功能项进入）
+    if (route.meta?.hidden) continue
     if (route.children && route.children.length > 0) {
       // 父级：加一项「工作管理」+ 它的子项
       items.push({
@@ -21,6 +23,7 @@ const navItems = computed(() => {
       })
       for (const child of route.children) {
         if (child.redirect) continue
+        if (child.meta?.hidden) continue
         const fullPath = `${route.path}/${child.path}`.replace(/\/$/, '').replace(/\/+/g, '/')
         items.push({
           path: fullPath,

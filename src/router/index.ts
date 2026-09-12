@@ -11,6 +11,8 @@ declare module 'vue-router' {
     title?: string
     /** 导航图标（占位 emoji，后续替换为 SVG 图标） */
     icon?: string
+    /** 侧边栏不渲染此路由（如 /my/settings——「我的」下的二级页以功能项进入） */
+    hidden?: boolean
   }
 }
 

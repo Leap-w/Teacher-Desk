@@ -13,6 +13,7 @@ import DutyImportModal from './components/DutyImportModal.vue'
 import DutyRotationPanel from './components/DutyRotationPanel.vue'
 import DutyTodayCard from './components/DutyTodayCard.vue'
 import DutyUpcomingList from './components/DutyUpcomingList.vue'
+import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import type { DutyGroup, DutySettings } from '@/types/duty'
 
 const dutyStore = useDutyStore()
@@ -179,6 +180,7 @@ function openImport(mode: 'groups' | 'arrange'): void {
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
       <div class="toolbar-actions">
+        <SettingsEntryButton module="duty" />
         <AppButton variant="secondary" @click="openImport('groups')">📥 导入分组</AppButton>
         <AppButton variant="secondary" @click="openImport('arrange')">📥 导入安排</AppButton>
         <AppButton @click="openCreate">＋ 新建值日组</AppButton>

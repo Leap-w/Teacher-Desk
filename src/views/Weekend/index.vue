@@ -8,6 +8,7 @@ import { useWeekendStore } from '@/stores/weekend'
 import { describeWeekend, formatWeekendLabel } from '@/utils/weekend'
 import type { WeekendReturnRecord } from '@/types/weekend'
 import WeekendReturnDrawer from './components/WeekendReturnDrawer.vue'
+import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import WeekendReturnRoster from './components/WeekendReturnRoster.vue'
 
 const weekendStore = useWeekendStore()
@@ -97,7 +98,10 @@ function confirmRemove() {
           {{ weekendStore.monthReturnCount }} 人次
         </p>
       </div>
-      <AppButton @click="registerOpen = true">＋ 登记返家</AppButton>
+      <div class="toolbar-actions">
+        <SettingsEntryButton module="weekend" />
+        <AppButton @click="registerOpen = true">＋ 登记返家</AppButton>
+      </div>
     </header>
 
     <!-- 周末切换条：手机横向滚动，PC 一行放得下 -->
@@ -282,5 +286,12 @@ function confirmRemove() {
 
 .confirm-text strong {
   color: var(--color-text);
+}
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 </style>

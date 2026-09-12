@@ -89,10 +89,31 @@ export const routes: RouteRecordRaw[] = [
   { path: '/duty', redirect: '/class/duty' },
   { path: '/weekend', redirect: '/class/weekend' },
   {
-    path: '/toolbox',
-    name: 'toolbox',
-    component: () => import('@/views/Toolbox/index.vue'),
-    meta: { title: '工具箱', icon: '🧰' },
+    // 「我的」个人中心（V1.1.6）：取代「工具箱」成为侧边栏入口；
+    // 工具箱整页迁到 /my/tools（组件原样复用，功能不变），各功能页右上角的 ⚙
+    // 也统一跳到 /my/settings——设置页面只有一套，入口可以多个。
+    path: '/my',
+    name: 'my',
+    component: () => import('@/views/My/index.vue'),
+    meta: { title: '我的', icon: '👤' },
   },
+  {
+    path: '/my/profile',
+    redirect: '/my',
+  },
+  {
+    path: '/my/settings',
+    name: 'my-settings',
+    component: () => import('@/views/My/Settings.vue'),
+    meta: { title: '设置', icon: '⚙️', hidden: true },
+  },
+  {
+    path: '/my/tools',
+    name: 'my-tools',
+    component: () => import('@/views/Toolbox/index.vue'),
+    meta: { title: '工具箱', icon: '🧰', hidden: true },
+  },
+  /* ---- 旧路径兼容（V1.1.6）：工具箱并入「我的」，旧链接自动跟过去 ---- */
+  { path: '/toolbox', redirect: '/my/tools' },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

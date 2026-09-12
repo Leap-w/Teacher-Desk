@@ -25,6 +25,7 @@ import LessonSwapDrawer from './components/LessonSwapDrawer.vue'
 import ScheduleDayList from './components/ScheduleDayList.vue'
 import ScheduleImportModal from './components/ScheduleImportModal.vue'
 import ScheduleWeekGrid from './components/ScheduleWeekGrid.vue'
+import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 
 const toast = useToast()
 const timetableStore = useTimetableStore()
@@ -234,6 +235,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         </p>
       </div>
       <div class="head-actions">
+        <SettingsEntryButton module="work" />
         <AppButton variant="secondary" @click="importOpen = true">📥 从 Excel 导入</AppButton>
         <AppButton @click="openCreate()">＋ 新增课程</AppButton>
       </div>

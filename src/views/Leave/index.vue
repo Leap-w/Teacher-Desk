@@ -15,6 +15,7 @@ import { LEAVE_FILTER_LABELS, filterLeaveRecords } from '@/utils/leave'
 import type { LeaveFilter } from '@/utils/leave'
 import LeaveFormDrawer from './components/LeaveFormDrawer.vue'
 import LeaveRecordCard from './components/LeaveRecordCard.vue'
+import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 
 /**
  * 请假管理（V1.1.5 记录口径）：只做「请假记录」——新建 / 编辑 / 删除 / 查询 /
@@ -42,7 +43,7 @@ const records = computed(() => {
 
 const filterCounts = computed(() => {
   const all = leaveStore.leaves
-    return {
+  return {
     all: all.length,
     today: filterLeaveRecords(all, 'today', today.value).length,
     week: filterLeaveRecords(all, 'week', today.value).length,
@@ -153,7 +154,10 @@ function clearFilters() {
           {{ leaveStore.outLeaves.length }} 人
         </p>
       </div>
-      <AppButton @click="openCreate">＋ 新增请假记录</AppButton>
+      <div class="toolbar-actions">
+        <SettingsEntryButton module="leave" />
+        <AppButton @click="openCreate">＋ 新增请假记录</AppButton>
+      </div>
     </header>
 
     <div class="toolbar-row">
@@ -245,6 +249,14 @@ function clearFilters() {
 <style scoped>
 .leave-page {
   max-width: 960px;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .page-toolbar {

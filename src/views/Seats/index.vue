@@ -39,6 +39,7 @@ import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
 import SeatArrangeModal from './components/SeatArrangeModal.vue'
 import SeatImportModal from './components/SeatImportModal.vue'
+import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import SeatConstraintModal from './components/SeatConstraintModal.vue'
 
 type SeatView = 'teacher' | 'student'
@@ -803,6 +804,7 @@ async function runCompareExport() {
         <p class="page-subtitle">{{ roomSummary }}</p>
       </div>
       <div class="toolbar-actions">
+        <SettingsEntryButton module="seats" />
         <AppButton
           v-if="hasPending"
           variant="secondary"
