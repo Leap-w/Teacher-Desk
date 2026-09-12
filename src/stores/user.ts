@@ -68,12 +68,21 @@ export function isProfileInputValid(input: UserProfileInput): boolean {
  * 业务 store，改资料不会碰学生 / 座位 / 课表（§11.1 单向依赖）。
  */
 export const useUserStore = defineStore('user', () => {
-  const profile = ref<UserProfile>(readProfile())
+  /**
+   * 持久化形状是**单元素数组**（对齐备份模块「一个键 = 一个数组」的硬约束，
+   * V1.1.6.1 起个人资料进入备份与云同步）；界面读写走下面的 `profile` computed。
+   */
+  const profileList = ref<UserProfile[]>([readProfile()])
   /** 资料版本号：头像换/删、字段保存时递增，界面不必深比较 dataURL */
   const revision = ref(0)
 
-  // profile 是**单对象**键，与 syncPersisted 的列表型回调对齐：包一层「取第一条」
-  syncPersisted(STORAGE_KEY, profile, (raw) => reviveProfileList(raw)[0])
+  syncPersisted(STORAGE_KEY, profileList, reviveProfileList)
+
+  const profile = computed(() => profileList.value[0] ?? { ...DEFAULT_USER_PROFILE })
+
+  function replaceProfile(next: UserProfile): void {
+    profileList.value = [next]
+  }
 
   function readProfile(): UserProfile {
     try {
@@ -100,13 +109,13 @@ export const useUserStore = defineStore('user', () => {
    */
   function updateProfile(input: UserProfileInput): { ok: true } | { ok: false; reason: string } {
     if (!isProfileInputValid(input)) return { ok: false, reason: '昵称不能为空' }
-    profile.value = {
+    replaceProfile({
       ...profile.value,
       nickname: input.nickname.trim(),
       school: input.school.trim(),
       className: input.className.trim(),
       subject: input.subject.trim(),
-    }
+    })
     revision.value += 1
     return { ok: true }
   }
@@ -120,7 +129,7 @@ export const useUserStore = defineStore('user', () => {
     if (dataUrl.length > AVATAR_MAX_BYTES) {
       return { ok: false, reason: '图片太大，请换一张小一点的' }
     }
-    profile.value = { ...profile.value, avatar: dataUrl }
+    replaceProfile({ ...profile.value, avatar: dataUrl })
     revision.value += 1
     return { ok: true }
   }
@@ -128,7 +137,7 @@ export const useUserStore = defineStore('user', () => {
   /** 删除头像（回到昵称首字占位） */
   function removeAvatar(): void {
     if (profile.value.avatar === undefined) return
-    profile.value = { ...profile.value, avatar: undefined }
+    replaceProfile({ ...profile.value, avatar: undefined })
     revision.value += 1
   }
 

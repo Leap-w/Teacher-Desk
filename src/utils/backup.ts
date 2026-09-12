@@ -37,7 +37,7 @@ export interface BackupModule {
   unit: string
 }
 
-/** 十个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
+/** 十一个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
 const STUDENT_KEY = `${appConfig.storageKeyPrefix}:students`
 const SEAT_PLAN_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 const CONSTRAINT_KEY = `${appConfig.storageKeyPrefix}:seatConstraints`
@@ -46,6 +46,8 @@ const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
 const EXCHANGE_KEY = `${appConfig.storageKeyPrefix}:timetable:exchanges`
 /** V1.1.3：工作清单（「工作管理」的第二个板块） */
 const WORK_KEY = `${appConfig.storageKeyPrefix}:works`
+/** V1.1.6：教师个人资料（「我的」页；单元素数组——数组里只有这一份） */
+const PROFILE_KEY = `${appConfig.storageKeyPrefix}:profile`
 const TODO_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
@@ -53,7 +55,7 @@ const WEEKEND_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
 /** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
 const LEGACY_TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable:lessons`
 
-/** 备份覆盖的十个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
+/** 备份覆盖的十一个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
 export const BACKUP_MODULES: BackupModule[] = [
   { key: STUDENT_KEY, label: '学生档案', unit: '名' },
   { key: SEAT_PLAN_KEY, label: '座位方案', unit: '个' },
@@ -66,6 +68,7 @@ export const BACKUP_MODULES: BackupModule[] = [
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
   { key: DUTY_KEY, label: '值日安排', unit: '条' },
   { key: WEEKEND_KEY, label: '周末返家', unit: '条' },
+  { key: PROFILE_KEY, label: '个人资料', unit: '份' },
 ]
 
 /**
@@ -392,6 +395,7 @@ function describeItem(key: string, item: unknown): string {
     return `${slotText(item.from)} → ${slotText(item.to)}`
   }
   if (key === WORK_KEY) return textOf(item.title) || '（未命名的工作）'
+  if (key === PROFILE_KEY) return textOf(item.nickname) || '（未命名教师）'
   if (key === TODO_KEY) return textOf(item.text) || '（无内容待办）'
   if (key === LEAVE_KEY || key === WEEKEND_KEY) {
     // 请假与周末返家同款带 studentName 快照，描述口径一致

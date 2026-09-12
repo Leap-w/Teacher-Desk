@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { installFakeBrowser } from './helpers/env'
 import { appConfig } from '@/config'
 import { routes } from '@/router/routes'
+import { BACKUP_MODULES } from '@/utils/backup'
 import { DEFAULT_USER_PROFILE, identityLineOf, useUserStore } from '@/stores/user'
 
 const prefix = appConfig.storageKeyPrefix
@@ -47,6 +48,11 @@ describe('「我的」路由（V1.1.6）', () => {
 
   it('/my/profile 回到 /my', () => {
     expect(byPath('/my/profile')).toMatchObject({ redirect: '/my' })
+  })
+
+  it('个人资料进备份模块（BACKUP_MODULES 第 11 块，备份 / 恢复覆盖它）', () => {
+    const hit = BACKUP_MODULES.find((module) => module.key === `${prefix}:profile`)
+    expect(hit).toMatchObject({ label: '个人资料', unit: '份' })
   })
 
   it('侧边栏只应出现「我的」一个入口（settings/tools 均 hidden）', () => {

@@ -1,6 +1,6 @@
 {
   "name": "teacherdesk",
-  "version": "1.1.1",
+  "version": "1.1.6",
   "private": true,
   "type": "module",
   "description": "TeacherDesk —— 面向高中班主任的综合工作台",
