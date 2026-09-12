@@ -26,3 +26,6 @@ dev-dist
 #   worktrees/          —— 临时工作树，里面是一份完整检出副本，混进仓库会变成嵌套仓库
 .claude/settings.local.json
 .claude/worktrees/
+
+# WorkBuddy 会话本地数据（记忆 / 日志，不入库）
+.workbuddy/
