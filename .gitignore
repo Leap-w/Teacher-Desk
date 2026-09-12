@@ -20,3 +20,9 @@ dev-dist
 
 # 编辑器
 .idea
+
+# Claude Code 的本机文件（2026-09-12 GitHub 发布时收口）
+#   settings.local.json —— 本机权限白名单，按 §11.4 ④ 本就不该入库（它此前被跟踪过，需 git rm --cached 摘掉）
+#   worktrees/          —— 临时工作树，里面是一份完整检出副本，混进仓库会变成嵌套仓库
+.claude/settings.local.json
+.claude/worktrees/
