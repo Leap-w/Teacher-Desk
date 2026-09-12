@@ -94,11 +94,12 @@ async function onSync(): Promise<void> {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9px;
-  background: linear-gradient(135deg, var(--color-secondary), var(--color-primary));
+  border-radius: 50%;
+  /* CDL 品牌渐变：高原青 → 天空蓝（同 AppLayout 顶栏头像渐变） */
+  background: linear-gradient(135deg, var(--color-primary), var(--color-sky));
   color: #ffffff;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   box-shadow: var(--shadow-sm);
 }
 

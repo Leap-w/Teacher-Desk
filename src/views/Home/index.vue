@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { AppSection } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
@@ -87,75 +88,88 @@ function toggleTodo(id: string): void {
 
     <DashboardHeader />
 
-    <div class="dash-grid">
-      <DashboardLessonCard
-        :lessons="timetableStore.todayLessons"
-        :weekday-label="timetableStore.todayLabel"
-        :weekend="isWeekend"
-      />
-
-      <DashboardWorkCard @open="router.push('/work/works')" />
-
-      <DashboardTodoCard :todos="dashboardStore.todos" @toggle="toggleTodo" />
-
-      <DashboardDutyCard
-        class="cell-duty"
-        :group="dutyStore.todayGroup"
-        :members="dutyMembers"
-        :weekday-label="timetableStore.todayLabel"
-        :weekend-skipped="dutyWeekendSkipped"
-        :needs-setup="dutyNeedsSetup"
-        :upcoming="dutyStore.upcomingDays"
-        :today-key="dutyStore.todayKey"
-        @open="router.push('/class/duty')"
-      />
-
-      <DashboardQuickLinks class="cell-links" />
-
-      <div class="cell-bottom">
-        <DashboardLessonStats :count="timetableStore.weekLessonCount" />
-
-        <DashboardLeaveCard
-          :out="leaveStore.outLeaves"
-          :month-count="leaveStore.monthLeaveCount"
-          @open="router.push('/class/leave')"
+    <!-- CDL 首页布局：AppSection 分组（今日状态 / 快捷入口 / 班级动态），改布局不改逻辑 -->
+    <AppSection title="今日状态" class="dash-section dash-section--first">
+      <div class="dash-grid">
+        <DashboardLessonCard
+          :lessons="timetableStore.todayLessons"
+          :weekday-label="timetableStore.todayLabel"
+          :weekend="isWeekend"
         />
 
-        <DashboardWeekendCard
-          :weekend-label="weekendLabel"
-          :returns="weekendReturns"
-          :month-count="weekendStore.monthReturnCount"
-          :stale-count="weekendStaleCount"
-          @open="router.push('/class/weekend')"
-        />
+        <DashboardWorkCard @open="router.push('/work/works')" />
 
-        <DashboardClassCard
-          :student-count="studentCount"
-          :removed-student-count="removedStudentCount"
-          :duty-group="dutyStore.todayGroup"
-          :duty-weekend-skipped="dutyWeekendSkipped"
-          :duty-needs-setup="dutyNeedsSetup"
+        <DashboardTodoCard :todos="dashboardStore.todos" @toggle="toggleTodo" />
+
+        <DashboardDutyCard
+          class="cell-duty"
+          :group="dutyStore.todayGroup"
+          :members="dutyMembers"
+          :weekday-label="timetableStore.todayLabel"
+          :weekend-skipped="dutyWeekendSkipped"
+          :needs-setup="dutyNeedsSetup"
           :upcoming="dutyStore.upcomingDays"
           :today-key="dutyStore.todayKey"
-          :weekend-label="weekendLabel"
-          :stay-count="weekendStore.currentStayCount"
-          :returned-count="weekendStore.currentCount"
+          @open="router.push('/class/duty')"
         />
       </div>
-    </div>
+    </AppSection>
+
+    <AppSection title="快捷入口" class="dash-section">
+      <DashboardQuickLinks class="cell-links" />
+    </AppSection>
+
+    <AppSection title="班级动态" class="dash-section">
+      <div class="dash-grid">
+        <div class="cell-bottom">
+          <DashboardLessonStats :count="timetableStore.weekLessonCount" />
+
+          <DashboardLeaveCard
+            :out="leaveStore.outLeaves"
+            :month-count="leaveStore.monthLeaveCount"
+            @open="router.push('/class/leave')"
+          />
+
+          <DashboardWeekendCard
+            :weekend-label="weekendLabel"
+            :returns="weekendReturns"
+            :month-count="weekendStore.monthReturnCount"
+            :stale-count="weekendStaleCount"
+            @open="router.push('/class/weekend')"
+          />
+
+          <DashboardClassCard
+            :student-count="studentCount"
+            :removed-student-count="removedStudentCount"
+            :duty-group="dutyStore.todayGroup"
+            :duty-weekend-skipped="dutyWeekendSkipped"
+            :duty-needs-setup="dutyNeedsSetup"
+            :upcoming="dutyStore.upcomingDays"
+            :today-key="dutyStore.todayKey"
+            :weekend-label="weekendLabel"
+            :stay-count="weekendStore.currentStayCount"
+            :returned-count="weekendStore.currentCount"
+          />
+        </div>
+      </div>
+    </AppSection>
   </div>
 </template>
 
 <style scoped>
 .dash-page {
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
+}
+
+.dash-section--first :deep(.app-section__header) {
+  margin-top: var(--spacing-sm);
 }
 
 .dash-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--spacing-md);
 }
 
 /* 同一行的卡片等高（卡片自身撑满所在网格单元） */
@@ -167,7 +181,8 @@ function toggleTodo(id: string): void {
 .cell-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
+  gap: var(--spacing-md);
+  grid-column: 1 / -1;
 }
 
 @media (min-width: 760px) {
@@ -176,8 +191,7 @@ function toggleTodo(id: string): void {
   }
 
   .cell-duty,
-  .cell-links,
-  .cell-bottom {
+  .cell-links {
     grid-column: 1 / -1;
   }
 

@@ -168,44 +168,55 @@ const aboutOpen = ref(false)
 
 <template>
   <div class="my-page">
-    <!-- 顶部身份卡：渐变松石青 + 圆头像 -->
+    <!-- CDL 页面头：大标题 + 副标题 + 底部细线（同 Changdu Memory profile__header） -->
+    <div class="page-head">
+      <h1 class="page-head__title">我的</h1>
+      <p class="page-head__sub">班主任的个人中心 · 资料、设置与工具</p>
+    </div>
+
+    <!-- 顶部身份卡：CDL profile-hero（深色渐变 + 雪山线稿纹理 + 渐变头像环） -->
     <header class="profile-hero">
-      <div class="avatar-wrap">
-        <button
-          type="button"
-          class="avatar-button"
-          :aria-label="profile.avatar ? '更换头像' : '上传头像'"
-          @click="pickAvatar"
-        >
-          <img v-if="profile.avatar" :src="profile.avatar" alt="我的头像" class="avatar-img" />
-          <span v-else class="avatar-fallback" aria-hidden="true">{{ userStore.initial }}</span>
-          <span class="avatar-edit-hint" aria-hidden="true">📷</span>
-        </button>
-        <button
-          v-if="profile.avatar"
-          type="button"
-          class="avatar-remove"
-          aria-label="删除头像"
-          @click="removeAvatar"
-        >
-          ✕
-        </button>
-        <input
-          ref="avatarInput"
-          type="file"
-          accept="image/*"
-          class="avatar-input"
-          @change="onAvatarPicked"
-        />
+      <svg class="profile-hero__texture" viewBox="0 0 500 150" fill="none" aria-hidden="true">
+        <path d="M0 150L120 40L200 110L320 10L500 150H0Z" fill="currentColor" />
+      </svg>
+      <div class="profile-hero__content">
+        <div class="avatar-wrap">
+          <button
+            type="button"
+            class="avatar-button"
+            :aria-label="profile.avatar ? '更换头像' : '上传头像'"
+            @click="pickAvatar"
+          >
+            <img v-if="profile.avatar" :src="profile.avatar" alt="我的头像" class="avatar-img" />
+            <span v-else class="avatar-fallback" aria-hidden="true">{{ userStore.initial }}</span>
+            <span class="avatar-edit-hint" aria-hidden="true">📷</span>
+          </button>
+          <button
+            v-if="profile.avatar"
+            type="button"
+            class="avatar-remove"
+            aria-label="删除头像"
+            @click="removeAvatar"
+          >
+            ✕
+          </button>
+          <input
+            ref="avatarInput"
+            type="file"
+            accept="image/*"
+            class="avatar-input"
+            @change="onAvatarPicked"
+          />
+        </div>
+
+        <p class="profile-name">{{ profile.nickname }}</p>
+        <p class="profile-identity">{{ identityLine }}</p>
+        <p class="profile-school">{{ profile.school }}</p>
+
+        <AppButton variant="secondary" size="sm" class="edit-button" @click="openProfileEditor">
+          ✏️ 编辑资料
+        </AppButton>
       </div>
-
-      <p class="profile-name">{{ profile.nickname }}</p>
-      <p class="profile-identity">{{ identityLine }}</p>
-      <p class="profile-school">{{ profile.school }}</p>
-
-      <AppButton variant="secondary" size="sm" class="edit-button" @click="openProfileEditor">
-        ✏️ 编辑资料
-      </AppButton>
     </header>
 
     <!-- 分组功能卡 -->
@@ -318,20 +329,62 @@ const aboutOpen = ref(false)
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--spacing-xl);
 }
 
-/* ---- 顶部身份卡 ---- */
+/* ---- CDL 页面头 ---- */
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px 14px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.page-head__title {
+  font-size: var(--font-page-title, 32px);
+  font-weight: var(--font-weight-extrabold);
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.page-head__sub {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+}
+
+/* ---- 顶部身份卡（CDL profile-hero） ---- */
 .profile-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: linear-gradient(145deg, #101820 0%, #1f343a 40%, var(--color-primary) 100%);
+  box-shadow: 0 20px 40px -15px rgba(16, 24, 32, 0.3);
+  color: #ffffff;
+}
+
+/* 雪山线稿纹理（CDL profile-hero__texture） */
+.profile-hero__texture {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 160px;
+  opacity: 0.1;
+  color: currentColor;
+  pointer-events: none;
+}
+
+.profile-hero__content {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-7) var(--space-4) var(--space-6);
-  border-radius: var(--radius-lg);
-  background: linear-gradient(160deg, var(--color-primary) 0%, var(--color-primary-strong) 100%);
-  color: #ffffff;
-  box-shadow: var(--shadow-md);
+  padding: var(--spacing-page);
+  text-align: center;
 }
 
 .avatar-wrap {
@@ -341,13 +394,14 @@ const aboutOpen = ref(false)
 
 .avatar-button {
   position: relative;
-  width: 120px;
-  height: 120px;
-  padding: 0;
-  border: 3px solid rgba(255, 255, 255, 0.9);
+  width: 96px;
+  height: 96px;
+  padding: 4px;
+  border: none;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  box-shadow: var(--shadow-md);
+  /* CDL 渐变头像环：日照金 → 天空蓝 → 高原青 */
+  background: linear-gradient(135deg, var(--color-gold), var(--color-sky), var(--color-primary));
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   overflow: hidden;
   transition:
@@ -357,7 +411,7 @@ const aboutOpen = ref(false)
 
 .avatar-button:hover {
   transform: scale(1.04);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-hover);
 }
 
 .avatar-button:focus-visible {
@@ -368,6 +422,7 @@ const aboutOpen = ref(false)
 .avatar-img {
   width: 100%;
   height: 100%;
+  border-radius: 50%;
   object-fit: cover;
   display: block;
 }
@@ -378,23 +433,26 @@ const aboutOpen = ref(false)
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 44px;
-  font-weight: 700;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #1f343a, var(--color-primary-dark));
+  font-size: 36px;
+  font-weight: var(--font-weight-bold);
   color: #ffffff;
 }
 
 .avatar-edit-hint {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 30px;
-  height: 30px;
+  right: 2px;
+  bottom: 2px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid #101820;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  font-size: 14px;
+  background: var(--color-primary);
+  font-size: 12px;
   opacity: 0;
   transition: opacity var(--transition-fast);
 }
@@ -414,7 +472,7 @@ const aboutOpen = ref(false)
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: var(--color-danger-strong);
+  background: var(--color-danger);
   color: #ffffff;
   font-size: 12px;
   cursor: pointer;
@@ -427,70 +485,88 @@ const aboutOpen = ref(false)
 
 .profile-name {
   margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.02em;
 }
 
 .profile-identity {
   margin: 0;
-  font-size: var(--text-sm);
-  opacity: 0.92;
+  font-size: var(--text-xs);
+  font-weight: var(--font-weight-medium);
+  color: rgba(204, 255, 250, 0.9);
 }
 
 .profile-school {
   margin: 0;
   font-size: var(--text-xs);
-  opacity: 0.78;
+  font-style: italic;
+  color: rgba(203, 213, 225, 0.7);
 }
 
 .edit-button {
   margin-top: var(--space-3);
 }
 
-/* ---- 分组功能卡 ---- */
+/* ---- 分组功能卡（CDL profile__menu-card：毛玻璃 + 卡内 20px 标题） ---- */
 .group-stack {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--spacing-xl);
 }
 
 .group-card {
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--glass-bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .group-title {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-faint);
+  font-size: var(--font-section-title, 20px);
+  line-height: 1.3;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0;
+  padding: var(--spacing-lg) var(--spacing-page) var(--space-1);
 }
 
 .profile-row {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: var(--spacing-md);
+  padding: 14px 18px;
   border: none;
-  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--color-border-light);
+  border-radius: 0;
   background: transparent;
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
 
-.profile-row:hover {
-  background: var(--color-fill-disabled);
+.profile-row:last-child {
+  border-bottom: none;
+}
+
+@media (hover: hover) {
+  .profile-row:hover {
+    background: var(--color-bg-subtle);
+  }
+}
+
+.profile-row:active {
+  background: var(--color-bg-subtle);
 }
 
 .profile-row:focus-visible {
   outline: none;
-  box-shadow: var(--ring-focus);
+  box-shadow: inset 0 0 0 2px var(--color-primary);
 }
 
 .row-icon {
@@ -500,8 +576,8 @@ const aboutOpen = ref(false)
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--color-primary-soft);
+  border-radius: 10px;
+  background: var(--color-primary-bg);
   font-size: 16px;
 }
 
@@ -515,13 +591,13 @@ const aboutOpen = ref(false)
 
 .row-label {
   font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
 }
 
 .row-value {
   font-size: var(--text-xs);
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -529,9 +605,10 @@ const aboutOpen = ref(false)
 
 .row-chevron {
   flex-shrink: 0;
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
   font-size: var(--text-lg);
   line-height: 1;
+  opacity: 0.4;
 }
 
 /* ---- 关于 ---- */
@@ -545,15 +622,15 @@ const aboutOpen = ref(false)
 
 .about-name {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-primary-strong);
+  font-size: var(--font-card-title, 18px);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-dark);
 }
 
 .about-version {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
 }
 
 .about-text {
@@ -563,15 +640,10 @@ const aboutOpen = ref(false)
   color: var(--color-text-secondary);
 }
 
-/* ---- 移动端：头像 96px ---- */
+/* ---- 移动端 ---- */
 @media (max-width: 759.98px) {
-  .avatar-button {
-    width: 96px;
-    height: 96px;
-  }
-
-  .avatar-fallback {
-    font-size: 36px;
+  .profile-name {
+    font-size: 28px;
   }
 }
 </style>

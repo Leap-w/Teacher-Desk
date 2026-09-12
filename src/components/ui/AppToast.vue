@@ -81,10 +81,10 @@ const ICON_PATHS: Record<ToastVariant, string[]> = {
   gap: var(--space-3);
   max-width: min(420px, calc(100vw - 32px));
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
-  background: var(--glass-bg);
+  background: var(--glass-bg-card);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
 }
@@ -147,8 +147,8 @@ const ICON_PATHS: Record<ToastVariant, string[]> = {
 .toast-enter-active,
 .toast-leave-active {
   transition:
-    opacity var(--duration-normal) var(--ease-standard),
-    transform var(--duration-normal) var(--ease-standard);
+    opacity var(--duration-normal) var(--ease-spring),
+    transform var(--duration-normal) var(--ease-spring);
 }
 
 .toast-enter-from {
@@ -162,6 +162,6 @@ const ICON_PATHS: Record<ToastVariant, string[]> = {
 }
 
 .toast-move {
-  transition: transform var(--duration-normal) var(--ease-standard);
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 </style>

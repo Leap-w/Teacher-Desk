@@ -177,7 +177,7 @@ toast.danger('同步失败，请重试')
 ```
 TeacherDesk/
 ├── docs/               # 开发手册（交接主文档）+ 路线图 + 更新日志（CHANGELOG）
-├── public/             # 图标：favicon.svg（矢量）+ icon-192 / 512 / maskable-512 / apple-touch-icon（PNG）
+├── public/             # 图标：icons/（官方图标 13 档尺寸 + maskable-512）+ apple-touch-icon（PNG）
 ├── src/
 │   ├── components/
 │   │   ├── ui/         # 通用基础组件

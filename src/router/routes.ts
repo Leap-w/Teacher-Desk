@@ -17,7 +17,9 @@ export const routes: RouteRecordRaw[] = [
     path: '/students',
     name: 'students',
     component: () => import('@/views/Students/index.vue'),
-    meta: { title: '学生档案', icon: '🎓' },
+    // V1.2.1 IA 重构：侧边栏只留 4 个全局入口，学生档案降级为
+    // 班级管理枢纽页的入口卡（/students URL 保持可直接访问）
+    meta: { title: '学生档案', icon: '🎓', hidden: true },
   },
   {
     // 「班级管理」父级只负责布局出口：直接复用 vue-router 的 RouterView 组件
@@ -28,8 +30,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '班级管理', icon: '🎒' },
     children: [
       {
+        // V1.2.1 导航 IA 重构：/class 本身是枢纽页（卡片式二级入口），
+        // 不再 redirect 到 /class/seats；子路由原样保留，旧 URL 全部可访问
         path: '',
-        redirect: '/class/seats',
+        name: 'class-hub',
+        component: () => import('@/views/Class/index.vue'),
+        meta: { title: '班级管理', icon: '🎒' },
       },
       {
         path: 'seats',
@@ -66,8 +72,11 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '工作管理', icon: '📋' },
     children: [
       {
+        // V1.2.1：/work 本身是枢纽页（卡片式二级入口），不再 redirect 到 /work/schedule
         path: '',
-        redirect: '/work/schedule',
+        name: 'work-hub',
+        component: () => import('@/views/Work/index.vue'),
+        meta: { title: '工作管理', icon: '📋' },
       },
       {
         path: 'schedule',

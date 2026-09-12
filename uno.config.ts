@@ -6,6 +6,8 @@ export default defineConfig({
     colors: {
       primary: 'var(--color-primary)',
       secondary: 'var(--color-secondary)',
+      sky: 'var(--color-sky)',
+      gold: 'var(--color-gold)',
       surface: 'var(--color-surface)',
       canvas: 'var(--bg-main)',
       ink: {

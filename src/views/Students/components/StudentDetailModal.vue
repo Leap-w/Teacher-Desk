@@ -63,38 +63,46 @@ function onRemove() {
         </div>
       </header>
 
-      <dl class="detail-list">
-        <div class="detail-item">
-          <dt>学号</dt>
-          <dd>{{ student.studentNo || '—' }}</dd>
-        </div>
-        <div class="detail-item">
-          <dt>宿舍</dt>
-          <dd>{{ student.dormitory || '—' }}</dd>
-        </div>
-        <div class="detail-item">
-          <dt>联系电话</dt>
-          <dd>{{ student.phone || '—' }}</dd>
-        </div>
-        <div class="detail-item detail-item--full">
-          <dt>备注</dt>
-          <dd>{{ student.remark || '—' }}</dd>
-        </div>
+      <!-- CDL Section Card：弹窗内每个信息组一张浅底圆角卡（同 Profile 时间胶囊内卡） -->
+      <section class="detail-card">
+        <h4 class="detail-card__title">基本信息</h4>
+        <dl class="detail-list">
+          <div class="detail-item">
+            <dt>学号</dt>
+            <dd>{{ student.studentNo || '—' }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>宿舍</dt>
+            <dd>{{ student.dormitory || '—' }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>联系电话</dt>
+            <dd>{{ student.phone || '—' }}</dd>
+          </div>
+          <div class="detail-item detail-item--full">
+            <dt>备注</dt>
+            <dd>{{ student.remark || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
 
-        <div class="detail-section-title">家庭信息</div>
-        <div class="detail-item detail-item--full">
-          <dt>家庭地址</dt>
-          <dd>{{ student.familyAddress || '—' }}</dd>
-        </div>
-        <div class="detail-item">
-          <dt>所在地</dt>
-          <dd>{{ locationText }}</dd>
-        </div>
-        <div class="detail-item">
-          <dt>返家范围</dt>
-          <dd>{{ scopeText }}</dd>
-        </div>
-      </dl>
+      <section class="detail-card">
+        <h4 class="detail-card__title">家庭信息</h4>
+        <dl class="detail-list">
+          <div class="detail-item detail-item--full">
+            <dt>家庭地址</dt>
+            <dd>{{ student.familyAddress || '—' }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>所在地</dt>
+            <dd>{{ locationText }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>返家范围</dt>
+            <dd>{{ scopeText }}</dd>
+          </div>
+        </dl>
+      </section>
     </div>
 
     <template #footer>
@@ -112,9 +120,10 @@ function onRemove() {
 }
 
 .detail-name {
-  font-size: var(--text-lg);
-  font-weight: 700;
+  font-size: var(--font-card-title, 18px);
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.2px;
+  color: var(--color-text-primary);
 }
 
 .detail-badges {
@@ -124,11 +133,27 @@ function onRemove() {
   margin-top: var(--space-2);
 }
 
+/* CDL Section Card：弹窗内信息组浅底圆角卡（同 Profile time-capsule__stat 内卡做法） */
+.detail-card {
+  margin-top: var(--spacing-card);
+  padding: var(--spacing-card);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+}
+
+.detail-card__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
 .detail-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4) var(--space-5);
-  margin-top: var(--space-5);
+  margin: 0;
 }
 
 .detail-item {
@@ -143,20 +168,13 @@ function onRemove() {
 
 .detail-item dt {
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .detail-item dd {
+  margin: 0;
   font-size: var(--text-sm);
-  color: var(--color-text);
+  color: var(--color-text-primary);
   line-height: 1.6;
-}
-
-.detail-section-title {
-  grid-column: 1 / -1;
-  margin-top: var(--space-2);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-secondary);
 }
 </style>

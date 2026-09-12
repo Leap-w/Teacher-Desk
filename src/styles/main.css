@@ -14,16 +14,20 @@ body,
   height: 100%;
 }
 
+html {
+  font-size: 16px;
+}
+
+/* 字体栈与 Changdu Memory global.css 完全一致（设计母项目） */
 body {
   font-family:
-    -apple-system, BlinkMacSystemFont, 'SF Pro SC', 'PingFang SC', 'Hiragino Sans GB',
-    'Helvetica Neue', 'Microsoft YaHei', sans-serif;
-  background:
-    radial-gradient(1200px 600px at 85% -10%, rgba(90, 174, 162, 0.14), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(47, 143, 131, 0.08), transparent 55%),
-    var(--bg-main);
-  color: var(--color-text);
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
@@ -42,7 +46,7 @@ ol {
 }
 
 ::selection {
-  background: rgba(47, 143, 131, 0.2);
+  background: rgba(75, 143, 140, 0.2);
 }
 
 :focus-visible {

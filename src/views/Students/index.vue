@@ -378,19 +378,24 @@ function clearFilters() {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  padding: 0 4px 14px;
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
 }
 
+/* CDL 页面头：32px 特粗标题 + 底部细线（同 Profile / Home） */
 .page-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
+  font-size: var(--font-page-title, 32px);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--color-text-primary);
 }
 
 .page-subtitle {
-  margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  margin-top: 2px;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 
 .toolbar-actions {

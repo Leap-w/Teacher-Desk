@@ -38,6 +38,7 @@ function activate() {
   <AppCard
     class="student-card"
     :class="{ 'is-selectable': selectable, 'is-selected': selected }"
+    :hoverable="!selectable"
     :role="selectable ? undefined : 'button'"
     :tabindex="selectable ? undefined : 0"
     @click="activate"

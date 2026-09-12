@@ -33,6 +33,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 </template>
 
 <style scoped>
+/* CDL Button：12px 圆角 + spring 过渡（单一动效曲线，见 theme.css） */
 .app-button {
   display: inline-flex;
   align-items: center;
@@ -40,8 +41,8 @@ const isDisabled = computed(() => props.disabled || props.loading)
   gap: 8px;
   border: none;
   cursor: pointer;
-  border-radius: 10px;
-  font-weight: 600;
+  border-radius: var(--radius-button);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 0.2px;
   transition:
     transform var(--transition-fast),
@@ -60,35 +61,35 @@ const isDisabled = computed(() => props.disabled || props.loading)
 }
 
 .is-md {
-  height: 38px;
-  padding: 0 18px;
-  font-size: 14px;
+  height: 40px;
+  padding: 0 20px;
+  font-size: var(--text-md);
 }
 
 .is-sm {
-  height: 30px;
+  height: 32px;
   padding: 0 14px;
-  font-size: 13px;
-  border-radius: 9px;
+  font-size: var(--text-sm);
+  border-radius: 10px;
 }
 
 .is-primary {
   background: var(--color-primary);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(47, 143, 131, 0.28);
+  box-shadow: 0 4px 12px rgba(75, 143, 140, 0.28);
 }
 
 .is-primary:hover:not(:disabled) {
-  background: var(--color-primary-strong);
+  background: var(--color-primary-dark);
 }
 
 .is-secondary {
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
+  background: var(--color-primary-bg);
+  color: var(--color-primary-dark);
 }
 
 .is-secondary:hover:not(:disabled) {
-  background: var(--color-primary-soft-strong);
+  background: var(--color-primary-bg-hover);
 }
 
 .is-ghost {
@@ -97,14 +98,14 @@ const isDisabled = computed(() => props.disabled || props.loading)
 }
 
 .is-ghost:hover:not(:disabled) {
-  background: rgba(29, 29, 31, 0.05);
-  color: var(--color-text);
+  background: rgba(16, 24, 32, 0.05);
+  color: var(--color-text-primary);
 }
 
 .is-danger {
   background: var(--color-danger);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.28);
+  box-shadow: 0 4px 12px rgba(194, 103, 106, 0.28);
 }
 
 .is-danger:hover:not(:disabled) {
@@ -115,7 +116,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid rgba(47, 143, 131, 0.25);
+  border: 2px solid rgba(75, 143, 140, 0.25);
   border-top-color: var(--color-primary);
   animation: spin 0.7s linear infinite;
 }

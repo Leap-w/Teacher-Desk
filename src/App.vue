@@ -45,14 +45,15 @@ import { AppToast } from '@/components/ui'
 
 .page-enter-active,
 .page-leave-active {
+  /* CDL 页面切换：spring 曲线（唯一动效体系） */
   transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+    opacity 0.25s ease,
+    transform 0.3s var(--ease-spring);
 }
 
 .page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
 }
 
 .page-leave-to {

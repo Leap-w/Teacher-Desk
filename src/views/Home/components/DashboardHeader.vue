@@ -15,35 +15,51 @@ const weekdayLabel = computed(() => formatWeekdayLabel(now.value))
 </script>
 
 <template>
+  <!-- CDL 首页日期横条：大号日期 + 星期，底部细线分隔（同 Changdu Memory home__date-bar） -->
   <header class="dash-header">
-    <h1 class="dash-date">{{ dateLabel }}</h1>
-    <p class="dash-weekday">{{ weekdayLabel }}</p>
+    <div class="dash-header__main">
+      <h1 class="dash-date">{{ dateLabel }}</h1>
+      <p class="dash-weekday">{{ weekdayLabel }}</p>
+    </div>
     <p class="dash-motto">{{ greeting }}，今天也一起把班级管理做好。</p>
   </header>
 </template>
 
 <style scoped>
 .dash-header {
-  margin-bottom: var(--space-5);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  padding: 0 4px 12px;
+  margin-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.dash-header__main {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
 }
 
 .dash-date {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  color: var(--color-text);
+  font-size: var(--font-page-title, 32px);
+  line-height: 1.2;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
 .dash-weekday {
-  margin-top: var(--space-1);
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--color-primary-strong);
+  font-size: var(--font-section-title, 20px);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
 }
 
 .dash-motto {
-  margin-top: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 </style>

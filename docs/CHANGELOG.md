@@ -6,6 +6,28 @@
 
 ---
 
+## v1.2.1 —— CDL 视觉重构 + 导航 IA 收敛 + 官方图标（2026-09-12，tag `v1.2.1`）
+
+> 本 tag 覆盖三件事：**V1.2.0 视觉**（接入 Changdu Design Language）、**V1.2.1 导航 IA**（侧边栏收敛为 4 个全局入口）、**官方图标接入**。**零业务改动**：Store / 数据结构 / 路由行为 / 组件接口全部不动，纯视觉层与导航入口位置变化。详细设计见开发手册 **§9.32 / §9.33**。
+
+### 新增
+
+- **CDL 设计令牌层**（`src/styles/theme.css` 全量重写）：主色高原青 `#4B8F8C`（原松石青 `#2F8F83`），辅助色草原绿 / 天空蓝 `#6FA8DC` / 日照金 `#D6A84F`；卡片圆角 24px；轻量化阴影；毛玻璃卡片（`rgba(255,255,255,0.85)` + blur 20px）；字体栈与行高对齐母项目。**旧变量名全部保留为兼容别名**——未迁移的 80+ 组件零改动继承新视觉，改令牌只改这一个文件。
+- **单一动效体系**：`--ease-standard` 重定义为 CDL spring 曲线 `cubic-bezier(0.16, 1, 0.3, 1)`，全应用（页面切换 / Hover / Press / Modal / Toast）共用一条曲线，**没有第二套动画**。
+- **`AppSection.vue`**（直接复用自 Changdu Memory v5.1.4）与 **`NavEntryCard.vue`**（页内功能导航入口卡：白卡、24px 圆角、hover 上浮 2px、press scale(0.98)）。
+- **两个枢纽页**：`/class`（班级管理：学生档案 / 座位 / 请假 / 值日 / 周末 五张入口卡）与 `/work`（工作管理：课程表 / 工作清单 两张入口卡）——二级功能入口从侧边栏迁到页面内卡片，CDL 页头（32px 特粗标题 + 副标题 + 底线）。
+- **官方图标**：`docs/图标.png`（1254×1254「班主任工作台」）等比导出 `public/icons/` 13 档尺寸（32–512）+ maskable 版（80% 安全区留白）；favicon / Apple Touch Icon / PWA manifest 全部换用新图标。
+
+### 变化
+
+- **侧边导航收敛为 4 项**：首页 / 班级管理 / 工作管理 / 我的；删除座位管理、请假管理、值日管理、周末管理、课程表、工作清单、学生档案的一级入口（`/students` 标 `meta.hidden`）。**全部原 URL 保持可访问**（`/class/seats` 等 7 条逐一实测），旧路径兼容 redirect 原样保留。
+- **AppCard** 改毛玻璃 + 24px 圆角，新增可选 `hoverable` prop（默认关闭，向后兼容）；AppButton / AppModal / AppToast / AppInput / Sidebar / AppHeader 按 CDL 规格适配。
+- **首页**：CDL 日期横条（32px 特粗 + 底线）+ 三个 AppSection 分组（今日状态 / 快捷入口 / 班级动态）；**学生档案页** 32px CDL 页头；**学生详情弹窗** 改 Section Card；**我的 / 设置** 改 CDL 菜单卡（毛玻璃 + 卡内 20px 标题）；**我的** 顶部换 profile-hero（深色渐变 + 雪山线稿纹理 + 金→蓝→青渐变头像环）。
+- **版号 `1.2.1`**：`package.json` / `package-lock.json` / `appConfig.version`。macOS 侧 `MARKETING_VERSION` 未动。
+- **设计母项目**：Changdu Memory 放在 `docs/昌都记忆/`（只读参考，已加入 `.gitignore`，不进仓库）。
+
+---
+
 ## v1.1.1 —— 学生档案升级：Phase 5A + Phase 5B（2026-09-12）
 
 > **一版只动学生档案，分两步走、同打一个 tag**（`v1.1.1` 先指向 5A，5B 交付后**移到 5B 提交**）：**Phase 5A** 解决「怎么把 63 个人弄进系统」，**Phase 5B** 把它做成「好用」。**不新增模块 / 路由 / 一级导航**，**不碰座位图 / 请假 / 值日 / 周末 / 课表 / Widget / 同步逻辑**。

@@ -19,18 +19,20 @@ import type { LeaveRecord } from '@/types/leave'
 
 /* ========== 路由结构 ========== */
 
-describe('班级管理路由（V1.1.5）', () => {
+describe('班级管理路由（V1.2.1 IA 重构）', () => {
   const classRoute = routes.find((route) => route.path === '/class')
 
-  it('「班级管理」存在，且下挂四个子模块', () => {
+  it('「班级管理」存在，空路径是枢纽页 + 四个子模块', () => {
     expect(classRoute).toBeDefined()
     const children = (classRoute?.children ?? []).filter((child) => !child.redirect)
-    expect(children.map((child) => child.path)).toEqual(['seats', 'leave', 'duty', 'weekend'])
+    expect(children.map((child) => child.path)).toEqual(['', 'seats', 'leave', 'duty', 'weekend'])
   })
 
-  it('默认子入口指向座位管理（点「班级管理」落到第一个子模块）', () => {
-    const index = classRoute?.children?.find((child) => child.redirect === '/class/seats')
+  it('默认子入口是枢纽页组件（卡片式二级入口，不再 redirect 到座位管理）', () => {
+    const index = classRoute?.children?.find((child) => child.path === '')
     expect(index).toBeDefined()
+    expect(index?.redirect).toBeUndefined()
+    expect(index?.meta?.title).toBe('班级管理')
   })
 
   it('旧路径全部重定向到新层级（旧链接不失效）', () => {
@@ -42,8 +44,10 @@ describe('班级管理路由（V1.1.5）', () => {
     expect(redirectOf('/weekend')).toMatchObject({ redirect: '/class/weekend' })
   })
 
-  it('四个子模块各自带名称与图标（侧边栏展平渲染靠它）', () => {
-    const children = (classRoute?.children ?? []).filter((child) => child.path !== '')
+  it('四个子模块各自带名称与图标（枢纽页卡片跳转靠它）', () => {
+    const children = (classRoute?.children ?? []).filter(
+      (child) => child.path !== '' && !child.redirect,
+    )
     for (const child of children) {
       expect(child.meta?.title).toBeTruthy()
       expect(child.meta?.icon).toBeTruthy()

@@ -29,3 +29,9 @@ dev-dist
 
 # WorkBuddy 会话本地数据（记忆 / 日志，不入库）
 .workbuddy/
+
+# 设计母项目参考（Changdu Memory，含自身 node_modules，不进本仓库）
+docs/昌都记忆/
+
+# TS 增量构建信息
+*.tsbuildinfo

@@ -92,7 +92,7 @@ function clear() {
   position: relative;
   display: inline-flex;
   width: 100%;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-input);
 }
 
 .input-inner {

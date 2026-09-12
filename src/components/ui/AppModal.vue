@@ -165,11 +165,11 @@ onBeforeUnmount(() => {
   /* 64px = 遮罩上下内边距（各 20px）外再留一点余量；安全区也要减掉，否则高屏机上会顶出屏幕 */
   max-height: calc(100vh - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
-  padding: var(--space-6);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-page);
+  background: var(--color-bg-white);
+  border: none;
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-xl);
   outline: none;
 }
 
@@ -182,9 +182,10 @@ onBeforeUnmount(() => {
 }
 
 .modal-title {
-  font-size: var(--text-lg);
-  font-weight: 700;
+  font-size: var(--font-card-title, 18px);
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.2px;
+  color: var(--color-text-primary);
 }
 
 .modal-close {
@@ -223,12 +224,13 @@ onBeforeUnmount(() => {
 
 .modal-enter-active,
 .modal-leave-active {
-  transition: opacity var(--duration-normal) ease;
+  transition: opacity var(--duration-fast) ease;
 }
 
 .modal-enter-active .modal-panel,
 .modal-leave-active .modal-panel {
-  transition: transform var(--duration-normal) var(--ease-standard);
+  /* CDL 弹窗入场：spring 曲线 + 40px 上滑（与 Changdu Memory modal-sheet 一致） */
+  transition: transform var(--duration-normal) var(--ease-spring);
 }
 
 .modal-enter-from,
@@ -236,11 +238,8 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.modal-enter-from .modal-panel {
-  transform: translateY(16px) scale(0.97);
-}
-
+.modal-enter-from .modal-panel,
 .modal-leave-to .modal-panel {
-  transform: translateY(10px) scale(0.98);
+  transform: translateY(40px);
 }
 </style>

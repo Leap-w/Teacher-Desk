@@ -3,17 +3,20 @@ interface Props {
   title?: string
   subtitle?: string
   padding?: 'none' | 'compact' | 'normal'
+  /** hover 上浮（CDL AppCard 同款动效）；默认只做轻阴影变化 */
+  hoverable?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
   title: '',
   subtitle: '',
   padding: 'normal',
+  hoverable: false,
 })
 </script>
 
 <template>
-  <section class="app-card" :class="`padding-${padding}`">
+  <section class="app-card" :class="[`padding-${padding}`, { 'app-card--hoverable': hoverable }]">
     <header v-if="title || $slots.actions" class="card-header">
       <div class="card-heading">
         <h3 class="card-title">{{ title }}</h3>
@@ -30,26 +33,41 @@ withDefaults(defineProps<Props>(), {
 </template>
 
 <style scoped>
+/* CDL AppCard：毛玻璃 + 24px 圆角 + 轻阴影（与 Changdu Memory 同一份实现） */
 .app-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  background: var(--glass-bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   transition:
-    box-shadow var(--transition-base),
-    transform var(--transition-base);
+    box-shadow var(--transition-spring),
+    transform var(--transition-spring),
+    border-color var(--transition-spring);
 }
 
 .app-card:hover {
   box-shadow: var(--shadow-md);
 }
 
+/* hoverable：CDL 上浮动效（点击型卡片用） */
+.app-card--hoverable {
+  cursor: pointer;
+}
+
+.app-card--hoverable:hover {
+  border-color: transparent;
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-3px);
+}
+
 .padding-normal {
-  padding: 22px;
+  padding: var(--spacing-page);
 }
 
 .padding-compact {
-  padding: 14px 16px;
+  padding: var(--spacing-md) var(--spacing-card);
 }
 
 .padding-none {
@@ -61,19 +79,19 @@ withDefaults(defineProps<Props>(), {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: var(--spacing-card);
 }
 
 .card-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold, 600);
+  color: var(--color-text-primary);
 }
 
 .card-subtitle {
   margin-top: 2px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
 }
 
 .card-actions {

@@ -200,32 +200,42 @@ const aboutOpen = ref(false)
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--spacing-xl);
 }
 
 .page-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px 14px;
   margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .page-title {
   margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.4px;
+  font-size: var(--font-page-title, 32px);
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  line-height: 1.2;
 }
 
 .page-subtitle {
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  margin: 0;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 
+/* CDL 菜单卡：毛玻璃 + 24px 圆角 + 卡内标题 */
 .settings-group {
-  padding: var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--glass-bg-card);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
   transition:
     box-shadow var(--transition-fast),
     border-color var(--transition-fast);
@@ -234,26 +244,28 @@ const aboutOpen = ref(false)
 /* 从功能页 ⚙ 跳来时的定位高亮 */
 .settings-group.is-flash {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-soft);
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
 }
 
 .group-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-secondary);
+  margin: 0;
+  padding: var(--spacing-lg) var(--spacing-page) var(--space-1);
+  font-size: var(--font-section-title, 20px);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
 }
 
 .group-icon {
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .row-list {
   display: flex;
   flex-direction: column;
+  padding: var(--space-2) var(--spacing-md) var(--spacing-md);
 }
 
 .setting-row {
@@ -272,7 +284,7 @@ const aboutOpen = ref(false)
 }
 
 .setting-row:hover:not(:disabled) {
-  background: var(--color-fill-disabled);
+  background: var(--color-bg-subtle);
 }
 
 .setting-row:focus-visible {
@@ -286,8 +298,8 @@ const aboutOpen = ref(false)
 
 .row-label {
   font-size: var(--text-md);
-  font-weight: 500;
-  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
 }
 
 .row-side {
@@ -299,16 +311,17 @@ const aboutOpen = ref(false)
 
 .row-value {
   font-size: var(--text-sm);
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .row-chevron {
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
   font-size: var(--text-lg);
   line-height: 1;
+  opacity: 0.4;
 }
 
 /* ---- 关于 ---- */
@@ -322,15 +335,15 @@ const aboutOpen = ref(false)
 
 .about-name {
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-primary-strong);
+  font-size: var(--font-card-title, 18px);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary-dark);
 }
 
 .about-version {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--color-text-faint);
+  color: var(--color-text-tertiary);
 }
 
 .about-text {
