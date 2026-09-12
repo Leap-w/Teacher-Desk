@@ -6,6 +6,37 @@
 
 ---
 
+## v2.0.2-alpha —— Phase UI-3 · Dashboard 今日工作中心（2026-09-13，tag `v2.0.2-alpha`）
+
+> 只重构首页；路由 / Store / 数据结构 / localStorage Key / CloudBase / 业务逻辑零改动。数据全部来自既有 Store（课程表 / 待办 / 值日 / 请假 / 周末返校），无数据走 EmptyState，不伪造业务数据。详见开发手册 **§9.40**。
+
+### 新增（Dashboard 组件体系，`src/components/dashboard/`）
+
+- **DashboardSection**：通用分区（标题 / 副标题 / 右侧动作链接），后续模块页可复用。
+- **DashboardHero**：问候 + 日期 + 身份标签；约 200px、极轻渐变、首次进入 200ms 渐入。
+- **DashboardStatCard**：统一统计卡（左图标 / 中数字 28px / 下说明），可选整卡跳转，Hover 2px 抬升。
+- **QuickActionGrid**：快捷操作宫格（图标置顶 + 标题 + 描述，Hover 背景轻亮），桌面 4 列 / 平板 2 列 / 手机 1 列。
+- **ActivityTimeline**：活动时间轴（图标语义色 + 逐项 200ms 渐入、依次延迟 60ms），空态走插槽。
+- **NextCourseCard**（首页专属）：下一节课大卡四态状态机（正在上课·剩 N 分钟 / 下一节·N 分钟后 / 今天课上完 / 今天没有课）。
+- **EmptyState** 复用既有 `components/ui/EmptyState.vue`（Lucide + 松石青，UI-1 已统一）。
+
+### 变化
+
+- **首页四层结构**（替换 v1.3.1 的 Hero 倒计时 + 日期栏 + 六小卡 + 五入口）：
+  - Layer 1 Hero：时段问候（greetingByHour + 昵称）+「今天是 …· 星期 X」+ 右侧`高一9班 · 班主任`/`数学 教师`标签；
+  - Layer 2 今日工作：下一节课大卡（真实课程表 + 30s 时钟实时状态）+ 今日待办三统计卡（总数/已完成/未完成）+ 班级动态（真实事件：新请假 / 今日值日 / 周末返校，空态 EmptyState）；
+  - Layer 3 快捷操作四宫格（学生档案 / 座位管理 / 请假管理 / 工作清单）；
+  - Layer 4 最近活动时间轴（**占位状态**：操作足迹数据源未建，明示不伪造记录）。
+- 删除 `HeroSection.vue`（雪山倒计时）与 `HomeDateBar.vue`（倒计时数据仍归「我的」页工作时光使用，未受影响）。
+- 产品定位转变：首页不承担导航职责而承担**决策职责**——今天要做什么在第一屏，功能入口降级为快捷操作。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸视口仿真：1440（两列布局 + 四宫格 4 列）、768（一列 + 宫格 2 列）、390（全部一列 + 宫格 1 列）；Hero 问候/日期/双标签、下一节课空态（周日无课）、统计卡 3/0/3、班级动态真实 2 条（新请假 2 人 · 周末返校 3 人）、最近活动占位，全部断言通过 + 截图复核。
+
+---
+
 ## v2.0.1-alpha —— Phase UI-2 · App Shell（原生 App 框架）（2026-09-13，tag `v2.0.1-alpha`）
 
 > 只重构应用框架：Header / Sidebar / Footer / 页面容器 / 切换动画；路由结构、Store、localStorage Key、CloudBase、业务功能零改动。详见开发手册 **§9.39**。
