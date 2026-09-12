@@ -5,6 +5,7 @@ import { AppButton } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useWorkStore } from '@/stores/work'
 import type { WorkCategory, WorkFilter, WorkItem } from '@/types/work'
+import { sortWorks, weekEndOf } from '@/utils/work'
 import WorkEditDrawer from './components/WorkEditDrawer.vue'
 import WorkImportModal from './components/WorkImportModal.vue'
 import WorkRow from './components/WorkRow.vue'
@@ -32,6 +33,12 @@ const todayList = computed(() => workStore.todayList)
 
 /** 本周剩余（明天起、本周日止，未完成） */
 const weekList = computed(() => workStore.weekList)
+
+/** 稍后（本周日之后且未完成）——没有这一组，「全部」视图里下周的任务会凭空消失 */
+const laterList = computed(() => {
+  const weekEnd = weekEndOf(workStore.today)
+  return sortWorks(workStore.works.filter((work) => work.status !== 'done' && work.date > weekEnd))
+})
 
 /** 已逾期未完成 */
 const overdueList = computed(() =>
@@ -187,8 +194,25 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
         />
       </section>
 
+      <section v-if="laterList.length > 0" class="work-section">
+        <h2 class="section-title">稍后</h2>
+        <WorkRow
+          v-for="work in laterList"
+          :key="work.id"
+          :work="work"
+          @toggle="toggleDone"
+          @edit="openEdit"
+          @remove="remove"
+        />
+      </section>
+
       <section
-        v-if="overdueList.length === 0 && todayList.length === 0 && weekList.length === 0"
+        v-if="
+          overdueList.length === 0 &&
+          todayList.length === 0 &&
+          weekList.length === 0 &&
+          laterList.length === 0
+        "
         class="empty"
       >
         <p class="empty-title">🎉</p>

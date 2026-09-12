@@ -78,6 +78,11 @@ export function weekStartOf(isoDate: string): string {
   return addDays(isoDate, 1 - weekday)
 }
 
+/** 该日期所在周的周日（本周最后一天；「本周剩余」的上界） */
+export function weekEndOf(isoDate: string): string {
+  return addDays(weekStartOf(isoDate), 6)
+}
+
 /** 日期展示文案：今天 / 明天 / 昨天 / 9月14日（周一） */
 export function workDateLabel(date: string, today: string = isoDateOf()): string {
   if (date === today) return '今天'
@@ -150,7 +155,7 @@ export function todayWorks(works: readonly WorkItem[], today: string = isoDateOf
 
 /** 本周剩余：归属日期在「明天 ~ 本周日」之间且未完成 */
 export function weekWorks(works: readonly WorkItem[], today: string = isoDateOf()): WorkItem[] {
-  const weekEnd = addDays(weekStartOf(today), 6)
+  const weekEnd = weekEndOf(today)
   const tomorrow = addDays(today, 1)
   return sortWorks(
     works.filter((work) => !isWorkDone(work) && work.date >= tomorrow && work.date <= weekEnd),

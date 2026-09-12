@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { RouterView, createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 
 declare module 'vue-router' {
@@ -32,7 +32,10 @@ export const routes: RouteRecordRaw[] = [
   },
   {
     path: '/work',
-    component: { template: '<router-view />' },
+    // 「工作管理」父级只负责布局出口：直接复用 vue-router 的 RouterView 组件
+    // （**不能用** `{ template: '<router-view />' }`——本项目 Vue 构建不含运行时模板编译器，
+    //  内联 template 会整页空白且无报错弹窗，真机验收时才暴露）
+    component: RouterView,
     meta: { title: '工作管理', icon: '📋' },
     children: [
       {
