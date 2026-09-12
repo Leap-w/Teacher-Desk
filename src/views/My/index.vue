@@ -12,6 +12,7 @@ import {
   NotebookPen,
   Paintbrush,
   UserRound,
+  X,
   type LucideIcon,
 } from 'lucide-vue-next'
 
@@ -354,7 +355,7 @@ function checkUpdate(): void {
               aria-label="删除头像"
               @click="removeAvatar"
             >
-              ✕
+              <X :size="12" :stroke-width="2" aria-hidden="true" />
             </button>
             <input
               ref="avatarInput"

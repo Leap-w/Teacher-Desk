@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CheckmarkOutline } from '@vicons/ionicons5'
+import { Check } from 'lucide-vue-next'
 
 import { AppBadge, AppButton } from '@/components/ui'
 import type { WorkItem } from '@/types/work'
@@ -37,7 +37,7 @@ function priorityVariant(priority: WorkItem['priority']): 'neutral' | 'warning' 
       :aria-label="work.status === 'done' ? '取消完成' : '标记完成'"
       @click="emit('toggle', work)"
     >
-      <CheckmarkOutline v-if="work.status === 'done'" class="work-check-icon" />
+      <Check v-if="work.status === 'done'" class="work-check-icon" :stroke-width="2" />
     </button>
 
     <div class="work-main">

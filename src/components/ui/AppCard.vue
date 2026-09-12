@@ -78,14 +78,14 @@ withDefaults(defineProps<Props>(), {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   margin-bottom: var(--spacing-card);
 }
 
 .card-title {
-  /* V5.2 卡片标题：26–30px Bold */
+  /* V6.0 卡片标题：26px / 600（UI-1 字重收敛） */
   font-size: var(--font-card-title);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
@@ -98,6 +98,6 @@ withDefaults(defineProps<Props>(), {
 .card-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 </style>

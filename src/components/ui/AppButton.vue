@@ -38,7 +38,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border: none;
   cursor: pointer;
   border-radius: var(--radius-button);
@@ -51,8 +51,18 @@ const isDisabled = computed(() => props.disabled || props.loading)
     opacity var(--transition-fast);
 }
 
+.app-button:hover:not(:disabled) {
+  /* UI-7：按钮 hover 轻微抬升 */
+  transform: translateY(-1px);
+}
+
 .app-button:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.app-button:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 .app-button:disabled {
@@ -62,25 +72,29 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .is-md {
   height: 40px;
-  padding: 0 20px;
+  padding: 0 var(--space-5);
   font-size: var(--text-md);
 }
 
 .is-sm {
   height: 32px;
-  padding: 0 14px;
+  padding: 0 var(--space-4);
   font-size: var(--text-sm);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
 }
 
 .is-primary {
   background: var(--color-primary);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(75, 143, 140, 0.28);
+  box-shadow: var(--shadow-primary-glow);
 }
 
 .is-primary:hover:not(:disabled) {
-  background: var(--color-primary-dark);
+  background: var(--color-primary-hover);
+}
+
+.is-primary:active:not(:disabled) {
+  background: var(--color-primary-active);
 }
 
 .is-secondary {
@@ -98,14 +112,14 @@ const isDisabled = computed(() => props.disabled || props.loading)
 }
 
 .is-ghost:hover:not(:disabled) {
-  background: rgba(16, 24, 32, 0.05);
+  background: var(--bg-hover);
   color: var(--color-text-primary);
 }
 
 .is-danger {
   background: var(--color-danger);
   color: #ffffff;
-  box-shadow: 0 4px 12px rgba(194, 103, 106, 0.28);
+  box-shadow: var(--shadow-danger-glow);
 }
 
 .is-danger:hover:not(:disabled) {
@@ -116,7 +130,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid rgba(75, 143, 140, 0.25);
+  border: 2px solid var(--color-primary-soft);
   border-top-color: var(--color-primary);
   animation: spin 0.7s linear infinite;
 }

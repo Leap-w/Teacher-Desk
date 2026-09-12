@@ -1,14 +1,24 @@
 /**
- * TeacherDesk 设计变量 — Changdu Design Language (CDL) v5.1.4 共享令牌
+ * TeacherDesk 设计变量 — Changdu Design Language (CDL) v6.0 共享令牌
+ * （V2.0.0-alpha · Phase UI-1 Design System Foundation）
  *
  * 令牌本体来自 Changdu Memory `src/styles/variables.css`（设计母项目），
  * 下方「TeacherDesk 兼容别名」把旧变量名映射到 CDL 取值——
  * 两个项目从此共用同一套设计语言：改令牌只改这里，UnoCSS 已打通（见 uno.config.ts）。
+ *
+ * UI-1 纪律：
+ * - 页面禁止硬编码颜色 / 圆角 / 阴影 / 字号，一律引用本文件令牌；
+ * - 圆角五值刻度 xs=8 / sm=12 / md=16 / lg=20 / xl=24；
+ * - 间距命名刻度走 8pt Grid（xs/sm/md/lg/xl/2xl），--space-N 数字阶梯是 4pt 子网格；
+ * - 字重只用 400 / 500 / 600（bold 令牌已重定义为 600）；
+ * - 动效时长只用 150 / 200 / 300ms。
  */
 :root {
   /* ========== 1. 主色 — 高原青（昌都记忆 V5.2） ========== */
   --color-primary: #4a8c94;
-  --color-primary-dark: #3a7175; /* 按钮 hover / active */
+  --color-primary-hover: #3a7175; /* UI-1 规范命名 */
+  --color-primary-active: #336264; /* hover 再深一档 */
+  --color-primary-dark: #3a7175; /* 按钮 hover / active（兼容别名 = hover） */
   --color-primary-strong: #3a7175; /* TeacherDesk 兼容别名 */
   --color-primary-light: #e8f3f3;
   --color-primary-soft: rgba(74, 140, 148, 0.12);
@@ -41,9 +51,12 @@
   --color-danger-soft: rgba(194, 103, 106, 0.12);
   --color-info: #4b8f8c;
 
-  /* ========== 4. 背景系统（V5.2） ========== */
-  --color-bg: #fafaf8;
-  --bg-main: #fafaf8; /* TeacherDesk 兼容别名 */
+  /* ========== 4. 背景系统（V6.0：页面底 #F8FAFB + 卡片纯白） ========== */
+  --bg-page: #f8fafb; /* UI-1 规范命名 */
+  --color-bg: #f8fafb;
+  --bg-main: #f8fafb; /* TeacherDesk 兼容别名 */
+  --bg-card: #ffffff; /* UI-1 规范命名 */
+  --bg-hover: rgba(15, 23, 42, 0.04); /* 柔和 hover（ghost 按钮 / 列表行） */
   --color-bg-white: #ffffff;
   --color-surface: #ffffff; /* TeacherDesk 兼容别名 */
   --color-bg-card: #ffffff;
@@ -56,26 +69,29 @@
   --color-text-secondary: #5f6f71;
   --color-text-faint: #8c9a9b; /* TeacherDesk 兼容别名 → 辅助文字 */
   --color-text-tertiary: #8c9a9b;
+  --color-text-disabled: #b3bdc0; /* 禁用态文字（UI-1 新增） */
   --color-text-inverse: #ffffff;
 
-  /* ========== 6. 边框（V5.2：rgba(15,23,42,.08) 体系） ========== */
+  /* ========== 6. 边框（V6.0：rgba(15,23,42,.08) 体系；厚度统一 1px） ========== */
+  --border-hairline-width: 1px;
   --color-border: rgba(15, 23, 42, 0.08);
   --color-border-light: rgba(15, 23, 42, 0.05);
+  --color-border-divider: rgba(15, 23, 42, 0.06); /* 分隔线专用 */
   --color-border-medium: rgba(15, 23, 42, 0.1);
   --color-border-strong: rgba(15, 23, 42, 0.12); /* TeacherDesk 兼容别名 */
   --color-border-emphasis: rgba(15, 23, 42, 0.18); /* TeacherDesk 兼容别名 */
   --color-fill-disabled: rgba(15, 23, 42, 0.04);
 
-  /* ========== 7. 间距（CDL 间距体系；--space-N 为 TeacherDesk 别名） ========== */
+  /* ========== 7. 间距（UI-1：命名刻度 8pt Grid；--space-N 为 4pt 子网格别名） ========== */
   --spacing-3xs: 2px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
-  --spacing-md: 12px;
-  --spacing-card: 16px;
-  --spacing-lg: 20px;
-  --spacing-page: 24px;
+  --spacing-md: 16px;
+  --spacing-card: var(--spacing-md);
+  --spacing-lg: 24px;
+  --spacing-page: var(--spacing-lg);
   --spacing-xl: 32px;
-  --spacing-2xl: 40px;
+  --spacing-2xl: 48px;
   --spacing-3xl: 48px;
   --spacing-4xl: 64px;
   --space-1: 4px;
@@ -86,7 +102,7 @@
   --space-6: 24px;
   --space-7: 32px;
 
-  /* ========== 8. 字号（V5.2 字体层级：页题 56–64 / 卡题 26–30 / 正文 16 / 辅助 14） ========== */
+  /* ========== 8. 字号（V6.0 层级：Display / H1 / H2 / H3 / Body / Caption） ========== */
   --font-hero-num: clamp(56px, 7vw, 72px);
   --font-hero-title: clamp(56px, 6vw, 64px);
   --font-page-title: clamp(56px, 6vw, 64px); /* 一级标题 */
@@ -101,53 +117,66 @@
   --text-md: 14px; /* = --font-secondary */
   --text-lg: 17px;
   --text-xl: 22px;
+  /* UI-1 语义层级别名（指向上方实际取值，页面优先用这一组） */
+  --font-display: var(--font-hero-title); /* 首页欢迎 */
+  --font-h1: var(--font-page-title); /* 页面标题 */
+  --font-h2: var(--font-section-title); /* 分区标题 */
+  --font-h3: var(--font-card-title); /* 卡片标题 */
+  --font-body: var(--font-content); /* 正文 */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --font-weight-bold: 700;
-  --font-weight-extrabold: 800;
+  /* UI-1 规范：字重只用 400 / 500 / 600。bold 令牌重定义为 600，历史引用自动收敛 */
+  --font-weight-bold: 600;
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.7;
 
-  /* ========== 9. 圆角（CDL：卡片 24px） ========== */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
+  /* ========== 9. 圆角（UI-1 五值刻度：xs=8 / sm=12 / md=16 / lg=20 / xl=24） ========== */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
   --radius-lg: 20px;
   --radius-xl: 24px;
   --radius-2xl: 32px;
-  --radius-card: 24px;
-  --radius-button: 12px;
-  --radius-input: 12px;
+  --radius-card: var(--radius-xl);
+  --radius-button: var(--radius-sm); /* 按钮固定 12px，不随刻度漂移 */
+  --radius-input: var(--radius-sm); /* 输入框固定 12px */
   --radius-full: 9999px;
 
-  /* ========== 10. 阴影（CDL 轻量化阴影） ========== */
+  /* ========== 10. 阴影（CDL 轻量化阴影：模糊、浅、克制，非 Material） ========== */
   --shadow-xs: 0 1px 2px rgba(16, 24, 32, 0.03);
   --shadow-sm: 0 1px 3px rgba(16, 24, 32, 0.04);
-  --shadow-card: 0 10px 30px -8px rgba(16, 24, 32, 0.04);
   --shadow-md: 0 8px 24px rgba(16, 24, 32, 0.05);
+  --shadow-card: 0 10px 30px -8px rgba(16, 24, 32, 0.04);
   --shadow-lg: 0 16px 36px rgba(16, 24, 32, 0.06);
   --shadow-xl: 0 20px 48px rgba(16, 24, 32, 0.07);
   --shadow-hover: 0 20px 40px -12px rgba(16, 24, 32, 0.09);
+  /* 品牌色按钮光晕（从 AppButton 内联 rgba 收敛为令牌） */
+  --shadow-primary-glow: 0 4px 12px rgba(74, 140, 148, 0.28);
+  --shadow-danger-glow: 0 4px 12px rgba(194, 103, 106, 0.28);
 
-  /* ========== 11. 毛玻璃（CDL：导航 / 卡片 / 弹窗遮罩） ========== */
+  /* ========== 11. 毛玻璃（CDL：导航 / 卡片 / 弹窗遮罩；UI-1 仅建立能力，UI-2 才大规模应用） ========== */
   --glass-bg: rgba(255, 255, 255, 0.75);
   --glass-bg-card: rgba(255, 255, 255, 0.85);
   --glass-border: rgba(255, 255, 255, 0.75);
   --glass-blur: blur(20px);
+  --glass-blur-overlay: blur(6px) saturate(120%); /* 弹窗 / 遮罩 backdrop（从 AppModal 收敛） */
 
-  /* ========== 12. 动效（CDL 单一动效体系） ==========
+  /* ========== 12. 动效（UI-1：时长只用 150 / 200 / 300ms） ==========
      全项目只有一条弹性曲线：CDL spring（0.16, 1, 0.3, 1）。
-     --ease-standard 被重定义为 spring——所有既有组件引用它的地方自动统一，不再有第二套动画。 */
+     --ease-standard 被重定义为 spring——所有既有组件引用它的地方自动统一，不再有第二套动画。
+     --ease-out 供线性收敛类微交互（hover / focus）选用，不与 spring 混用于同一属性。 */
   --duration-fast: 150ms;
+  --duration-base: 200ms; /* UI-1 新增：常规微交互 */
   --duration-normal: 300ms;
   --duration-slow: 400ms;
   --duration-flip: 300ms; /* 排座双视角翻转专用（需求约定约 300ms） */
   --ease-standard: cubic-bezier(0.16, 1, 0.3, 1); /* CDL spring */
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1); /* UI-1 新增 */
   --transition-fast: 150ms ease;
-  --transition-base: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base: 200ms var(--ease-out); /* UI-1：200ms + ease-out */
   --transition-spring: 350ms cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ========== 13. 焦点 / 遮罩 / 层级 ========== */

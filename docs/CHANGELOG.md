@@ -6,6 +6,26 @@
 
 ---
 
+## v2.0.0-alpha —— Phase UI-1 · Design System Foundation（V2.0 视觉重构起点）（2026-09-13，tag `v2.0.0-alpha`）
+
+> 只动视觉底层：Design Token / UnoCSS Theme / 基础组件 / 图标；路由、Store、数据结构、localStorage Key、CloudBase、业务功能零改动。详见开发手册 **§9.38**。
+
+### 变化
+
+- **圆角五值刻度**：xs=8 / sm=12 / md=16 / lg=20 / xl=24（全站 79 处引用自动上移一档，按钮 / 输入框钉 12px 不漂移）。
+- **间距 8pt Grid**：命名刻度 xs4 / sm8 / md16 / lg24 / xl32 / 2xl48（`--spacing-md` 12→16、`--spacing-lg` 20→24）。
+- **页面底色** `#FAFAF8` → `#F8FAFB`；新增 `--bg-page / --bg-card / --bg-hover / --color-text-disabled` 等规范命名令牌。
+- **字重收敛 400/500/600**：bold 令牌重定义为 600（14 处历史引用自动收敛）、extrabold 删除；新增 Display/H1/H2/H3/Body 语义层级别名。
+- **动效**：新增 200ms 档与 `--ease-out`；CDL spring 仍为全局唯一曲线。
+- **组件清理**：AppButton 去 magic number（10px 圆角、内联光晕阴影）全部令牌化，补 hover 轻抬升 + 统一 Focus Ring；AppCard / AppModal 标题 600 字重；弹窗遮罩 blur 令牌化。
+- **图标 100% Lucide**：移除 `@vicons/ionicons5` 依赖；4 处 ✓ / ⚠ / ✕ 文本字符替换为 Lucide 图标。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿；无头 Chrome 四页实测背景 #F8FAFB / 圆角 16px / 字重 600 / 按钮 12px + 截图复核。
+
+---
+
 ## v1.3.2 —— 「我的」重构为个人中心 + 设置中心（我的1.3 同源版）（2026-09-13，tag `v1.3.2`）
 
 > 只重构「我的」页与设置交互；Pinia / CloudBase / localStorage 既有结构 / SeatPlan / 导出零改动。详见开发手册 **§9.37**。

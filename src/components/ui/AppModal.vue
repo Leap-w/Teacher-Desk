@@ -156,8 +156,8 @@ onBeforeUnmount(() => {
     calc(var(--space-5) + env(safe-area-inset-bottom, 0px))
     calc(var(--space-5) + env(safe-area-inset-left, 0px));
   background: var(--overlay-scrim);
-  backdrop-filter: blur(6px) saturate(120%);
-  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  backdrop-filter: var(--glass-blur-overlay);
+  -webkit-backdrop-filter: var(--glass-blur-overlay);
 }
 
 .modal-panel {
@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
 
 .modal-title {
   font-size: var(--font-card-title, 18px);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.2px;
   color: var(--color-text-primary);
 }

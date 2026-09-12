@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Check, TriangleAlert } from 'lucide-vue-next'
+
 import { AppButton, AppCard } from '@/components/ui'
 import { CONSTRAINT_OK_LINES } from '@/utils/constraint'
 import type { ConstraintGroup, ConstraintIssue } from '@/utils/constraint'
@@ -45,7 +47,9 @@ function issuesOf(group: ConstraintGroup, issues: ConstraintIssue[]): Constraint
     <ul class="constraint-list">
       <template v-for="group in GROUPS" :key="group.key">
         <li v-if="issuesOf(group.key, issues).length === 0" class="constraint-ok">
-          <span class="constraint-mark is-ok" aria-hidden="true">✓</span>
+          <span class="constraint-mark is-ok" aria-hidden="true">
+            <Check :size="14" :stroke-width="2.5" />
+          </span>
           {{ group.ok }}
         </li>
         <li v-else>
@@ -58,7 +62,9 @@ function issuesOf(group: ConstraintGroup, issues: ConstraintIssue[]): Constraint
             :title="`定位：${issue.studentIds.length} 名学生`"
             @click="emit('locate', issue)"
           >
-            <span class="constraint-mark" aria-hidden="true">⚠</span>
+            <span class="constraint-mark" aria-hidden="true">
+              <TriangleAlert :size="14" :stroke-width="2.5" />
+            </span>
             <span class="constraint-text">{{ issue.message }}</span>
           </button>
         </li>
@@ -104,7 +110,7 @@ function issuesOf(group: ConstraintGroup, issues: ConstraintIssue[]): Constraint
 
 .constraint-mark {
   flex-shrink: 0;
-  font-weight: 700;
+  display: inline-flex;
   line-height: 1.5;
 }
 

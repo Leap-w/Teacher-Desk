@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { X } from 'lucide-vue-next'
+
 import { AppButton, AppModal } from '@/components/ui'
 import { useConstraintStore } from '@/stores/constraint'
 import { formatStudentShortName } from '@/utils/student'
@@ -93,7 +95,7 @@ function close() {
             title="删除约束"
             @click="constraintStore.remove(item.id)"
           >
-            ✕
+            <X :size="14" :stroke-width="2" aria-hidden="true" />
           </button>
         </div>
       </li>

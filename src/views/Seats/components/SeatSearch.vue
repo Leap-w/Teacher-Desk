@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { X } from 'lucide-vue-next'
 
 import { formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
@@ -101,7 +102,7 @@ function onBlur() {
       @pointerdown.prevent
       @click="reset"
     >
-      ✕
+      <X :size="12" :stroke-width="2" aria-hidden="true" />
     </button>
 
     <ul v-if="open && query.trim()" class="seat-search-pop" role="listbox">

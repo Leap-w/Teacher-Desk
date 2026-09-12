@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { DownloadOutline } from '@vicons/ionicons5'
+import { Download } from 'lucide-vue-next'
 
 import { AppButton } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
@@ -35,7 +35,7 @@ const reminder = computed(() => backupReminder(lastBackupAt.value, now.value))
     :class="`is-${reminder.level}`"
     role="status"
   >
-    <span class="notice-icon" aria-hidden="true"><DownloadOutline /></span>
+    <span class="notice-icon" aria-hidden="true"><Download :size="18" :stroke-width="2" /></span>
     <p class="notice-text">{{ reminder.text }}</p>
     <AppButton size="sm" variant="secondary" @click="router.push('/toolbox')">
       去导出备份

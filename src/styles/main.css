@@ -46,13 +46,14 @@ ol {
 }
 
 ::selection {
-  background: rgba(75, 143, 140, 0.2);
+  background: var(--color-primary-soft-strong);
 }
 
 :focus-visible {
+  /* 统一 Focus Ring：2px 主色描边（宽度不在令牌体系内，可访问性优先） */
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 @media (prefers-reduced-motion: reduce) {
