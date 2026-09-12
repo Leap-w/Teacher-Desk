@@ -55,6 +55,38 @@ export function isValidDormitory(value: unknown, gender?: unknown): value is str
 }
 
 /**
+ * 「＋ 自定义」的**哨兵值，绝不写入模型**——它只负责把输入框亮出来，提交时取输入框里的文本。
+ * 之所以要绕这一下：`AppSelect` 包的是原生 `<select>`，没有「既可选又可输入」这一档
+ * （§11.5 不为一个表单控件引入组件库）。
+ *
+ * Phase 5B 起从 `StudentFormModal.vue` 上移到此处：批量修改弹窗要用同一份清单，
+ * 各定义一份的话，加一个职务就要改两个地方（§11.1）。
+ */
+export const CADRE_CUSTOM = '__custom__'
+
+/**
+ * 班委职务选项。首项「无」（空值 = 非班委），末项是自定义哨兵。
+ * 批量修改与新增/编辑表单**共用这一份**；下拉里那两个「不修改 / 清空」之类的
+ * 批量专用项由弹窗自己拼接，不混进来。
+ */
+export const CADRE_OPTIONS: SelectOption<string>[] = [
+  { label: '无', value: '' },
+  { label: '班长', value: '班长' },
+  { label: '副班长', value: '副班长' },
+  { label: '学习委员', value: '学习委员' },
+  { label: '体育委员', value: '体育委员' },
+  { label: '文艺委员', value: '文艺委员' },
+  { label: '劳动委员', value: '劳动委员' },
+  { label: '生活委员', value: '生活委员' },
+  { label: '＋ 自定义…', value: CADRE_CUSTOM },
+]
+
+/** 除「无」与哨兵以外的预设职务，用于判断既有值是否属于预设（表单回填时要区分） */
+export const PRESET_CADRES: string[] = CADRE_OPTIONS.map((option) => option.value).filter(
+  (value) => value !== '' && value !== CADRE_CUSTOM,
+)
+
+/**
  * 历史数据升级（load 时逐条调用）：为缺失的家庭信息补安全默认值，
  * 保证升级数据模型后旧 localStorage 数据可正常加载、不被覆盖。
  */

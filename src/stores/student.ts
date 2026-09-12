@@ -7,8 +7,12 @@ import { readList, writeSeedJSON } from '@/services/storage'
 import type { StudentImportPlan } from '@/services/studentImport'
 import { syncPersisted } from '@/services/sync'
 import { createId } from '@/utils/id'
+import { buildBatchPatch } from '@/utils/studentBatch'
+import type { StudentBatchChanges } from '@/utils/studentBatch'
+import { queryStudents } from '@/utils/studentQuery'
+import type { StudentQueryOptions } from '@/utils/studentQuery'
 import { normalizeStudent } from '@/utils/student'
-import type { Gender, Student, StudentInput } from '@/types'
+import type { Student, StudentInput } from '@/types'
 
 const STORAGE_KEY = `${appConfig.storageKeyPrefix}:students`
 
@@ -36,10 +40,11 @@ function loadStudents(): Student[] {
   return reviveStudents(stored)
 }
 
-export interface StudentSearchOptions {
-  gender?: Gender
-  cadreOnly?: boolean
-}
+/**
+ * 列表检索选项。**与纯函数层的 `StudentQueryOptions` 是同一个形状**（Phase 5B）：
+ * 检索与排序的规则只有一份实现（`utils/studentQuery.ts`），这里不再抄一遍字段。
+ */
+export type StudentSearchOptions = StudentQueryOptions
 
 export const useStudentStore = defineStore('student', () => {
   /** 全部学生（含软删除记录） */
@@ -53,18 +58,16 @@ export const useStudentStore = defineStore('student', () => {
   // 这条链在第二次写盘处自然终止，不会两个入口互相触发
   syncPersisted(STORAGE_KEY, students, reviveStudents)
 
-  /** 关键词搜索 + 筛选（仅活跃学生），按学号升序返回 */
+  /**
+   * 关键词搜索 + 筛选 + 排序（仅活跃学生）。
+   *
+   * **规则全在纯函数 `queryStudents()` 里**（Phase 5B）：这里只负责喂数据源。
+   * 这样列表页的「students → filter → sort → render」管道只有一个出口，
+   * 而规则本身能脱离浏览器单测（不碰 DOM、不碰 localStorage）。
+   * 缺省排序是学号升序、**空学号排最后**（Phase 5A 允许空学号后，它们曾顶在名单最前）。
+   */
   function searchStudents(keyword = '', options: StudentSearchOptions = {}): Student[] {
-    const query = keyword.trim().toLowerCase()
-    const matched = activeStudents.value
-      .filter((item) => (options.gender ? item.gender === options.gender : true))
-      .filter((item) => (options.cadreOnly ? Boolean(item.cadreRole) : true))
-      .filter((item) => {
-        if (!query) return true
-        const haystack = [item.name, item.studentNo, item.dormitory ?? '', ...(item.tags ?? [])]
-        return haystack.join(' ').toLowerCase().includes(query)
-      })
-    return [...matched].sort((a, b) => a.studentNo.localeCompare(b.studentNo))
+    return queryStudents(activeStudents.value, { ...options, keyword })
   }
 
   /**
@@ -130,6 +133,52 @@ export const useStudentStore = defineStore('student', () => {
     return { added: adds.length, updated }
   }
 
+  /**
+   * 批量修改落库（Phase 5B）：把同一份修改一次性应用到选中的学生上。
+   *
+   * **一次整体替换 = 一次写盘 + 一次广播**，理由与 `applyStudentImport` 完全相同：
+   * 循环调 `updateStudent()` 的话，选 30 个人就是 30 次写盘 + 30 次广播。
+   * （组件层不得绕过这里直接写 `students.value`，§11.3。）
+   *
+   * 补丁由纯函数 `buildBatchPatch()` 构造——性别与宿舍是否匹配、标签如何去重、
+   * 「没变化」与「不适用」怎么区分，规则都在那边，因此可以脱离浏览器单测。
+   * 这里只负责分账：`skipped` 是**不适用**的人数（如所选宿舍与该生性别不符），
+   * 「适用但改完没变化」既不算更新也不算跳过。
+   */
+  function applyStudentBatch(
+    ids: readonly string[],
+    changes: StudentBatchChanges,
+  ): { updated: number; skipped: number } {
+    const targets = new Set(ids)
+    let updated = 0
+    let skipped = 0
+    const next: Student[] = []
+    for (const student of students.value) {
+      // 没被选中 / 已被软删除的：原样带过去，且不参与任何计数
+      if (!targets.has(student.id) || student.deletedAt) {
+        next.push(student)
+        continue
+      }
+      const patch = buildBatchPatch(student, changes)
+      if (!patch) {
+        skipped += 1
+        next.push(student)
+        continue
+      }
+      if (Object.keys(patch).length === 0) {
+        next.push(student)
+        continue
+      }
+      updated += 1
+      next.push({ ...student, ...patch })
+    }
+    // 一个人都没变就不赋值：不赋值 = 不写盘、不广播
+    // （`writeJSON` 的幂等只是第二道保险，不该当成主要手段）
+    if (updated === 0) return { updated, skipped }
+    students.value = next
+    return { updated, skipped }
+  }
+
   /** 软删除：标记 deletedAt 并从活跃列表移除（当前无回收站入口，仅本地留档） */
   function removeStudent(id: string): boolean {
     const index = students.value.findIndex((item) => item.id === id && !item.deletedAt)
@@ -151,5 +200,6 @@ export const useStudentStore = defineStore('student', () => {
     updateStudent,
     removeStudent,
     applyStudentImport,
+    applyStudentBatch,
   }
 })

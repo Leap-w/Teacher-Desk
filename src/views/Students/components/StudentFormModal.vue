@@ -3,7 +3,14 @@ import { computed, reactive, watch } from 'vue'
 
 import { AppButton, AppField, AppInput, AppModal, AppSelect, AppTextarea } from '@/components/ui'
 import { useStudentStore } from '@/stores/student'
-import { FAMILY_SCOPE_OPTIONS, dormitoryOptions, isValidDormitory } from '@/utils/student'
+import {
+  CADRE_CUSTOM,
+  CADRE_OPTIONS,
+  FAMILY_SCOPE_OPTIONS,
+  PRESET_CADRES,
+  dormitoryOptions,
+  isValidDormitory,
+} from '@/utils/student'
 import type { FamilyScope, Gender, SelectOption, Student, StudentInput } from '@/types'
 
 interface Props {
@@ -27,31 +34,6 @@ const GENDER_OPTIONS: SelectOption<Gender>[] = [
   { label: '女', value: 'female' },
   { label: '男', value: 'male' },
 ]
-
-/**
- * 「＋ 自定义」的**哨兵值，绝不写入模型**——它只负责把下面的输入框亮出来，
- * 提交时取输入框里的文本。
- * 之所以要绕这一下：AppSelect 包的是原生 `<select>`，没有「既可选又可输入」这一档
- * （§11.5 不为一个表单控件引入组件库）。
- */
-const CADRE_CUSTOM = '__custom__'
-
-const CADRE_OPTIONS: SelectOption<string>[] = [
-  { label: '无', value: '' },
-  { label: '班长', value: '班长' },
-  { label: '副班长', value: '副班长' },
-  { label: '学习委员', value: '学习委员' },
-  { label: '体育委员', value: '体育委员' },
-  { label: '文艺委员', value: '文艺委员' },
-  { label: '劳动委员', value: '劳动委员' },
-  { label: '生活委员', value: '生活委员' },
-  { label: '＋ 自定义…', value: CADRE_CUSTOM },
-]
-
-/** 除「无」与哨兵以外的预设职务，用于判断既有值是否属于预设 */
-const PRESET_CADRES = CADRE_OPTIONS.map((option) => option.value).filter(
-  (value) => value !== '' && value !== CADRE_CUSTOM,
-)
 
 interface FormState {
   name: string
