@@ -1,38 +1,50 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { RefreshCw } from 'lucide-vue-next'
 
-import { AppButton } from '@/components/ui'
+import { routes } from '@/router'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useToast } from '@/composables/useToast'
-import { useToday } from '@/composables/useToday'
+import { useUserStore } from '@/stores/user'
 
 /**
- * 顶栏：一句话状态 + 一个同步按钮。
- *
- * 状态文案和同步动作都来自 `useCloudSync()`，与工具箱那张卡片**同一份**——顶栏先前
- * 挂的是 Phase 0 的假同步（定时器转 1.2 秒就报「已同步」），和工具箱的真同步并存，
- * 同一屏上说两句互相矛盾的话。现在顶栏不再自己造状态，只显示引擎给的事实。
- *
- * 顶栏不放登录表单（那里没地方，也不该有密码框）：没登录时点按钮把人送到工具箱。
+ * 顶部悬浮胶囊导航（V1.3.0，昌都记忆 AppLayout 同款）：
+ * Logo + 一级导航（首页｜学生档案｜班级管理｜工作管理｜我的）+ 昵称/头像/同步。
+ * 取消后台式侧栏；当前页面用主色胶囊高亮。
  */
+const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { state, enabled, syncing, lastSyncedClock, syncWithFeedback } = useCloudSync()
-const { todayLabel } = useToday()
+const userStore = useUserStore()
+const { state, enabled, syncing, syncWithFeedback } = useCloudSync()
+
+/** 一级导航：顶层非 hidden 路由，顺序即路由表顺序 */
+const navItems = computed(() =>
+  routes
+    .filter((r) => !r.redirect && !r.meta?.hidden)
+    .map((r) => ({ path: r.path, label: r.meta?.title ?? r.path })),
+)
+
+function isActive(path: string): boolean {
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(path + '/')
+}
+
+const profile = computed(() => userStore.profile)
+const initial = computed(() => userStore.initial)
+const showSync = computed(() => enabled)
 
 async function onSync(): Promise<void> {
-  // 有等教师裁决的冲突（Phase 9C）：顶栏没有裁决的地方（那是工具箱那张卡片里的区块），
-  // 所以把人送过去——而不是在这儿报一句「同步不了」然后没下文
+  // 有等教师裁决的冲突（Phase 9C）：去工具箱处理
   if (state.value.conflicts.length > 0) {
     toast.info('有模块本机与云端都有数据，需要确认保留哪一份，去工具箱处理。')
-    await router.push('/toolbox')
+    await router.push('/my/tools')
     return
   }
-  // `checked` 之前状态一律是 `signedOut`（只是还没问过云端，不代表真的没登录）。
-  // 少了这一位判断，应用一启动点同步就会被喊去登录，而其实会话是好的。
   if (state.value.checked && state.value.status === 'signedOut') {
     toast.info('还没登录，先到工具箱登录一次。')
-    await router.push('/toolbox')
+    await router.push('/my/tools')
     return
   }
   await syncWithFeedback()
@@ -40,97 +52,230 @@ async function onSync(): Promise<void> {
 </script>
 
 <template>
-  <header class="app-header">
-    <RouterLink to="/" class="brand">
-      <span class="brand-mark" aria-hidden="true">T</span>
-      <span class="brand-name">TeacherDesk</span>
-    </RouterLink>
+  <header class="capsule-nav">
+    <div class="capsule-nav__bar">
+      <RouterLink to="/" class="brand" aria-label="回到首页">
+        <img class="brand__logo" src="/icons/icon-192.png" alt="" />
+        <span class="brand__name">TeacherDesk</span>
+      </RouterLink>
 
-    <div class="flex items-center gap-4">
-      <span v-if="lastSyncedClock" class="header-synced">已同步 {{ lastSyncedClock }}</span>
-      <span class="header-date">{{ todayLabel }}</span>
-      <!-- 没配环境 ID 时整块云端同步不启用：与其摆一个点了没反应的按钮，不如不摆 -->
-      <AppButton v-if="enabled" size="sm" :loading="syncing" @click="onSync">
-        {{ syncing ? '同步中…' : '同步' }}
-      </AppButton>
+      <nav class="capsule-nav__links" aria-label="主导航">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.path"
+          :to="item.path"
+          class="capsule-nav__link"
+          :class="{ 'is-active': isActive(item.path) }"
+          :aria-current="isActive(item.path) ? 'page' : undefined"
+        >
+          {{ item.label }}
+        </RouterLink>
+      </nav>
+
+      <div class="capsule-nav__user">
+        <span class="capsule-nav__nickname">{{ profile.nickname }}</span>
+        <RouterLink to="/my" class="avatar" aria-label="进入我的">
+          <img v-if="profile.avatar" :src="profile.avatar" alt="" class="avatar__img" />
+          <span v-else class="avatar__fallback" aria-hidden="true">{{ initial }}</span>
+        </RouterLink>
+        <button
+          v-if="showSync"
+          type="button"
+          class="sync-btn"
+          :disabled="syncing"
+          :aria-label="syncing ? '同步中' : '同步数据'"
+          @click="onSync"
+        >
+          <RefreshCw class="sync-btn__icon" :class="{ 'is-spinning': syncing }" :size="18" />
+        </button>
+      </div>
     </div>
   </header>
 </template>
 
 <style scoped>
-.app-header {
-  flex-shrink: 0;
-  /* 高度写在 height 上、安全区走内边距：内容仍占 64px，只是整体从刘海 / 状态栏下方开始 */
-  height: calc(64px + env(safe-area-inset-top, 0px));
+.capsule-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 32px 12px;
+  pointer-events: none;
+}
+
+.capsule-nav__bar {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  height: var(--nav-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: env(safe-area-inset-top, 0px)
-    calc(clamp(20px, 3vw, 36px) + env(safe-area-inset-right, 0px)) 0
-    calc(clamp(20px, 3vw, 36px) + env(safe-area-inset-left, 0px));
+  gap: var(--spacing-md);
+  padding: 0 12px 0 20px;
   background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-bottom: 1px solid var(--color-border);
-  z-index: 10;
+  backdrop-filter: blur(var(--nav-blur));
+  -webkit-backdrop-filter: blur(var(--nav-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--nav-radius);
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
 }
 
+/* ---- 品牌标识 ---- */
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  transition: background var(--transition-fast);
+  flex-shrink: 0;
+  user-select: none;
 }
 
-.brand:hover {
-  background: rgba(29, 29, 31, 0.04);
+.brand__logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  box-shadow: var(--shadow-xs);
 }
 
-.brand-mark {
-  width: 30px;
-  height: 30px;
+.brand__name {
+  font-size: var(--font-content);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* ---- 一级导航链接 ---- */
+.capsule-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.capsule-nav__links::-webkit-scrollbar {
+  display: none;
+}
+
+.capsule-nav__link {
+  padding: 8px 18px;
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.capsule-nav__link:hover:not(.is-active) {
+  color: var(--color-text-primary);
+  background: var(--color-primary-bg);
+}
+
+/* 当前页面：主色胶囊高亮 */
+.capsule-nav__link.is-active {
+  background: var(--color-primary);
+  color: #ffffff;
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-xs);
+}
+
+.capsule-nav__link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ---- 用户区：昵称 + 头像 + 同步 ---- */
+.capsule-nav__user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.capsule-nav__nickname {
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  /* CDL 渐变头像环 */
+  box-shadow:
+    0 0 0 2px var(--color-bg-white),
+    0 0 0 4px var(--color-primary-bg);
+  transition: transform var(--transition-fast);
+}
+
+.avatar:hover {
+  transform: scale(1.05);
+}
+
+.avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar__fallback {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  /* CDL 品牌渐变：高原青 → 天空蓝（同 AppLayout 顶栏头像渐变） */
   background: linear-gradient(135deg, var(--color-primary), var(--color-sky));
   color: #ffffff;
   font-size: 15px;
   font-weight: var(--font-weight-bold);
-  box-shadow: var(--shadow-sm);
 }
 
-.brand-name {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.2px;
-  background: linear-gradient(
-    120deg,
-    var(--color-primary-strong),
-    var(--color-primary),
-    var(--color-secondary)
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.sync-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-primary-bg);
+  color: var(--color-primary-dark);
+  cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
-.header-date {
-  font-size: 13px;
-  color: var(--color-text-secondary);
+.sync-btn:hover:not(:disabled) {
+  background: var(--color-primary-bg-hover);
 }
 
-.header-synced {
-  font-size: 12px;
-  color: var(--color-text-secondary);
+.sync-btn:disabled {
+  cursor: default;
 }
 
-@media (max-width: 760px) {
-  .header-date,
-  .header-synced {
+.sync-btn__icon.is-spinning {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  .capsule-nav__links,
+  .capsule-nav__nickname {
     display: none;
   }
 }

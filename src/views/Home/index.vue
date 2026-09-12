@@ -18,7 +18,6 @@ import DashboardHeader from './components/DashboardHeader.vue'
 import DashboardLeaveCard from './components/DashboardLeaveCard.vue'
 import DashboardLessonCard from './components/DashboardLessonCard.vue'
 import DashboardLessonStats from './components/DashboardLessonStats.vue'
-import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
 import DashboardTodoCard from './components/DashboardTodoCard.vue'
 import DashboardWeekendCard from './components/DashboardWeekendCard.vue'
 import DashboardWorkCard from './components/DashboardWorkCard.vue'
@@ -88,21 +87,22 @@ function toggleTodo(id: string): void {
 
     <DashboardHeader />
 
-    <!-- CDL 首页布局：AppSection 分组（今日状态 / 快捷入口 / 班级动态），改布局不改逻辑 -->
-    <AppSection title="今日状态" class="dash-section dash-section--first">
-      <div class="dash-grid">
-        <DashboardLessonCard
-          :lessons="timetableStore.todayLessons"
-          :weekday-label="timetableStore.todayLabel"
-          :weekend="isWeekend"
-        />
+    <!-- V1.3.0 内容流布局：区块间距 32px，卡片间距 24px，区块以 AppSection 标题划分 -->
+    <AppSection title="今日课程" class="dash-section">
+      <DashboardLessonCard
+        :lessons="timetableStore.todayLessons"
+        :weekday-label="timetableStore.todayLabel"
+        :weekend="isWeekend"
+      />
+    </AppSection>
 
-        <DashboardWorkCard @open="router.push('/work/works')" />
+    <AppSection title="今日待办" class="dash-section">
+      <DashboardTodoCard :todos="dashboardStore.todos" @toggle="toggleTodo" />
+    </AppSection>
 
-        <DashboardTodoCard :todos="dashboardStore.todos" @toggle="toggleTodo" />
-
+    <AppSection title="班级提醒" class="dash-section">
+      <div class="dash-row dash-row--3">
         <DashboardDutyCard
-          class="cell-duty"
           :group="dutyStore.todayGroup"
           :members="dutyMembers"
           :weekday-label="timetableStore.todayLabel"
@@ -112,94 +112,66 @@ function toggleTodo(id: string): void {
           :today-key="dutyStore.todayKey"
           @open="router.push('/class/duty')"
         />
+
+        <DashboardLeaveCard
+          :out="leaveStore.outLeaves"
+          :month-count="leaveStore.monthLeaveCount"
+          @open="router.push('/class/leave')"
+        />
+
+        <DashboardWorkCard @open="router.push('/work/works')" />
       </div>
     </AppSection>
 
-    <AppSection title="快捷入口" class="dash-section">
-      <DashboardQuickLinks class="cell-links" />
-    </AppSection>
+    <AppSection title="周末统计" class="dash-section">
+      <div class="dash-row dash-row--3">
+        <DashboardWeekendCard
+          :weekend-label="weekendLabel"
+          :returns="weekendReturns"
+          :month-count="weekendStore.monthReturnCount"
+          :stale-count="weekendStaleCount"
+          @open="router.push('/class/weekend')"
+        />
 
-    <AppSection title="班级动态" class="dash-section">
-      <div class="dash-grid">
-        <div class="cell-bottom">
-          <DashboardLessonStats :count="timetableStore.weekLessonCount" />
+        <DashboardClassCard
+          :student-count="studentCount"
+          :removed-student-count="removedStudentCount"
+          :duty-group="dutyStore.todayGroup"
+          :duty-weekend-skipped="dutyWeekendSkipped"
+          :duty-needs-setup="dutyNeedsSetup"
+          :upcoming="dutyStore.upcomingDays"
+          :today-key="dutyStore.todayKey"
+          :weekend-label="weekendLabel"
+          :stay-count="weekendStore.currentStayCount"
+          :returned-count="weekendStore.currentCount"
+        />
 
-          <DashboardLeaveCard
-            :out="leaveStore.outLeaves"
-            :month-count="leaveStore.monthLeaveCount"
-            @open="router.push('/class/leave')"
-          />
-
-          <DashboardWeekendCard
-            :weekend-label="weekendLabel"
-            :returns="weekendReturns"
-            :month-count="weekendStore.monthReturnCount"
-            :stale-count="weekendStaleCount"
-            @open="router.push('/class/weekend')"
-          />
-
-          <DashboardClassCard
-            :student-count="studentCount"
-            :removed-student-count="removedStudentCount"
-            :duty-group="dutyStore.todayGroup"
-            :duty-weekend-skipped="dutyWeekendSkipped"
-            :duty-needs-setup="dutyNeedsSetup"
-            :upcoming="dutyStore.upcomingDays"
-            :today-key="dutyStore.todayKey"
-            :weekend-label="weekendLabel"
-            :stay-count="weekendStore.currentStayCount"
-            :returned-count="weekendStore.currentCount"
-          />
-        </div>
+        <DashboardLessonStats :count="timetableStore.weekLessonCount" />
       </div>
     </AppSection>
   </div>
 </template>
 
 <style scoped>
-.dash-page {
-  max-width: 1080px;
-  margin: 0 auto;
-}
-
-.dash-section--first :deep(.app-section__header) {
-  margin-top: var(--spacing-sm);
-}
-
-.dash-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-md);
+.dash-section {
+  margin-bottom: var(--section-gap);
 }
 
 /* 同一行的卡片等高（卡片自身撑满所在网格单元） */
-.dash-grid > *,
-.cell-bottom > * {
+.dash-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--card-gap);
+}
+
+.dash-row > * {
   height: 100%;
 }
 
-.cell-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--spacing-md);
-  grid-column: 1 / -1;
-}
-
 @media (min-width: 760px) {
-  .dash-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .cell-duty,
-  .cell-links {
-    grid-column: 1 / -1;
-  }
-
-  /* 自动铺满而不是写死 3 列：这一行有 4 张卡（课时 / 请假 / 周末 / 班级概况），
-     写死 3 列会让第 4 张独自折到第二行、右侧空出 2/3。auto-fit + 200px 下限在
-     桌面宽度下正好 4 列，窄一些时回落成 3 列——与改动前的观感一致（§9.17 审查修复） */
-  .cell-bottom {
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  .dash-row--3 {
+    /* 自动铺满：3 卡一行，窄一些回落成 2 列 */
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   }
 }
 </style>

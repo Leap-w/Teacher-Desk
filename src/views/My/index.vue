@@ -1,24 +1,105 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  Armchair,
+  ClipboardList,
+  Cloud,
+  Database,
+  Info,
+  Luggage,
+  NotebookPen,
+  Paintbrush,
+  Palette,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-vue-next'
 
-import { AppBadge, AppButton, AppDrawer, AppField, AppInput, AppModal } from '@/components/ui'
+import {
+  AppBadge,
+  AppButton,
+  AppDrawer,
+  AppField,
+  AppInput,
+  AppModal,
+  AppSection,
+} from '@/components/ui'
 import { useToast } from '@/composables/useToast'
-import { useUserStore, identityLineOf } from '@/stores/user'
+import { useDashboardStore } from '@/stores/dashboard'
+import { useLeaveStore } from '@/stores/leave'
+import { useStudentStore } from '@/stores/student'
+import { useUserStore } from '@/stores/user'
 import { appConfig } from '@/config'
 import type { UserProfileInput } from '@/types/user'
 
 /**
- * 「我的」个人中心（V1.1.6）：顶部身份卡 + 四组功能卡（个人信息 / 工作设置 / 工具 / 系统）。
- * 工具箱整页迁到 /my/tools（本页的「工具箱」项只是入口）；设置统一在 /my/settings，
- * 各功能页右上角的 ⚙ 也跳过去——设置页面只有一套。
+ * 「我的」个人中心（V1.3.0，昌都记忆双栏版）：
+ * 左侧竖版渐变信息卡（头像 / 姓名 / 身份 / 学校 / 两枚胶囊），
+ * 右侧工作时光（三张统计卡 + 渐变进度条 + 时间轴）→ 工作数据（四宫格）→ 功能菜单。
+ * 业务逻辑（头像上传 / 资料编辑 / 路由跳转 / 关于弹窗）与 V1.1.6 完全一致。
  */
 const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
+const studentStore = useStudentStore()
+const leaveStore = useLeaveStore()
+const dashboardStore = useDashboardStore()
 
 const profile = computed(() => userStore.profile)
-const identityLine = computed(() => identityLineOf(profile.value))
+
+/* ---------- 工作时光（视图层口径：学期起止写死在常量，不改 Store） ---------- */
+
+/** 学期口径（视图层展示用）：2026 秋季学期 2026-09-01 开学，2027-01-24 期末 */
+const TERM_START = new Date('2026-09-01T00:00:00')
+const TERM_END = new Date('2027-01-24T00:00:00')
+
+const now = ref(new Date())
+const dayMs = 1000 * 60 * 60 * 24
+
+function dayKey(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+/** 工作第 X 天（自学期首日起算，含首日） */
+const daysWorked = computed(() => {
+  const diff = Math.floor((dayKey(now.value) - dayKey(TERM_START)) / dayMs) + 1
+  return Math.max(1, diff)
+})
+
+/** 本学期第 X 周 */
+const termWeek = computed(() => Math.ceil(daysWorked.value / 7))
+
+/** 距离期末 X 天 */
+const daysToTermEnd = computed(() =>
+  Math.max(0, Math.ceil((dayKey(TERM_END) - dayKey(now.value)) / dayMs)),
+)
+
+/** 学期进度百分比（进度条 + 时间轴） */
+const termProgress = computed(() => {
+  const total = dayKey(TERM_END) - dayKey(TERM_START)
+  if (total <= 0) return 100
+  const passed = Math.min(Math.max(dayKey(now.value) - dayKey(TERM_START), 0), total)
+  return Math.round((passed / total) * 100)
+})
+
+const fmtDate = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+
+/* ---------- 工作数据（四宫格，全部来自既有 Store 计算属性） ---------- */
+
+const statCards = computed(() => [
+  { label: '学生人数', value: String(studentStore.activeStudents.length), to: '/students' },
+  {
+    label: '班级干部',
+    value: String(studentStore.activeStudents.filter((s) => s.cadreRole).length),
+    to: '/students',
+  },
+  { label: '请假记录', value: String(leaveStore.leaves.length), to: '/class/leave' },
+  {
+    label: '待办事项',
+    value: String(dashboardStore.todos.filter((t) => !t.done).length),
+    to: '/',
+  },
+])
 
 /* ---------- 头像 ---------- */
 
@@ -90,7 +171,7 @@ function submitProfile(): void {
 
 interface Row {
   key: string
-  icon: string
+  icon: LucideIcon
   label: string
   value?: string
   /** 点击行为：跳路由；placeholder 行无跳转（开发中） */
@@ -101,35 +182,35 @@ interface Row {
 const settingRows: Row[] = [
   {
     key: 'work',
-    icon: '📋',
+    icon: ClipboardList,
     label: '课程表设置',
     value: '课程时间 · 默认视图',
     to: '/my/settings?module=work',
   },
   {
     key: 'seats',
-    icon: '🪑',
+    icon: Armchair,
     label: '座位管理设置',
     value: '教室布局 · 导出视角',
     to: '/my/settings?module=seats',
   },
   {
     key: 'leave',
-    icon: '📝',
+    icon: NotebookPen,
     label: '请假管理设置',
     value: '默认返校时间 · 显示方式',
     to: '/my/settings?module=leave',
   },
   {
     key: 'duty',
-    icon: '🧹',
+    icon: Paintbrush,
     label: '值日管理设置',
     value: '默认分组 · 默认循环',
     to: '/my/settings?module=duty',
   },
   {
     key: 'weekend',
-    icon: '🧳',
+    icon: Luggage,
     label: '周末管理设置',
     value: '返校提醒',
     to: '/my/settings?module=weekend',
@@ -137,12 +218,18 @@ const settingRows: Row[] = [
 ]
 
 const systemRows: Row[] = [
-  { key: 'theme', icon: '🎨', label: '主题', value: '松石青 · 浅色', soon: true },
-  { key: 'sync', icon: '☁️', label: '数据同步', value: '云端同步 · 本机缓存', to: '/my/tools' },
-  { key: 'backup', icon: '💾', label: '备份与恢复', value: '导出 · 导入 · 合并', to: '/my/tools' },
+  { key: 'theme', icon: Palette, label: '主题', value: '高原青 · 浅色', soon: true },
+  { key: 'sync', icon: Cloud, label: '数据同步', value: '云端同步 · 本机缓存', to: '/my/tools' },
+  {
+    key: 'backup',
+    icon: Database,
+    label: '备份与恢复',
+    value: '导出 · 导入 · 合并',
+    to: '/my/tools',
+  },
   {
     key: 'about',
-    icon: 'ℹ️',
+    icon: Info,
     label: '关于 TeacherDesk',
     value: `v${appConfig.version}`,
     to: 'about',
@@ -168,28 +255,26 @@ const aboutOpen = ref(false)
 
 <template>
   <div class="my-page">
-    <!-- CDL 页面头：大标题 + 副标题 + 底部细线（同 Changdu Memory profile__header） -->
     <div class="page-head">
       <h1 class="page-head__title">我的</h1>
       <p class="page-head__sub">班主任的个人中心 · 资料、设置与工具</p>
     </div>
 
-    <!-- 顶部身份卡：CDL profile-hero（深色渐变 + 雪山线稿纹理 + 渐变头像环） -->
-    <header class="profile-hero">
-      <svg class="profile-hero__texture" viewBox="0 0 500 150" fill="none" aria-hidden="true">
-        <path d="M0 150L120 40L200 110L320 10L500 150H0Z" fill="currentColor" />
-      </svg>
-      <div class="profile-hero__content">
-        <div class="avatar-wrap">
+    <div class="my-columns">
+      <!-- ===== 左：竖版渐变信息卡（昌都记忆 profile-info 同款） ===== -->
+      <aside class="profile-card">
+        <svg class="profile-card__texture" viewBox="0 0 500 150" fill="none" aria-hidden="true">
+          <path d="M0 150L120 40L200 110L320 10L500 150H0Z" fill="currentColor" />
+        </svg>
+        <div class="profile-card__content">
           <button
             type="button"
-            class="avatar-button"
+            class="profile-card__avatar"
             :aria-label="profile.avatar ? '更换头像' : '上传头像'"
             @click="pickAvatar"
           >
             <img v-if="profile.avatar" :src="profile.avatar" alt="我的头像" class="avatar-img" />
             <span v-else class="avatar-fallback" aria-hidden="true">{{ userStore.initial }}</span>
-            <span class="avatar-edit-hint" aria-hidden="true">📷</span>
           </button>
           <button
             v-if="profile.avatar"
@@ -207,82 +292,137 @@ const aboutOpen = ref(false)
             class="avatar-input"
             @change="onAvatarPicked"
           />
+
+          <h2 class="profile-card__name">{{ profile.nickname }}</h2>
+          <p class="profile-card__line">{{ profile.className }} 班主任</p>
+          <p class="profile-card__line">{{ profile.subject }}教师</p>
+          <p class="profile-card__school">{{ profile.school }}</p>
+
+          <div class="profile-card__pills">
+            <span class="pill">
+              <span class="pill__dot" aria-hidden="true"></span>
+              服务学校
+            </span>
+            <span class="pill">
+              <span class="pill__dot pill__dot--gold" aria-hidden="true"></span>
+              任教学科
+            </span>
+          </div>
         </div>
+      </aside>
 
-        <p class="profile-name">{{ profile.nickname }}</p>
-        <p class="profile-identity">{{ identityLine }}</p>
-        <p class="profile-school">{{ profile.school }}</p>
+      <!-- ===== 右：工作时光 → 工作数据 → 功能菜单 ===== -->
+      <div class="my-main">
+        <AppSection title="工作时光" class="my-section">
+          <div class="time-cards">
+            <div class="time-card">
+              <span class="time-card__num">{{ daysWorked }}</span>
+              <span class="time-card__label">工作第 X 天</span>
+            </div>
+            <div class="time-card">
+              <span class="time-card__num">{{ termWeek }}</span>
+              <span class="time-card__label">本学期第 X 周</span>
+            </div>
+            <div class="time-card">
+              <span class="time-card__num">{{ daysToTermEnd }}</span>
+              <span class="time-card__label">距离期末 X 天</span>
+            </div>
+          </div>
 
-        <AppButton variant="secondary" size="sm" class="edit-button" @click="openProfileEditor">
-          ✏️ 编辑资料
-        </AppButton>
-      </div>
-    </header>
+          <!-- 渐变进度条 + 时间轴 -->
+          <div class="term-progress">
+            <div class="term-progress__track">
+              <div class="term-progress__fill" :style="{ width: termProgress + '%' }"></div>
+            </div>
+            <div class="term-progress__axis">
+              <span class="axis-node">
+                <span class="axis-dot" aria-hidden="true"></span>
+                开学 · {{ fmtDate(TERM_START) }}
+              </span>
+              <span class="axis-node axis-node--now">今天 · {{ termProgress }}%</span>
+              <span class="axis-node">
+                期末 · {{ fmtDate(TERM_END) }}
+                <span class="axis-dot axis-dot--end" aria-hidden="true"></span>
+              </span>
+            </div>
+          </div>
+        </AppSection>
 
-    <!-- 分组功能卡 -->
-    <div class="group-stack">
-      <section class="group-card">
-        <h2 class="group-title">个人信息</h2>
-        <button type="button" class="profile-row" @click="openProfileEditor">
-          <span class="row-icon" aria-hidden="true">👤</span>
-          <span class="row-main">
-            <span class="row-label">昵称 · 学校 · 班级 · 任教学科</span>
-            <span class="row-value"
-              >{{ profile.nickname }} · {{ profile.className }} · {{ profile.subject }}</span
+        <AppSection title="工作数据" class="my-section">
+          <div class="stat-grid">
+            <RouterLink v-for="stat in statCards" :key="stat.label" :to="stat.to" class="stat-card">
+              <span class="stat-card__num">{{ stat.value }}</span>
+              <span class="stat-card__label">{{ stat.label }}</span>
+            </RouterLink>
+          </div>
+        </AppSection>
+
+        <AppSection title="个人信息" class="my-section">
+          <section class="menu-card">
+            <button type="button" class="menu-row" @click="openProfileEditor">
+              <span class="menu-row__icon" aria-hidden="true"><UserRound :size="18" /></span>
+              <span class="menu-row__main">
+                <span class="menu-row__label">昵称 · 学校 · 班级 · 任教学科</span>
+                <span class="menu-row__value"
+                  >{{ profile.nickname }} · {{ profile.className }} · {{ profile.subject }}</span
+                >
+              </span>
+              <span class="menu-row__chevron" aria-hidden="true">›</span>
+            </button>
+          </section>
+        </AppSection>
+
+        <AppSection title="系统设置" class="my-section">
+          <section class="menu-card">
+            <button
+              v-for="row in settingRows"
+              :key="row.key"
+              type="button"
+              class="menu-row"
+              @click="openRow(row)"
             >
-          </span>
-          <span class="row-chevron" aria-hidden="true">›</span>
-        </button>
-      </section>
+              <span class="menu-row__icon" aria-hidden="true"
+                ><component :is="row.icon" :size="18"
+              /></span>
+              <span class="menu-row__main">
+                <span class="menu-row__label">{{ row.label }}</span>
+                <span class="menu-row__value">{{ row.value }}</span>
+              </span>
+              <span class="menu-row__chevron" aria-hidden="true">›</span>
+            </button>
+            <button
+              v-for="row in systemRows"
+              :key="row.key"
+              type="button"
+              class="menu-row"
+              @click="openRow(row)"
+            >
+              <span class="menu-row__icon" aria-hidden="true"
+                ><component :is="row.icon" :size="18"
+              /></span>
+              <span class="menu-row__main">
+                <span class="menu-row__label">{{ row.label }}</span>
+                <span class="menu-row__value">{{ row.value }}</span>
+                <AppBadge v-if="row.soon" variant="neutral" size="sm">开发中</AppBadge>
+              </span>
+              <span class="menu-row__chevron" aria-hidden="true">›</span>
+            </button>
+          </section>
+        </AppSection>
 
-      <section class="group-card">
-        <h2 class="group-title">工作设置</h2>
-        <button
-          v-for="row in settingRows"
-          :key="row.key"
-          type="button"
-          class="profile-row"
-          @click="openRow(row)"
-        >
-          <span class="row-icon" aria-hidden="true">{{ row.icon }}</span>
-          <span class="row-main">
-            <span class="row-label">{{ row.label }}</span>
-            <span class="row-value">{{ row.value }}</span>
-          </span>
-          <span class="row-chevron" aria-hidden="true">›</span>
-        </button>
-      </section>
-
-      <section class="group-card">
-        <h2 class="group-title">工具</h2>
-        <button type="button" class="profile-row" @click="router.push('/my/tools')">
-          <span class="row-icon" aria-hidden="true">🧰</span>
-          <span class="row-main">
-            <span class="row-label">工具箱</span>
-            <span class="row-value">备份恢复 · 数据同步 · 清空数据</span>
-          </span>
-          <span class="row-chevron" aria-hidden="true">›</span>
-        </button>
-      </section>
-
-      <section class="group-card">
-        <h2 class="group-title">系统</h2>
-        <button
-          v-for="row in systemRows"
-          :key="row.key"
-          type="button"
-          class="profile-row"
-          @click="openRow(row)"
-        >
-          <span class="row-icon" aria-hidden="true">{{ row.icon }}</span>
-          <span class="row-main">
-            <span class="row-label">{{ row.label }}</span>
-            <span class="row-value">{{ row.value }}</span>
-            <AppBadge v-if="row.soon" variant="neutral" size="sm">开发中</AppBadge>
-          </span>
-          <span class="row-chevron" aria-hidden="true">›</span>
-        </button>
-      </section>
+        <AppSection title="工具箱" class="my-section">
+          <section class="menu-card">
+            <button type="button" class="menu-row" @click="router.push('/my/tools')">
+              <span class="menu-row__icon" aria-hidden="true"><Database :size="18" /></span>
+              <span class="menu-row__main">
+                <span class="menu-row__label">工具箱</span>
+                <span class="menu-row__value">备份恢复 · 数据同步 · 清空数据</span>
+              </span>
+              <span class="menu-row__chevron" aria-hidden="true">›</span>
+            </button>
+          </section>
+        </AppSection>
+      </div>
     </div>
 
     <!-- 编辑资料抽屉 -->
@@ -325,96 +465,99 @@ const aboutOpen = ref(false)
 
 <style scoped>
 .my-page {
-  max-width: 640px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xl);
 }
 
-/* ---- CDL 页面头 ---- */
+/* ---- 页面头（V5.2：56–64px 标题 + 16px 副标题 + 分割线） ---- */
 .page-head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 0 4px 14px;
+  gap: var(--space-2);
+  padding: 0 4px var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
   border-bottom: 1px solid var(--color-border);
 }
 
 .page-head__title {
-  font-size: var(--font-page-title, 32px);
-  font-weight: var(--font-weight-extrabold);
+  font-size: var(--font-page-title);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
   color: var(--color-text-primary);
-  line-height: 1.2;
-  letter-spacing: -0.01em;
 }
 
 .page-head__sub {
-  font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
+  font-size: var(--font-content);
+  color: var(--color-text-secondary);
 }
 
-/* ---- 顶部身份卡（CDL profile-hero） ---- */
-.profile-hero {
+/* ---- 双栏布局 ---- */
+.my-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--card-gap);
+}
+
+@media (min-width: 960px) {
+  .my-columns {
+    grid-template-columns: 320px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+/* ---- 左：竖版渐变信息卡 ---- */
+.profile-card {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-card);
-  background: linear-gradient(145deg, #101820 0%, #1f343a 40%, var(--color-primary) 100%);
-  box-shadow: 0 20px 40px -15px rgba(16, 24, 32, 0.3);
+  background: linear-gradient(160deg, #101820 0%, #1f343a 45%, var(--color-primary) 100%);
+  box-shadow: var(--shadow-card);
   color: #ffffff;
 }
 
-/* 雪山线稿纹理（CDL profile-hero__texture） */
-.profile-hero__texture {
+.profile-card__texture {
   position: absolute;
   right: 0;
   bottom: 0;
   width: 100%;
-  height: 160px;
+  height: 150px;
   opacity: 0.1;
   color: currentColor;
   pointer-events: none;
 }
 
-.profile-hero__content {
+.profile-card__content {
   position: relative;
   z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-2);
+  gap: 6px;
   padding: var(--spacing-page);
   text-align: center;
 }
 
-.avatar-wrap {
-  position: relative;
-  margin-bottom: var(--space-2);
-}
-
-.avatar-button {
+.profile-card__avatar {
   position: relative;
   width: 96px;
   height: 96px;
   padding: 4px;
   border: none;
   border-radius: 50%;
-  /* CDL 渐变头像环：日照金 → 天空蓝 → 高原青 */
+  /* 渐变头像环：日照金 → 天空蓝 → 高原青 */
   background: linear-gradient(135deg, var(--color-gold), var(--color-sky), var(--color-primary));
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
   cursor: pointer;
-  overflow: hidden;
-  transition:
-    transform var(--transition-fast),
-    box-shadow var(--transition-fast);
+  margin-bottom: var(--space-3);
+  transition: transform var(--transition-fast);
 }
 
-.avatar-button:hover {
+.profile-card__avatar:hover {
   transform: scale(1.04);
-  box-shadow: var(--shadow-hover);
 }
 
-.avatar-button:focus-visible {
+.profile-card__avatar:focus-visible {
   outline: none;
   box-shadow: var(--ring-focus);
 }
@@ -440,31 +583,10 @@ const aboutOpen = ref(false)
   color: #ffffff;
 }
 
-.avatar-edit-hint {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #101820;
-  border-radius: 50%;
-  background: var(--color-primary);
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.avatar-button:hover .avatar-edit-hint {
-  opacity: 1;
-}
-
 .avatar-remove {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: calc(var(--spacing-page) - 4px);
+  right: calc(var(--spacing-page) - 4px);
   width: 26px;
   height: 26px;
   display: flex;
@@ -483,40 +605,204 @@ const aboutOpen = ref(false)
   display: none;
 }
 
-.profile-name {
+.profile-card__name {
   margin: 0;
-  font-size: 32px;
-  line-height: 1.2;
+  font-size: 28px;
   font-weight: var(--font-weight-extrabold);
   letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
-.profile-identity {
+.profile-card__line {
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: var(--font-secondary);
   font-weight: var(--font-weight-medium);
-  color: rgba(204, 255, 250, 0.9);
+  color: rgba(204, 255, 250, 0.92);
 }
 
-.profile-school {
-  margin: 0;
-  font-size: var(--text-xs);
+.profile-card__school {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-caption);
   font-style: italic;
   color: rgba(203, 213, 225, 0.7);
 }
 
-.edit-button {
-  margin-top: var(--space-3);
-}
-
-/* ---- 分组功能卡（CDL profile__menu-card：毛玻璃 + 卡内 20px 标题） ---- */
-.group-stack {
+/* 底部两枚胶囊 */
+.profile-card__pills {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: 8px;
+  width: 100%;
+  margin-top: var(--spacing-card);
 }
 
-.group-card {
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-medium);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-sky);
+  flex-shrink: 0;
+}
+
+.pill__dot--gold {
+  background: var(--color-gold);
+}
+
+/* ---- 右栏 ---- */
+.my-section {
+  margin-bottom: var(--section-gap);
+}
+
+/* 工作时光：三张统计卡 */
+.time-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--card-gap);
+}
+
+.time-card {
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-card);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: var(--shadow-xs);
+}
+
+.time-card__num {
+  font-size: 32px;
+  font-weight: var(--font-weight-extrabold);
+  line-height: 1.1;
+  color: var(--color-primary-dark);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-card__label {
+  font-size: var(--font-secondary);
+  color: var(--color-text-secondary);
+}
+
+/* 渐变进度条 + 时间轴 */
+.term-progress {
+  margin-top: var(--spacing-card);
+}
+
+.term-progress__track {
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-subtle);
+  overflow: hidden;
+}
+
+.term-progress__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  /* 渐变进度条：日照金 → 天空蓝 → 高原青 */
+  background: linear-gradient(90deg, var(--color-gold), var(--color-sky), var(--color-primary));
+  transition: width 600ms var(--ease-spring);
+}
+
+.term-progress__axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+}
+
+.axis-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.axis-node--now {
+  color: var(--color-primary-dark);
+  font-weight: var(--font-weight-semibold);
+}
+
+.axis-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.axis-dot--end {
+  background: var(--color-gold);
+}
+
+/* 工作数据：四宫格 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--card-gap);
+}
+
+@media (min-width: 640px) {
+  .stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--spacing-card);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  text-decoration: none;
+  transition:
+    transform var(--transition-spring),
+    box-shadow var(--transition-spring);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+}
+
+.stat-card:active {
+  transform: scale(0.98);
+}
+
+.stat-card__num {
+  font-size: 28px;
+  font-weight: var(--font-weight-extrabold);
+  line-height: 1.1;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card__label {
+  font-size: var(--font-secondary);
+  color: var(--color-text-secondary);
+}
+
+/* 菜单卡（CDL：毛玻璃 + 24px 圆角 + Lucide 图标行） */
+.menu-card {
   background: var(--glass-bg-card);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -526,16 +812,7 @@ const aboutOpen = ref(false)
   overflow: hidden;
 }
 
-.group-title {
-  font-size: var(--font-section-title, 20px);
-  line-height: 1.3;
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
-  margin: 0;
-  padding: var(--spacing-lg) var(--spacing-page) var(--space-1);
-}
-
-.profile-row {
+.menu-row {
   width: 100%;
   display: flex;
   align-items: center;
@@ -550,26 +827,26 @@ const aboutOpen = ref(false)
   transition: background var(--transition-fast);
 }
 
-.profile-row:last-child {
+.menu-row:last-child {
   border-bottom: none;
 }
 
 @media (hover: hover) {
-  .profile-row:hover {
+  .menu-row:hover {
     background: var(--color-bg-subtle);
   }
 }
 
-.profile-row:active {
+.menu-row:active {
   background: var(--color-bg-subtle);
 }
 
-.profile-row:focus-visible {
+.menu-row:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--color-primary);
 }
 
-.row-icon {
+.menu-row__icon {
   flex-shrink: 0;
   width: 34px;
   height: 34px;
@@ -578,10 +855,10 @@ const aboutOpen = ref(false)
   justify-content: center;
   border-radius: 10px;
   background: var(--color-primary-bg);
-  font-size: 16px;
+  color: var(--color-primary-dark);
 }
 
-.row-main {
+.menu-row__main {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -589,21 +866,21 @@ const aboutOpen = ref(false)
   gap: 2px;
 }
 
-.row-label {
-  font-size: var(--text-sm);
+.menu-row__label {
+  font-size: var(--font-secondary);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
 }
 
-.row-value {
-  font-size: var(--text-xs);
+.menu-row__value {
+  font-size: var(--font-caption);
   color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.row-chevron {
+.menu-row__chevron {
   flex-shrink: 0;
   color: var(--color-text-tertiary);
   font-size: var(--text-lg);
@@ -622,28 +899,21 @@ const aboutOpen = ref(false)
 
 .about-name {
   margin: 0;
-  font-size: var(--font-card-title, 18px);
+  font-size: var(--font-card-title);
   font-weight: var(--font-weight-bold);
   color: var(--color-primary-dark);
 }
 
 .about-version {
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: var(--font-caption);
   color: var(--color-text-tertiary);
 }
 
 .about-text {
   margin: var(--space-2) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--font-secondary);
   line-height: 1.7;
   color: var(--color-text-secondary);
-}
-
-/* ---- 移动端 ---- */
-@media (max-width: 759.98px) {
-  .profile-name {
-    font-size: 28px;
-  }
 }
 </style>

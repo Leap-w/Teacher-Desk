@@ -89,14 +89,14 @@ const footNote = computed(() => {
     </div>
 
     <p v-else-if="todayState === 'needs-setup'" class="band-note">
-      🗓️ 还没设置轮换起点，去值日管理设好就会自动排班。
+      还没设置轮换起点，去值日管理设好就会自动排班。
     </p>
 
     <p v-else-if="todayState === 'weekend-skipped'" class="band-note">
-      🌙 今天不值日（当前设置为周末不排）。
+      今天不值日（当前设置为周末不排）。
     </p>
 
-    <p v-else class="band-note">🧹 还没有值日组，去值日管理建好组就能自动轮换。</p>
+    <p v-else class="band-note">还没有值日组，去值日管理建好组就能自动轮换。</p>
 
     <div class="card-foot">
       <p class="foot-note">{{ footNote }}</p>

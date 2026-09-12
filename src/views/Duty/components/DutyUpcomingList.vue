@@ -3,6 +3,7 @@ import { AppBadge, AppCard, EmptyState } from '@/components/ui'
 import { formatMonthDay } from '@/utils/date'
 import { WEEKDAY_SHORT_LABELS } from '@/utils/timetable'
 import type { DutyDay } from '@/utils/duty'
+import { CalendarDays } from 'lucide-vue-next'
 
 interface Props {
   /** 从今天起连续几天的安排（含今天） */
@@ -41,14 +42,14 @@ function isToday(dateKey: string): boolean {
 
     <EmptyState
       v-else-if="!hasGroups"
-      icon="📅"
+      :icon="CalendarDays"
       title="还没排班"
       description="建好值日组后，这里会列出每天的安排。"
     />
 
     <EmptyState
       v-else
-      icon="🗓️"
+      :icon="CalendarDays"
       title="还没设置轮换起点"
       description="在下面的「轮换设置」里选好起点日期和起点组，这里就会列出每天的安排。"
     />

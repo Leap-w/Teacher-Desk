@@ -6,6 +6,7 @@ import { WEEKDAY_LABELS, periodLabelOf, periodTimeTextOf } from '@/utils/timetab
 import type { CourseExchange, Lesson, Weekday } from '@/types/timetable'
 import ScheduleLessonCard from './ScheduleLessonCard.vue'
 import ScheduleSwapMark from './ScheduleSwapMark.vue'
+import { CalendarDays } from 'lucide-vue-next'
 
 interface Props {
   /** 该天的课程（已按时段升序） */
@@ -52,7 +53,7 @@ const swaps = computed(() => props.exchanges.filter((exchange) => !exchange.grou
 
     <EmptyState
       v-else
-      icon="📅"
+      :icon="CalendarDays"
       :title="`${WEEKDAY_LABELS[weekday]}没有课`"
       description="点下方按钮添加，或从 Excel 批量导入。"
     />

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import { AppBadge, AppCard, EmptyState } from '@/components/ui'
 import { useWorkStore } from '@/stores/work'
+import { PartyPopper } from 'lucide-vue-next'
 
 const emit = defineEmits<{
   (event: 'open'): void
@@ -38,7 +39,7 @@ const overdueCount = computed(() => workStore.summary.overdue)
 
     <EmptyState
       v-else
-      icon="🎉"
+      :icon="PartyPopper"
       title="今日没有待办"
       description="点下方按钮新建，或从 Excel 批量导入。"
     />

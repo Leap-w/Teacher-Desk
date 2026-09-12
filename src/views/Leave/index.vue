@@ -16,6 +16,7 @@ import type { LeaveFilter } from '@/utils/leave'
 import LeaveFormDrawer from './components/LeaveFormDrawer.vue'
 import LeaveRecordCard from './components/LeaveRecordCard.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
+import { Search, NotebookPen } from 'lucide-vue-next'
 
 /**
  * 请假管理（V1.1.5 记录口径）：只做「请假记录」——新建 / 编辑 / 删除 / 查询 /
@@ -148,7 +149,6 @@ function clearFilters() {
   <div class="leave-page">
     <header class="page-toolbar">
       <div>
-        <h1 class="page-title">请假管理</h1>
         <p class="page-subtitle">
           本月已记录 {{ leaveStore.monthLeaveCount }} 人次 · 未返校
           {{ leaveStore.outLeaves.length }} 人
@@ -198,7 +198,7 @@ function clearFilters() {
     <AppCard v-else padding="none" class="empty-card">
       <EmptyState
         v-if="leaveStore.leaves.length"
-        icon="🔍"
+        :icon="Search"
         title="未找到匹配的请假记录"
         description="换个关键词，或清除筛选条件再试试。"
       >
@@ -206,7 +206,7 @@ function clearFilters() {
       </EmptyState>
       <EmptyState
         v-else
-        icon="📝"
+        :icon="NotebookPen"
         title="暂无请假记录"
         description="点击右上角「新增请假记录」，记录第一条学生请假。"
       >
@@ -265,12 +265,6 @@ function clearFilters() {
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
 }
 
 .page-subtitle {

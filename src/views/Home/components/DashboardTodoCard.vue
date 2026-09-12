@@ -4,6 +4,7 @@ import { CheckmarkOutline } from '@vicons/ionicons5'
 
 import { AppBadge, AppCard, EmptyState } from '@/components/ui'
 import type { Todo } from '@/types/dashboard'
+import { CircleCheck } from 'lucide-vue-next'
 
 interface Props {
   todos: Todo[]
@@ -48,7 +49,7 @@ const allDone = computed(() => props.todos.length > 0 && doneCount.value === pro
 
     <EmptyState
       v-else
-      icon="✅"
+      :icon="CircleCheck"
       title="今天还没有待办"
       description="待办的添加与删除将在后续版本提供。"
     />

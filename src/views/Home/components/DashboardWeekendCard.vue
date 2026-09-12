@@ -3,6 +3,7 @@ import { computed } from 'vue'
 
 import { AppBadge, AppButton, AppCard, EmptyState } from '@/components/ui'
 import type { WeekendReturnRecord } from '@/types/weekend'
+import { Luggage } from 'lucide-vue-next'
 
 /**
  * 工作台「周末返家」卡片（Phase 7B）：本周末谁回家，一眼看全。
@@ -76,7 +77,7 @@ const hasRecords = computed(() => props.returns.length > 0 || props.staleCount >
          但文案与徽标用同一个 weekendLabel 才不会在换个期次时自相矛盾 -->
     <EmptyState
       v-else
-      icon="🧳"
+      :icon="Luggage"
       :title="`${weekendLabel}还没有登记返家`"
       description="登记之后，这个周末谁不在学校一眼就能看到。"
     />

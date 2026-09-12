@@ -229,14 +229,13 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
   <div class="schedule-page">
     <header class="schedule-head">
       <div class="head-text">
-        <h1 class="head-title">课程表</h1>
         <p class="head-sub">
           本周共 <strong>{{ timetableStore.weekLessonCount }}</strong> 节课 · 点课程卡片可查看详情
         </p>
       </div>
       <div class="head-actions">
         <SettingsEntryButton module="work" />
-        <AppButton variant="secondary" @click="importOpen = true">📥 从 Excel 导入</AppButton>
+        <AppButton variant="secondary" @click="importOpen = true">从 Excel 导入</AppButton>
         <AppButton @click="openCreate()">＋ 新增课程</AppButton>
       </div>
     </header>
@@ -357,12 +356,6 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
   display: flex;
   gap: var(--space-2);
   flex-shrink: 0;
-}
-
-.head-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.4px;
 }
 
 .head-sub {

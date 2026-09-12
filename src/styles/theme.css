@@ -6,18 +6,18 @@
  * 两个项目从此共用同一套设计语言：改令牌只改这里，UnoCSS 已打通（见 uno.config.ts）。
  */
 :root {
-  /* ========== 1. 主色 — 高原青（CDL） ========== */
-  --color-primary: #4b8f8c;
-  --color-primary-dark: #3b7572; /* 按钮 hover / active（CDL） */
-  --color-primary-strong: #3b7572; /* TeacherDesk 兼容别名 */
-  --color-primary-light: #e8f4f3;
-  --color-primary-soft: rgba(75, 143, 140, 0.12);
-  --color-primary-soft-strong: rgba(75, 143, 140, 0.18);
-  --color-primary-bg: rgba(75, 143, 140, 0.06);
-  --color-primary-bg-hover: rgba(75, 143, 140, 0.1);
-  --color-primary-bg-active: rgba(75, 143, 140, 0.14);
+  /* ========== 1. 主色 — 高原青（昌都记忆 V5.2） ========== */
+  --color-primary: #4a8c94;
+  --color-primary-dark: #3a7175; /* 按钮 hover / active */
+  --color-primary-strong: #3a7175; /* TeacherDesk 兼容别名 */
+  --color-primary-light: #e8f3f3;
+  --color-primary-soft: rgba(74, 140, 148, 0.12);
+  --color-primary-soft-strong: rgba(74, 140, 148, 0.18);
+  --color-primary-bg: rgba(74, 140, 148, 0.06);
+  --color-primary-bg-hover: rgba(74, 140, 148, 0.1);
+  --color-primary-bg-active: rgba(74, 140, 148, 0.14);
 
-  /* ========== 2. 辅助色 — 高原自然色系（CDL） ========== */
+  /* ========== 2. 辅助色 — 高原自然色系（V5.2） ========== */
   --color-secondary: #6b9e85; /* 草原绿 */
   --color-secondary-light: #8db5a2;
   --color-secondary-dark: #527a65;
@@ -25,7 +25,7 @@
   --color-sky-light: #e8f2fa;
   --color-gold: #d6a84f; /* 日照金 */
   --color-gold-light: #fbf4e5;
-  --color-accent: #c2676a; /* 暖红点缀 */
+  --color-accent: #c2676a; /* 暖红点缀（V5.2 Accent） */
   --color-accent-soft: #d08770; /* 暖橙 */
 
   /* ========== 3. 语义色 ========== */
@@ -41,14 +41,14 @@
   --color-danger-soft: rgba(194, 103, 106, 0.12);
   --color-info: #4b8f8c;
 
-  /* ========== 4. 背景系统（CDL：雪山白） ========== */
-  --color-bg: #f7f9f8;
-  --bg-main: #f7f9f8; /* TeacherDesk 兼容别名 */
+  /* ========== 4. 背景系统（V5.2） ========== */
+  --color-bg: #fafaf8;
+  --bg-main: #fafaf8; /* TeacherDesk 兼容别名 */
   --color-bg-white: #ffffff;
   --color-surface: #ffffff; /* TeacherDesk 兼容别名 */
   --color-bg-card: #ffffff;
   --color-bg-warm: #f5f0eb;
-  --color-bg-subtle: #f0f4f3;
+  --color-bg-subtle: #f3f5f3;
 
   /* ========== 5. 文字系统（CDL：夜空蓝黑） ========== */
   --color-text: #101820; /* TeacherDesk 兼容别名 → 主文字 */
@@ -58,13 +58,13 @@
   --color-text-tertiary: #8c9a9b;
   --color-text-inverse: #ffffff;
 
-  /* ========== 6. 边框（CDL 轻边框） ========== */
-  --color-border: rgba(0, 0, 0, 0.06);
-  --color-border-light: rgba(0, 0, 0, 0.04);
-  --color-border-medium: rgba(0, 0, 0, 0.08);
-  --color-border-strong: rgba(0, 0, 0, 0.1); /* TeacherDesk 兼容别名 */
-  --color-border-emphasis: rgba(0, 0, 0, 0.16); /* TeacherDesk 兼容别名 */
-  --color-fill-disabled: rgba(16, 24, 32, 0.04);
+  /* ========== 6. 边框（V5.2：rgba(15,23,42,.08) 体系） ========== */
+  --color-border: rgba(15, 23, 42, 0.08);
+  --color-border-light: rgba(15, 23, 42, 0.05);
+  --color-border-medium: rgba(15, 23, 42, 0.1);
+  --color-border-strong: rgba(15, 23, 42, 0.12); /* TeacherDesk 兼容别名 */
+  --color-border-emphasis: rgba(15, 23, 42, 0.18); /* TeacherDesk 兼容别名 */
+  --color-fill-disabled: rgba(15, 23, 42, 0.04);
 
   /* ========== 7. 间距（CDL 间距体系；--space-N 为 TeacherDesk 别名） ========== */
   --spacing-3xs: 2px;
@@ -86,14 +86,14 @@
   --space-6: 24px;
   --space-7: 32px;
 
-  /* ========== 8. 字号（CDL 字体层级 + TeacherDesk 别名） ========== */
+  /* ========== 8. 字号（V5.2 字体层级：页题 56–64 / 卡题 26–30 / 正文 16 / 辅助 14） ========== */
   --font-hero-num: clamp(56px, 7vw, 72px);
-  --font-hero-title: clamp(36px, 4.5vw, 48px);
-  --font-page-title: 32px;
+  --font-hero-title: clamp(56px, 6vw, 64px);
+  --font-page-title: clamp(56px, 6vw, 64px); /* 一级标题 */
   --font-section-title: 20px;
-  --font-card-title: 18px;
-  --font-content: 16px;
-  --font-secondary: 14px;
+  --font-card-title: 26px; /* 卡片标题（V5.2：26–30px） */
+  --font-content: 16px; /* 正文 */
+  --font-secondary: 14px; /* 辅助文字 */
   --font-caption: 12px;
   --font-small: 10px;
   --text-xs: 12px; /* = --font-caption */
@@ -172,8 +172,13 @@
   --app-icon-size-md: 20px;
   --app-icon-size-lg: 24px;
 
-  /* ========== 15. 导航专用令牌（CDL） ========== */
-  --nav-height: 56px;
-  --nav-blur: 24px;
+  /* ========== 15. 导航 / 页面宽度令牌（V5.2 胶囊导航 + 1440px 居中） ========== */
+  --nav-height: 64px;
+  --nav-radius: 32px;
+  --nav-blur: 20px;
   --bottom-nav-height: 64px;
+  --page-max-width: 1440px;
+  --page-pad-x: 40px; /* 页面左右留白 */
+  --card-gap: 24px; /* 卡片间距 */
+  --section-gap: 32px; /* 区块间距 */
 }

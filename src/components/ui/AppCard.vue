@@ -83,14 +83,15 @@ withDefaults(defineProps<Props>(), {
 }
 
 .card-title {
-  font-size: var(--text-md);
-  font-weight: var(--font-weight-semibold, 600);
+  /* V5.2 卡片标题：26–30px Bold */
+  font-size: var(--font-card-title);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
 }
 
 .card-subtitle {
   margin-top: 2px;
-  font-size: var(--text-xs);
+  font-size: var(--font-secondary);
   color: var(--color-text-tertiary);
 }
 

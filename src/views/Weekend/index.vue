@@ -10,6 +10,7 @@ import type { WeekendReturnRecord } from '@/types/weekend'
 import WeekendReturnDrawer from './components/WeekendReturnDrawer.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import WeekendReturnRoster from './components/WeekendReturnRoster.vue'
+import { Luggage } from 'lucide-vue-next'
 
 const weekendStore = useWeekendStore()
 const studentStore = useStudentStore()
@@ -92,7 +93,6 @@ function confirmRemove() {
   <div class="weekend-page">
     <header class="page-toolbar">
       <div>
-        <h1 class="page-title">周末管理</h1>
         <p class="page-subtitle">
           本周末返家 {{ weekendStore.currentCount }} 人 · 本月累计
           {{ weekendStore.monthReturnCount }} 人次
@@ -144,7 +144,7 @@ function confirmRemove() {
 
     <AppCard v-else padding="none" class="empty-card">
       <EmptyState
-        icon="🧳"
+        :icon="Luggage"
         title="这一期还没有登记返家"
         description="点击右上角「登记返家」，勾上这个周末回家的学生。没登记的学生即视为留校。"
       >
@@ -185,12 +185,6 @@ function confirmRemove() {
   justify-content: space-between;
   gap: var(--space-4);
   margin-bottom: var(--space-5);
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
 }
 
 .page-subtitle {

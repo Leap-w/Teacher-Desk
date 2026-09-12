@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { AppBadge, AppButton, AppCard, EmptyState } from '@/components/ui'
 import { LEAVE_TYPE_LABELS, formatLeavePeriod } from '@/utils/leave'
 import type { LeaveRecord } from '@/types/leave'
+import { CircleCheck } from 'lucide-vue-next'
 
 /**
  * 工作台「请假管理」卡片（V1.1.5 记录口径）：关注「谁还没回来」，
@@ -58,7 +59,7 @@ const footNote = computed(() =>
 
     <EmptyState
       v-else
-      icon="✅"
+      :icon="CircleCheck"
       title="没有未返校的学生"
       description="需要记录学生请假时，点下方进入请假管理。"
     />

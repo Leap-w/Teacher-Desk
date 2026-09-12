@@ -32,6 +32,7 @@ import StudentCard from './components/StudentCard.vue'
 import StudentDetailModal from './components/StudentDetailModal.vue'
 import StudentFormModal from './components/StudentFormModal.vue'
 import StudentImportModal from './components/StudentImportModal.vue'
+import { Search, GraduationCap } from 'lucide-vue-next'
 
 type StudentFilter = 'all' | Gender | 'cadre'
 
@@ -318,7 +319,7 @@ function clearFilters() {
     <AppCard v-else padding="none" class="empty-card">
       <EmptyState
         v-if="activeStudents.length"
-        icon="🔍"
+        :icon="Search"
         title="未找到匹配的学生"
         description="换个关键词，或清除筛选条件再试试。"
       >
@@ -326,7 +327,7 @@ function clearFilters() {
       </EmptyState>
       <EmptyState
         v-else
-        icon="🎓"
+        :icon="GraduationCap"
         title="暂无学生"
         description="已有 Excel 名单的话，用「批量导入」一次建档；也可以逐个新增。"
       >

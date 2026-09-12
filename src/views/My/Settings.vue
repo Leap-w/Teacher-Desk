@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  Armchair,
+  ClipboardList,
+  Luggage,
+  NotebookPen,
+  Paintbrush,
+  Settings,
+  type LucideIcon,
+} from 'lucide-vue-next'
 
 import { AppBadge, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
@@ -33,7 +42,7 @@ interface Row {
 interface Section {
   id: string
   title: string
-  icon: string
+  icon: LucideIcon
   rows: Row[]
 }
 
@@ -50,7 +59,7 @@ const SECTIONS: Section[] = [
   {
     id: 'work',
     title: '工作管理',
-    icon: '📋',
+    icon: ClipboardList,
     rows: [
       { key: 'periods', label: '课程时间', value: courseTimeValue.value },
       { key: 'view', label: '默认视图', soon: true },
@@ -59,7 +68,7 @@ const SECTIONS: Section[] = [
   {
     id: 'seats',
     title: '座位管理',
-    icon: '🪑',
+    icon: Armchair,
     rows: [
       { key: 'layout', label: '教室布局', value: `${seatLayoutValue.value}（固定）` },
       { key: 'export-view', label: '导出默认视角', soon: true },
@@ -69,7 +78,7 @@ const SECTIONS: Section[] = [
   {
     id: 'leave',
     title: '请假管理',
-    icon: '📝',
+    icon: NotebookPen,
     rows: [
       { key: 'back-time', label: '默认返校时间', soon: true },
       { key: 'display', label: '显示方式', soon: true },
@@ -78,7 +87,7 @@ const SECTIONS: Section[] = [
   {
     id: 'duty',
     title: '值日管理',
-    icon: '🧹',
+    icon: Paintbrush,
     rows: [
       {
         key: 'rotation',
@@ -92,15 +101,15 @@ const SECTIONS: Section[] = [
   {
     id: 'weekend',
     title: '周末管理',
-    icon: '🧳',
+    icon: Luggage,
     rows: [{ key: 'remind', label: '默认返校提醒', soon: true }],
   },
   {
     id: 'system',
     title: '系统',
-    icon: '⚙️',
+    icon: Settings,
     rows: [
-      { key: 'theme', label: '主题', value: '松石青 · 浅色', soon: true },
+      { key: 'theme', label: '主题', value: '高原青 · 浅色', soon: true },
       { key: 'data', label: '数据与备份', value: '备份恢复 · 同步 · 清空', to: '/my/tools' },
       { key: 'about', label: '关于 TeacherDesk', value: `v${appConfig.version}`, to: 'about' },
     ],
@@ -159,7 +168,9 @@ const aboutOpen = ref(false)
       :class="{ 'is-flash': flashId === section.id }"
     >
       <h2 class="group-title">
-        <span class="group-icon" aria-hidden="true">{{ section.icon }}</span>
+        <span class="group-icon" aria-hidden="true"
+          ><component :is="section.icon" :size="18"
+        /></span>
         {{ section.title }}
       </h2>
       <div class="row-list">

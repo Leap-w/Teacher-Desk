@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import AppHeader from '@/components/layout/AppHeader.vue'
-import Sidebar from '@/components/layout/Sidebar.vue'
 import { AppToast } from '@/components/ui'
 </script>
 
 <template>
   <div class="app-shell">
-    <Sidebar />
-    <div class="app-main">
-      <AppHeader />
-      <main class="app-content">
-        <RouterView v-slot="{ Component }">
-          <Transition name="page" mode="out-in">
-            <component :is="Component" />
-          </Transition>
-        </RouterView>
-      </main>
-    </div>
+    <AppHeader />
+    <main class="app-content">
+      <RouterView v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" />
+        </Transition>
+      </RouterView>
+    </main>
     <AppToast />
   </div>
 </template>
@@ -24,23 +20,19 @@ import { AppToast } from '@/components/ui'
 <style scoped>
 .app-shell {
   display: flex;
-  height: 100%;
-}
-
-.app-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
   flex-direction: column;
+  min-height: 100%;
 }
 
+/* V1.3.0：内容流布局——1440px 居中 + 40px 左右留白；
+   顶部给固定胶囊导航（64px）让位 */
 .app-content {
   flex: 1;
-  overflow-y: auto;
-  /* 全应用唯一的滚动容器：左右 / 底部安全区都算进内边距，横屏时内容不贴刘海、滚到底不被 home 指示条压住 */
-  padding: 28px calc(clamp(20px, 4vw, 44px) + env(safe-area-inset-right, 0px))
-    calc(56px + env(safe-area-inset-bottom, 0px))
-    calc(clamp(20px, 4vw, 44px) + env(safe-area-inset-left, 0px));
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: calc(var(--nav-height) + 28px + env(safe-area-inset-top, 0px)) var(--page-pad-x)
+    calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 .page-enter-active,

@@ -41,6 +41,7 @@ import SeatArrangeModal from './components/SeatArrangeModal.vue'
 import SeatImportModal from './components/SeatImportModal.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import SeatConstraintModal from './components/SeatConstraintModal.vue'
+import { Armchair } from 'lucide-vue-next'
 
 type SeatView = 'teacher' | 'student'
 
@@ -800,7 +801,6 @@ async function runCompareExport() {
   <div class="seats-page">
     <header class="page-toolbar">
       <div>
-        <h1 class="page-title">座位管理</h1>
         <p class="page-subtitle">{{ roomSummary }}</p>
       </div>
       <div class="toolbar-actions">
@@ -1000,7 +1000,7 @@ async function runCompareExport() {
         />
         <EmptyState
           v-else
-          icon="🪑"
+          :icon="Armchair"
           title="暂无座位方案"
           description="点击右上角「＋ 新建方案」创建第一份排座方案。"
         >
@@ -1196,12 +1196,6 @@ async function runCompareExport() {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
 }
 
 .page-subtitle {

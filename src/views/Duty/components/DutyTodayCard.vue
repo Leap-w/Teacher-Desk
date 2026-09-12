@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AppBadge, AppButton, AppCard, EmptyState } from '@/components/ui'
 import type { DutyGroup, DutyMember } from '@/types/duty'
+import { CalendarDays, Moon, Paintbrush } from 'lucide-vue-next'
 
 interface Props {
   /** 今天值日的组；不值日（周末不排）或还没有组时为 undefined */
@@ -45,21 +46,21 @@ const emit = defineEmits<{
 
     <EmptyState
       v-else-if="needsSetup"
-      icon="🗓️"
+      :icon="CalendarDays"
       title="还没设置轮换起点"
       description="在下面的「轮换设置」里选好起点日期和起点组，排班就会自动排开。"
     />
 
     <EmptyState
       v-else-if="weekendSkipped"
-      icon="🌙"
+      :icon="Moon"
       title="今天不值日"
       description="当前设置为周末不排值日，周一继续轮到下一组。"
     />
 
     <EmptyState
       v-else
-      icon="🧹"
+      :icon="Paintbrush"
       title="还没有值日组"
       description="值日组就是轮换的单位：建好组、把同学分进去，轮换会自动按天推进。"
     >

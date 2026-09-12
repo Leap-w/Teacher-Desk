@@ -176,13 +176,12 @@ function openImport(mode: 'groups' | 'arrange'): void {
   <div class="duty-page">
     <header class="page-toolbar">
       <div>
-        <h1 class="page-title">值日管理</h1>
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
       <div class="toolbar-actions">
         <SettingsEntryButton module="duty" />
-        <AppButton variant="secondary" @click="openImport('groups')">📥 导入分组</AppButton>
-        <AppButton variant="secondary" @click="openImport('arrange')">📥 导入安排</AppButton>
+        <AppButton variant="secondary" @click="openImport('groups')">导入分组</AppButton>
+        <AppButton variant="secondary" @click="openImport('arrange')">导入安排</AppButton>
         <AppButton @click="openCreate">＋ 新建值日组</AppButton>
       </div>
     </header>
@@ -281,12 +280,6 @@ function openImport(mode: 'groups' | 'arrange'): void {
   gap: var(--space-2);
   flex-shrink: 0;
   flex-wrap: wrap;
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.3px;
 }
 
 .page-subtitle {

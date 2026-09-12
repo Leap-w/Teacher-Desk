@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { AppBadge, AppCard, EmptyState } from '@/components/ui'
 import { LESSON_TYPE_LABELS, periodLabelOf, periodTimeTextOf } from '@/utils/timetable'
 import type { Lesson } from '@/types/timetable'
+import { BookOpen } from 'lucide-vue-next'
 
 interface Props {
   /** 今日课程（已按时段升序，由 timetable store 的 lessonsOf 提供） */
@@ -49,7 +50,7 @@ const emptyDescription = computed(() =>
       </li>
     </ul>
 
-    <EmptyState v-else icon="📚" title="今天暂无课程" :description="emptyDescription" />
+    <EmptyState v-else :icon="BookOpen" title="今天暂无课程" :description="emptyDescription" />
   </AppCard>
 </template>
 

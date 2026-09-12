@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { AppBadge, AppButton, AppCard, AppInput, EmptyState } from '@/components/ui'
 import type { SeatPlan } from '@/types/seat'
+import { Armchair } from 'lucide-vue-next'
 
 interface Props {
   /** 全部座位方案（数组顺序即创建顺序） */
@@ -165,7 +166,7 @@ function submitRename(planId: string, event?: KeyboardEvent) {
 
     <EmptyState
       v-else
-      icon="🪑"
+      :icon="Armchair"
       title="暂无座位方案"
       description="点击右上角「＋ 新建方案」创建第一份排座方案。"
     >

@@ -129,7 +129,6 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
   <div class="works-page">
     <header class="works-head">
       <div class="head-text">
-        <h1 class="head-title">工作清单</h1>
         <p class="head-sub">
           今日未完成 <strong>{{ workStore.summary.todayOpen }}</strong> · 本周剩余
           <strong>{{ workStore.summary.weekOpen }}</strong>
@@ -139,7 +138,7 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
         </p>
       </div>
       <div class="head-actions">
-        <AppButton variant="secondary" @click="importOpen = true">📥 从 Excel 导入</AppButton>
+        <AppButton variant="secondary" @click="importOpen = true">从 Excel 导入</AppButton>
         <AppButton @click="openCreate">＋ 新建工作</AppButton>
       </div>
     </header>
@@ -215,7 +214,6 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
         "
         class="empty"
       >
-        <p class="empty-title">🎉</p>
         <p class="empty-text">目前没有待办。</p>
         <AppButton @click="openCreate">＋ 新建工作</AppButton>
       </section>
@@ -267,12 +265,6 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
   display: flex;
   gap: var(--space-2);
   flex-shrink: 0;
-}
-
-.head-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  letter-spacing: -0.4px;
 }
 
 .head-sub {
