@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Armchair,
+  CalendarClock,
   ClipboardList,
   Luggage,
   NotebookPen,
@@ -11,7 +12,8 @@ import {
   type LucideIcon,
 } from 'lucide-vue-next'
 
-import { AppBadge, AppModal } from '@/components/ui'
+import { AppBadge, AppInput, AppModal, AppSwitch } from '@/components/ui'
+import { useCountdownSettings, HERO_BACKGROUNDS } from '@/composables/useCountdownSettings'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import { COURSE_PERIODS } from '@/types/timetable'
@@ -56,6 +58,13 @@ const seatLayoutValue = computed(
 )
 
 const SECTIONS: Section[] = [
+  {
+    // V1.3.1：Hero 倒计时设置（表单控件渲染在本组卡片内，见模板 time-form 区块）
+    id: 'time',
+    title: '时间设置',
+    icon: CalendarClock,
+    rows: [],
+  },
   {
     id: 'work',
     title: '工作管理',
@@ -151,6 +160,10 @@ function openRow(row: Row): void {
 /* ---------- 关于 ---------- */
 
 const aboutOpen = ref(false)
+
+/* ---------- 时间设置（V1.3.1 Hero 倒计时） ---------- */
+
+const countdown = useCountdownSettings()
 </script>
 
 <template>
@@ -189,6 +202,72 @@ const aboutOpen = ref(false)
             <span v-if="row.to" class="row-chevron" aria-hidden="true">›</span>
           </span>
         </button>
+      </div>
+
+      <!-- V1.3.1 时间设置：Hero 倒计时的全部配置项（改动即自动保存） -->
+      <div v-if="section.id === 'time'" class="time-form">
+        <AppField label="倒计时标题">
+          <AppInput
+            :model-value="countdown.settings.value.title"
+            placeholder="如 距离期末考试"
+            @update:model-value="countdown.update({ title: $event })"
+          />
+        </AppField>
+        <div class="time-form__dates">
+          <AppField label="开始日期">
+            <AppInput
+              type="date"
+              :model-value="countdown.settings.value.startDate"
+              @update:model-value="countdown.update({ startDate: String($event) })"
+            />
+          </AppField>
+          <AppField label="目标日期">
+            <AppInput
+              type="date"
+              :model-value="countdown.settings.value.targetDate"
+              @update:model-value="countdown.update({ targetDate: String($event) })"
+            />
+          </AppField>
+        </div>
+
+        <AppField label="Hero 背景">
+          <div class="bg-presets">
+            <button
+              v-for="preset in HERO_BACKGROUNDS"
+              :key="preset.id"
+              type="button"
+              class="bg-presets__item"
+              :class="{ 'is-active': countdown.settings.value.background === preset.url }"
+              @click="countdown.update({ background: preset.url })"
+            >
+              <img class="bg-presets__thumb" :src="preset.url" alt="" />
+              <span class="bg-presets__label">{{ preset.label }}</span>
+            </button>
+          </div>
+          <AppInput
+            class="bg-custom"
+            :model-value="
+              HERO_BACKGROUNDS.some((p) => p.url === countdown.settings.value.background)
+                ? ''
+                : countdown.settings.value.background
+            "
+            placeholder="自定义背景图 URL（可选）"
+            @update:model-value="countdown.update({ background: String($event) })"
+          />
+        </AppField>
+
+        <div class="time-form__switch">
+          <span class="time-form__switch-label">显示进度与百分比</span>
+          <AppSwitch
+            :model-value="countdown.settings.value.showProgress"
+            label="显示进度"
+            @update:model-value="countdown.update({ showProgress: $event })"
+          />
+        </div>
+        <p class="time-form__hint">
+          已过去 {{ countdown.daysPassed.value }} 天 · 剩余 {{ countdown.daysRemaining.value }} 天 ·
+          完成 {{ countdown.progress.value }}%（自动计算，无需手动修改）
+        </p>
       </div>
     </section>
 
@@ -277,6 +356,84 @@ const aboutOpen = ref(false)
   display: flex;
   flex-direction: column;
   padding: var(--space-2) var(--spacing-md) var(--spacing-md);
+}
+
+/* ---- V1.3.1 时间设置表单 ---- */
+.time-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-card);
+  padding: var(--space-2) var(--spacing-md) var(--spacing-md);
+}
+
+.time-form__dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-card);
+}
+
+.bg-presets {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+
+.bg-presets__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 2px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.bg-presets__item.is-active {
+  border-color: var(--color-primary);
+}
+
+.bg-presets__thumb {
+  width: 88px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+.bg-presets__label {
+  font-size: var(--font-caption);
+  color: var(--color-text-secondary);
+}
+
+.bg-custom {
+  margin-top: var(--space-2);
+}
+
+.time-form__switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+}
+
+.time-form__switch-label {
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.time-form__hint {
+  margin: 0;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .setting-row {

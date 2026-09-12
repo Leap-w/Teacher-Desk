@@ -6,6 +6,27 @@
 
 ---
 
+## v1.3.1 —— 首页重设计（首页1.1.html 同源版）（2026-09-13，tag `v1.3.1`）
+
+> 只重构首页与时间设置；Pinia / CloudBase / localStorage 既有业务结构 / Router / SeatPlan / 导出功能零改动。详见开发手册 **§9.36**。
+
+### 新增
+
+- **Hero 倒计时区**（首页1.1.html 同源视觉）：昌都雪山背景（hover 缓放）+ 深色渐变遮罩 + 左侧金色巨幅「第 X 天」+ 右侧玻璃拟态倒计时卡（剩余天数大数字 + 进度条 + 百分比，`blur(20px)`、32px 圆角）。背景支持 3 个预设（昌都雪山 / 高原星夜 / 群山远眺）+ 自定义 URL。
+- **倒计时设置**：我的 → 设置 → **时间设置**——倒计时标题 / 开始日期 / 目标日期 / Hero 背景 / 显示进度开关，改动即自动保存（新增独立存储键 `teacherdesk:countdown`，读写走 services/storage，写入纪律不变）；已过 / 剩余天数与百分比全自动计算。默认口径 = 本学期开学 → 期末。
+- **日期栏**：Apple 锁屏风——大号日期 + 星期 + 时间胶囊 + **真实农历**（`utils/lunar.ts` 复用自昌都记忆），共享时钟 30s 驱动。
+- 新组件：`Home/components/HeroSection.vue`、`HomeDateBar.vue`；新 composable `useCountdownSettings`；新工具 `utils/lunar.ts`。
+
+### 变化
+
+- **今日状态**改为一行三个小卡：今日课程（节数 + 下一节时间，BookOpen）/ 今日工作（待办 + 已完成，ClipboardCheck）/ 本周授课（节数，CalendarDays）。
+- **班级提醒**重做三小卡：今日值日（组名 + 组员，Sparkles）/ 请假管理（今日请假人数，ClipboardList，点击跳请假）/ 班级概况（总人数 + 男 / 女，Users，点击跳学生档案）。
+- **快捷入口**重做五入口（昌都记忆 quick-btn 同款，Hover 上浮 + Press 缩放）：课程表 / 工作清单 / 座位管理 / 工具箱 / 系统设置。
+- **删除**：首页大型今日待办卡与全部仪表盘式统计卡（8 个旧 Dashboard 卡片组件 + DashboardHeader 移除）；首页结构 = Hero → 日期栏 → 今日状态 → 班级提醒 → 快捷入口。
+- 版号 `1.3.1`。
+
+---
+
 ## v1.3.0 —— UI Unified Design System（昌都记忆 V5.2 同源版）（2026-09-12，tag `v1.3.0`）
 
 > 全站 UI / 导航 / 页面交互按昌都记忆 V5.2 规格重构；**零数据改动**：Pinia Store、localStorage Key、CloudBase 数据结构、SeatPlan / 请假 / 值日 / 周末 / 课程表 / PNG·PDF 导出全部未动。详见开发手册 **§9.35**。
