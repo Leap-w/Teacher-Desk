@@ -20,6 +20,7 @@ import DashboardLessonStats from './components/DashboardLessonStats.vue'
 import DashboardQuickLinks from './components/DashboardQuickLinks.vue'
 import DashboardTodoCard from './components/DashboardTodoCard.vue'
 import DashboardWeekendCard from './components/DashboardWeekendCard.vue'
+import DashboardWorkCard from './components/DashboardWorkCard.vue'
 
 const toast = useToast()
 const router = useRouter()
@@ -92,6 +93,8 @@ function toggleTodo(id: string): void {
         :weekday-label="timetableStore.todayLabel"
         :weekend="isWeekend"
       />
+
+      <DashboardWorkCard @open="router.push('/work/works')" />
 
       <DashboardTodoCard :todos="dashboardStore.todos" @toggle="toggleTodo" />
 

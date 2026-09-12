@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import { AppBadge } from '@/components/ui'
-import { WEEKDAY_SHORT_LABELS } from '@/utils/timetable'
+import { LESSON_TYPE_LABELS, WEEKDAY_SHORT_LABELS, periodLabelOf } from '@/utils/timetable'
 import type { Lesson } from '@/types/timetable'
 
 interface Props {
@@ -16,18 +16,25 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<{
-  /** 点击卡片：请求编辑该课程（由页面打开编辑抽屉） */
-  (event: 'edit', lesson: Lesson): void
+  /** 点击卡片：打开课程详情（详情里提供 编辑 / 换课 / 代课 / 删除） */
+  (event: 'open', lesson: Lesson): void
 }>()
 
 /**
- * 无障碍名称里带上「星期 + 节次」：卡片所在的行列只对视觉有效，
+ * 无障碍名称里带上「星期 + 时段 + 类型」：卡片所在的行列只对视觉有效，
  * 读屏软件听不出这是周几的哪一节（移动端分日列表里略冗余，一并统一为一种格式）。
+ * **不包含上课地点**：V1.1.3 起课程表没有地点这一栏。
  */
 const ariaLabel = computed(
   () =>
-    `${WEEKDAY_SHORT_LABELS[props.lesson.weekday]} 第${props.lesson.period}节 ${props.lesson.subject} ${props.lesson.className}` +
-    `${props.lesson.location ? ` ${props.lesson.location}` : ''}${props.lesson.isTemporary ? '（代课）' : ''}，点击编辑`,
+    `${WEEKDAY_SHORT_LABELS[props.lesson.weekday]} ${periodLabelOf(props.lesson.periodId)} ` +
+    `${props.lesson.subject} ${props.lesson.className}` +
+    `${props.lesson.type === 'normal' ? '' : `（${LESSON_TYPE_LABELS[props.lesson.type]}）`}，点击查看详情`,
+)
+
+/** 代课 / 调课的徽标文案（正常课不显示徽标） */
+const badgeText = computed(() =>
+  props.lesson.type === 'normal' ? undefined : LESSON_TYPE_LABELS[props.lesson.type],
 )
 </script>
 
@@ -35,16 +42,25 @@ const ariaLabel = computed(
   <button
     type="button"
     class="lesson-card"
-    :class="{ 'is-compact': compact, 'is-temp': lesson.isTemporary }"
+    :class="{
+      'is-compact': compact,
+      'is-temp': lesson.type === 'substitute',
+      'is-adjusted': lesson.type === 'adjusted',
+    }"
     :aria-label="ariaLabel"
-    @click="emit('edit', lesson)"
+    @click="emit('open', lesson)"
   >
     <span class="lesson-head">
       <span class="lesson-subject">{{ lesson.subject }}</span>
-      <AppBadge v-if="lesson.isTemporary" variant="warning" size="sm">代课</AppBadge>
+      <AppBadge
+        v-if="badgeText"
+        :variant="lesson.type === 'substitute' ? 'warning' : 'neutral'"
+        size="sm"
+      >
+        {{ badgeText }}
+      </AppBadge>
     </span>
     <span class="lesson-class">{{ lesson.className }}</span>
-    <span v-if="lesson.location" class="lesson-location">{{ lesson.location }}</span>
   </button>
 </template>
 
@@ -90,6 +106,16 @@ const ariaLabel = computed(
   background: var(--color-warning-soft-strong);
 }
 
+/* 调课：中性灰（不是异常，只是「这节的来历不同」） */
+.lesson-card.is-adjusted {
+  border-left-color: var(--color-text-secondary);
+  background: var(--color-fill-disabled);
+}
+
+.lesson-card.is-adjusted:hover {
+  background: var(--color-fill-disabled);
+}
+
 .lesson-card.is-compact {
   padding: var(--space-1) var(--space-2);
   gap: 1px;
@@ -101,6 +127,7 @@ const ariaLabel = computed(
   gap: var(--space-2);
   min-width: 0;
   max-width: 100%;
+  flex-wrap: wrap;
 }
 
 .lesson-subject {
@@ -118,15 +145,5 @@ const ariaLabel = computed(
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
   overflow-wrap: anywhere;
-}
-
-.lesson-location {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  overflow-wrap: anywhere;
-}
-
-.lesson-card.is-compact .lesson-location {
-  font-size: 11px;
 }
 </style>

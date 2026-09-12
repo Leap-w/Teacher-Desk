@@ -1,6 +1,7 @@
 import { appConfig } from '@/config'
 import type { StoragePort } from '@/services/storage'
 import { isSampleRecordId } from '@/utils/id'
+import { periodLabelOf } from '@/utils/timetable'
 import { isPlainObject } from '@/utils/object'
 
 /**
@@ -36,11 +37,15 @@ export interface BackupModule {
   unit: string
 }
 
-/** 八个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
+/** 十个数据块的键（与各 store 的 STORAGE_KEY 一一对应，改动 store 键时同步这里） */
 const STUDENT_KEY = `${appConfig.storageKeyPrefix}:students`
 const SEAT_PLAN_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 const CONSTRAINT_KEY = `${appConfig.storageKeyPrefix}:seatConstraints`
 const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
+/** V1.1.3：换课记录（课程表的第二块，与课程分键存放） */
+const EXCHANGE_KEY = `${appConfig.storageKeyPrefix}:timetable:exchanges`
+/** V1.1.3：工作清单（「工作管理」的第二个板块） */
+const WORK_KEY = `${appConfig.storageKeyPrefix}:works`
 const TODO_KEY = `${appConfig.storageKeyPrefix}:dashboard:todos`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
@@ -48,12 +53,14 @@ const WEEKEND_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
 /** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
 const LEGACY_TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable:lessons`
 
-/** 备份覆盖的八个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
+/** 备份覆盖的十个数据块；顺序即界面展示顺序，新增 store 时在此登记 */
 export const BACKUP_MODULES: BackupModule[] = [
   { key: STUDENT_KEY, label: '学生档案', unit: '名' },
   { key: SEAT_PLAN_KEY, label: '座位方案', unit: '个' },
   { key: CONSTRAINT_KEY, label: '座位约束', unit: '条' },
   { key: TIMETABLE_KEY, label: '课程表', unit: '节' },
+  { key: EXCHANGE_KEY, label: '换课记录', unit: '条' },
+  { key: WORK_KEY, label: '工作清单', unit: '条' },
   { key: TODO_KEY, label: '今日待办', unit: '条' },
   { key: LEAVE_KEY, label: '请假记录', unit: '条' },
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
@@ -363,12 +370,28 @@ function describeItem(key: string, item: unknown): string {
   if (!isPlainObject(item)) return '（无法识别的一条记录）'
   const textOf = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : '')
   if (key === STUDENT_KEY) return textOf(item.name) || '（未填写姓名的学生）'
-  // 旧课表键沿用同一套描述：旧条目同样有 weekday / period / subject
+  // 旧课表键沿用同一套描述：旧条目有 weekday / period（数字节次），V1.1.3 起改为 weekday / periodId
   if (key === TIMETABLE_KEY || key === LEGACY_TIMETABLE_KEY) {
     const weekday = typeof item.weekday === 'number' ? item.weekday : 0
-    const period = typeof item.period === 'number' ? item.period : 0
-    return `周${weekday} 第 ${period} 节 ${textOf(item.subject) || '未填写科目'}`
+    const periodId = typeof item.periodId === 'string' ? item.periodId : ''
+    const legacyPeriod = typeof item.period === 'number' ? item.period : 0
+    const periodLabel = periodId
+      ? periodLabelOf(periodId)
+      : legacyPeriod
+        ? `第 ${legacyPeriod} 节`
+        : '未填写时段'
+    return `周${weekday} ${periodLabel} ${textOf(item.subject) || '未填写科目'}`
   }
+  if (key === EXCHANGE_KEY) {
+    const slotText = (value: unknown): string => {
+      if (!isPlainObject(value)) return '未知时间'
+      const weekday = typeof value.weekday === 'number' ? value.weekday : 0
+      const periodId = typeof value.periodId === 'string' ? value.periodId : ''
+      return `周${weekday} ${periodId ? periodLabelOf(periodId) : '未知时段'}`
+    }
+    return `${slotText(item.from)} → ${slotText(item.to)}`
+  }
+  if (key === WORK_KEY) return textOf(item.title) || '（未命名的工作）'
   if (key === TODO_KEY) return textOf(item.text) || '（无内容待办）'
   if (key === LEAVE_KEY || key === WEEKEND_KEY) {
     // 请假与周末返家同款带 studentName 快照，描述口径一致

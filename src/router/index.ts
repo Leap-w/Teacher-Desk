@@ -31,10 +31,27 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '座位管理', icon: '🪑' },
   },
   {
-    path: '/schedule',
-    name: 'schedule',
-    component: () => import('@/views/Schedule/index.vue'),
-    meta: { title: '课程表', icon: '📅' },
+    path: '/work',
+    component: { template: '<router-view />' },
+    meta: { title: '工作管理', icon: '📋' },
+    children: [
+      {
+        path: '',
+        redirect: '/work/schedule',
+      },
+      {
+        path: 'schedule',
+        name: 'schedule',
+        component: () => import('@/views/Schedule/index.vue'),
+        meta: { title: '课程表', icon: '📅' },
+      },
+      {
+        path: 'works',
+        name: 'works',
+        component: () => import('@/views/Works/index.vue'),
+        meta: { title: '工作清单', icon: '✅' },
+      },
+    ],
   },
   {
     path: '/leave',

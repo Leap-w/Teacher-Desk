@@ -1,24 +1,33 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
 
-import { AppButton, AppDrawer, AppField, AppInput, AppSelect, AppSwitch } from '@/components/ui'
-import { useToast } from '@/composables/useToast'
+import { AppButton, AppDrawer, AppField, AppInput, AppSelect } from '@/components/ui'
 import { useTimetableStore } from '@/stores/timetable'
-import { LESSON_PERIODS, WEEKDAYS, WEEKDAY_LABELS, classIdOf } from '@/utils/timetable'
-import type { Lesson, LessonInput, Weekday } from '@/types/timetable'
+import { COURSE_PERIODS } from '@/types/timetable'
+import type { CoursePeriodId, Lesson, LessonInput, LessonType, Weekday } from '@/types/timetable'
+import { WEEKDAYS, WEEKDAY_LABELS, classIdOf, periodFullTextOf } from '@/utils/timetable'
 import type { SelectOption } from '@/types'
+
+/**
+ * 新增 / 编辑课程抽屉（V1.1.3：时段改为 10 个固定时间段；类型区分正常 / 代课）。
+ * `presetType` 服务「详情 → 代课」这条快捷路径：打开时直接选中「代课」。
+ * **没有上课地点这一栏**（需求明确：课程表不增加地点字段）。
+ */
 
 interface Props {
   modelValue: boolean
   /** 传入则为编辑模式，否则为新增 */
   lesson?: Lesson
-  /** 新增时的默认星期 / 节次（点周视图空格子进来时带上） */
+  /** 新增时的默认星期 / 时段（点周视图空格子进来时带上） */
   defaultWeekday: Weekday
-  defaultPeriod: number
+  defaultPeriodId: CoursePeriodId
+  /** 新增时的预置类型（详情页的「代课」入口用） */
+  presetType?: LessonType
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lesson: undefined,
+  presetType: 'normal',
 })
 
 const emit = defineEmits<{
@@ -28,7 +37,6 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-const toast = useToast()
 const timetableStore = useTimetableStore()
 
 /** 「其他（手动输入）」选项的哨兵值：与真实班级名不会撞（班级名不会以此开头） */
@@ -39,126 +47,130 @@ const WEEKDAY_OPTIONS: SelectOption<Weekday>[] = WEEKDAYS.map((weekday) => ({
   value: weekday,
 }))
 
-const PERIOD_OPTIONS: SelectOption<number>[] = LESSON_PERIODS.map((period) => ({
-  label: `第 ${period} 节`,
-  value: period,
+/** 时段选项带上起止时间——教师按时间找课比按序号快（时间定义来自唯一配置） */
+const PERIOD_OPTIONS: SelectOption<CoursePeriodId>[] = COURSE_PERIODS.map((period) => ({
+  label: `${period.label}（${period.startTime}–${period.endTime}）`,
+  value: period.id,
 }))
+
+const TYPE_OPTIONS: SelectOption<LessonType>[] = [
+  { label: '正常课程', value: 'normal' },
+  { label: '代课（替别人上）', value: 'substitute' },
+]
 
 const classOptions = computed<SelectOption<string>[]>(() => [
   ...timetableStore.classNames.map((name) => ({ label: name, value: name })),
   { label: '其他（手动输入）', value: CUSTOM_CLASS },
 ])
 
-/** 已录入过的科目（提示用，不限制输入） */
-const subjectHint = computed(() => {
-  const used = [...new Set(timetableStore.lessons.map((lesson) => lesson.subject))]
-  return used.length > 0 ? `已录入：${used.join(' / ')}` : '如 数学 / 语文 / 班会'
+interface FormState {
+  weekday: Weekday
+  periodId: CoursePeriodId
+  subject: string
+  classChoice: string
+  customClassName: string
+  type: LessonType
+  originalTeacher: string
+}
+
+const form = reactive<FormState>({
+  weekday: props.defaultWeekday,
+  periodId: props.defaultPeriodId,
+  subject: '',
+  classChoice: '',
+  customClassName: '',
+  type: 'normal',
+  originalTeacher: '',
+})
+
+const errors = reactive({
+  subject: '',
+  className: '',
+  period: '',
+  originalTeacher: '',
 })
 
 const isEdit = computed(() => Boolean(props.lesson))
+const isCustomClass = computed(() => form.classChoice === CUSTOM_CLASS)
 
-interface FormState {
-  weekday: Weekday
-  period: number
-  subject: string
-  /** 选中的班级名，或 CUSTOM_CLASS */
-  classChoice: string
-  customClassName: string
-  teacher: string
-  location: string
-  isTemporary: boolean
-}
-
-function blankForm(): FormState {
-  return {
-    weekday: props.defaultWeekday,
-    period: props.defaultPeriod,
-    subject: '',
-    classChoice: timetableStore.classNames[0] ?? CUSTOM_CLASS,
-    customClassName: '',
-    teacher: '我',
-    location: '',
-    isTemporary: false,
-  }
-}
-
-const form = reactive<FormState>(blankForm())
-const errors = reactive({ subject: '', className: '', teacher: '', period: '' })
-
-/** 实际使用的班级名 */
+/** 最终班级名（自定义时取输入框内容） */
 const className = computed(() =>
-  form.classChoice === CUSTOM_CLASS ? form.customClassName.trim() : form.classChoice,
+  isCustomClass.value ? form.customClassName.trim() : form.classChoice.trim(),
 )
 
+/** 时段冲突提示（编辑时排除自身） */
+const conflict = computed(() =>
+  timetableStore.slotConflict(form.weekday, form.periodId, props.lesson?.id),
+)
+
+const subjectHint = '如「数学」「班会」「数学（代课）」——科目是自由文本'
+
+/** 抽屉每次打开时按传入内容重置（编辑回填 / 新增用默认值） */
 watch(
   () => props.modelValue,
   (open) => {
     if (!open) return
-    Object.assign(form, blankForm())
+    const lesson = props.lesson
+    if (lesson) {
+      form.weekday = lesson.weekday
+      form.periodId = lesson.periodId
+      form.subject = lesson.subject
+      form.classChoice = timetableStore.classNames.includes(lesson.className)
+        ? lesson.className
+        : CUSTOM_CLASS
+      form.customClassName = lesson.className
+      form.type = lesson.type === 'adjusted' ? 'normal' : lesson.type
+      form.originalTeacher = lesson.originalTeacher ?? ''
+    } else {
+      form.weekday = props.defaultWeekday
+      form.periodId = props.defaultPeriodId
+      form.subject = ''
+      form.classChoice = timetableStore.classNames[0] ?? CUSTOM_CLASS
+      form.customClassName = ''
+      form.type = props.presetType
+      form.originalTeacher = ''
+    }
     errors.subject = ''
     errors.className = ''
-    errors.teacher = ''
     errors.period = ''
-    const lesson = props.lesson
-    if (!lesson) return
-    Object.assign(form, {
-      weekday: lesson.weekday,
-      period: lesson.period,
-      subject: lesson.subject,
-      // 班级名不在已有候选里时按「手动输入」回填，不静默改写成别的班
-      classChoice: timetableStore.classNames.includes(lesson.className)
-        ? lesson.className
-        : CUSTOM_CLASS,
-      customClassName: timetableStore.classNames.includes(lesson.className) ? '' : lesson.className,
-      teacher: lesson.teacher,
-      location: lesson.location ?? '',
-      isTemporary: lesson.isTemporary === true,
-    })
+    errors.originalTeacher = ''
   },
+  { immediate: true },
 )
 
-// 改了时间就清掉上一次的冲突提示，避免旧报错一直挂着
 watch(
-  () => [form.weekday, form.period],
+  () => [form.weekday, form.periodId],
   () => {
-    errors.period = ''
+    if (errors.period && !conflict.value) errors.period = ''
   },
 )
 
 function validate(): boolean {
-  errors.subject = form.subject.trim() ? '' : '科目不能为空'
-  errors.className = className.value ? '' : '请选择或手动输入班级'
-  errors.teacher = form.teacher.trim() ? '' : '任课教师不能为空'
-
-  const conflict = timetableStore.slotConflict(form.weekday, form.period, props.lesson?.id)
-  errors.period = conflict ? `该时间已有课程：${conflict.subject}（${conflict.className}）` : ''
-
-  return !errors.subject && !errors.className && !errors.teacher && !errors.period
+  errors.subject = form.subject.trim() ? '' : '请填写科目'
+  errors.className = className.value ? '' : '请填写班级'
+  errors.originalTeacher =
+    form.type === 'substitute' && !form.originalTeacher.trim() ? '代课必须填写原授课教师' : ''
+  errors.period = conflict.value
+    ? `该时间已有课程：${conflict.value.subject}（${conflict.value.className}）`
+    : ''
+  return !errors.subject && !errors.className && !errors.period && !errors.originalTeacher
 }
 
-/**
- * 提交：这里**不关抽屉**——关不关由页面按写入结果决定。
- * 写入被拒（时段冲突以外的原因，如另一标签页已删掉该课程）时抽屉保持打开，
- * 教师填的内容还在，改一改就能重试。
- */
-function submit() {
-  if (!validate()) {
-    // 手机上抽屉内容会滚动，出错字段可能不在视口内，光靠字段内联提示等于没反馈
-    toast.danger(errors.period || errors.subject || errors.className || errors.teacher)
-    return
-  }
+function submit(): void {
+  if (!validate()) return
   const name = className.value
-  const payload: LessonInput = {
+  emit('submit', {
     weekday: form.weekday,
-    period: form.period,
+    periodId: form.periodId,
     subject: form.subject.trim(),
     classId: classIdOf(name),
     className: name,
-    teacher: form.teacher.trim(),
-    location: form.location.trim() || undefined,
-    isTemporary: form.isTemporary,
-  }
-  emit('submit', payload)
+    teacher: props.lesson?.teacher ?? '我',
+    type: form.type,
+    originalTeacher: form.type === 'substitute' ? form.originalTeacher.trim() : undefined,
+    exchangeId: props.lesson?.exchangeId,
+    courseGroupId: props.lesson?.courseGroupId,
+  })
 }
 
 function close() {
@@ -173,18 +185,18 @@ function close() {
     :width="440"
     @update:model-value="close"
   >
-    <!-- 保存 / 取消在抽屉 footer（表单外的兄弟节点），靠 footer 保存按钮的 form="..." 关联回本表单：
-         在任一输入框里回车即触发隐式提交 → submit 事件 → 保存（prevent 兜住整页刷新，未保存内容不会丢） -->
     <form id="lesson-edit-form" class="lesson-form" @submit.prevent="submit">
       <div class="form-grid">
         <AppField label="星期" required>
           <AppSelect v-model="form.weekday" :options="WEEKDAY_OPTIONS" />
         </AppField>
 
-        <AppField label="节次" required :error="errors.period">
-          <AppSelect v-model="form.period" :options="PERIOD_OPTIONS" :error="!!errors.period" />
+        <AppField label="时段" required :error="errors.period">
+          <AppSelect v-model="form.periodId" :options="PERIOD_OPTIONS" :error="!!errors.period" />
         </AppField>
       </div>
+
+      <p class="period-hint">当前选择：{{ periodFullTextOf(form.periodId) }}</p>
 
       <AppField label="科目" required :error="errors.subject" :hint="subjectHint">
         <AppInput v-model="form.subject" :error="!!errors.subject" placeholder="如 数学" />
@@ -194,15 +206,11 @@ function close() {
         label="班级"
         required
         :error="errors.className"
-        :hint="
-          form.classChoice === CUSTOM_CLASS
-            ? '输入新班级名后，会与同名班级视为同一个班'
-            : '从已录入的班级中选择'
-        "
+        :hint="isCustomClass ? '输入新班级名后，会与同名班级视为同一个班' : '从已录入的班级中选择'"
       >
         <AppSelect v-model="form.classChoice" :options="classOptions" :error="!!errors.className" />
         <AppInput
-          v-if="form.classChoice === CUSTOM_CLASS"
+          v-if="isCustomClass"
           v-model="form.customClassName"
           class="class-custom"
           :error="!!errors.className"
@@ -210,32 +218,28 @@ function close() {
         />
       </AppField>
 
+      <AppField label="类型" hint="代课要记下原授课教师，课表上会显示「代课」标记">
+        <AppSelect v-model="form.type" :options="TYPE_OPTIONS" />
+      </AppField>
+
       <AppField
-        label="任课教师"
+        v-if="form.type === 'substitute'"
+        label="原授课教师"
         required
-        :error="errors.teacher"
-        hint="本人课表填「我」；代课填实际授课教师"
+        :error="errors.originalTeacher"
       >
-        <AppInput v-model="form.teacher" :error="!!errors.teacher" placeholder="如 我 / 王老师" />
+        <AppInput
+          v-model="form.originalTeacher"
+          :error="!!errors.originalTeacher"
+          placeholder="如 张老师"
+        />
       </AppField>
-
-      <AppField label="地点">
-        <AppInput v-model="form.location" placeholder="选填，如 A 栋 302" />
-      </AppField>
-
-      <div class="temp-field">
-        <AppSwitch v-model="form.isTemporary" label="临时代课" />
-        <p class="temp-hint">开启后该课程在课表上标记「代课」。</p>
-      </div>
     </form>
 
     <template #footer>
-      <AppButton v-if="isEdit" variant="ghost" class="footer-remove" @click="emit('remove')">
-        删除
-      </AppButton>
+      <AppButton v-if="isEdit" variant="ghost" @click="emit('remove')">删除</AppButton>
       <AppButton variant="ghost" @click="close">取消</AppButton>
-      <!-- type=submit + form 关联：点击与输入框回车走同一条提交路径（不再挂 @click，避免提交两次） -->
-      <AppButton type="submit" form="lesson-edit-form">保存</AppButton>
+      <AppButton type="submit" form="lesson-edit-form">{{ isEdit ? '保存' : '新增' }}</AppButton>
     </template>
   </AppDrawer>
 </template>
@@ -249,33 +253,17 @@ function close() {
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.period-hint {
+  margin-top: calc(var(--space-2) * -1);
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 .class-custom {
   margin-top: var(--space-2);
-}
-
-.temp-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.temp-hint {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-}
-
-/* 删除放最左，与「取消 / 保存」拉开距离，避免误点 */
-.footer-remove {
-  margin-right: auto;
-}
-
-@media (max-width: 420px) {
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

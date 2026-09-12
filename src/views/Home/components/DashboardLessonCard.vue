@@ -2,10 +2,11 @@
 import { computed } from 'vue'
 
 import { AppBadge, AppCard, EmptyState } from '@/components/ui'
+import { LESSON_TYPE_LABELS, periodLabelOf, periodTimeTextOf } from '@/utils/timetable'
 import type { Lesson } from '@/types/timetable'
 
 interface Props {
-  /** 今日课程（已按节次升序，由 timetable store 的 lessonsOf 提供） */
+  /** 今日课程（已按时段升序，由 timetable store 的 lessonsOf 提供） */
   lessons: Lesson[]
   /** 今天星期几的中文标签，用于右上角「今天 星期四」 */
   weekdayLabel: string
@@ -28,12 +29,23 @@ const emptyDescription = computed(() =>
 
     <ul v-if="lessons.length > 0" class="lesson-list">
       <li v-for="lesson in lessons" :key="lesson.id" class="lesson-row">
-        <span class="lesson-period">第{{ lesson.period }}节</span>
+        <span class="lesson-period">
+          {{ periodLabelOf(lesson.periodId) }}
+          <span class="lesson-time">{{ periodTimeTextOf(lesson.periodId) }}</span>
+        </span>
         <span class="lesson-main">
-          <span class="lesson-subject">{{ lesson.subject }}</span>
+          <span class="lesson-subject">
+            {{ lesson.subject }}
+            <AppBadge
+              v-if="lesson.type !== 'normal'"
+              :variant="lesson.type === 'substitute' ? 'warning' : 'neutral'"
+              size="sm"
+            >
+              {{ LESSON_TYPE_LABELS[lesson.type] }}
+            </AppBadge>
+          </span>
           <span class="lesson-class">{{ lesson.className }}</span>
         </span>
-        <span v-if="lesson.location" class="lesson-location">{{ lesson.location }}</span>
       </li>
     </ul>
 
@@ -66,7 +78,9 @@ const emptyDescription = computed(() =>
 
 .lesson-period {
   flex-shrink: 0;
-  min-width: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--color-primary-soft);
@@ -74,6 +88,12 @@ const emptyDescription = computed(() =>
   font-size: var(--text-xs);
   font-weight: 600;
   text-align: center;
+}
+
+.lesson-time {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-faint);
 }
 
 .lesson-main {
@@ -89,18 +109,13 @@ const emptyDescription = computed(() =>
   font-size: var(--text-md);
   font-weight: 600;
   color: var(--color-text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .lesson-class {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
-}
-
-/* 地点可长可短：允许被压缩并在词内换行，长地点不会把整行撑破（§9.6 审查修复） */
-.lesson-location {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
 }
 </style>
