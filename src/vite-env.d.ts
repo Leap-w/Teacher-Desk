@@ -9,3 +9,6 @@ declare module 'virtual:uno.css'
 interface ImportMetaEnv {
   readonly VITE_CLOUD_ENV_ID?: string
 }
+
+/** 应用版本（vite.config.ts define 注入，来自 package.json version） */
+declare const __APP_VERSION__: string

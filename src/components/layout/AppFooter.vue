@@ -8,9 +8,10 @@ import { useCloudSync } from '@/composables/useCloudSync'
  * 底部状态栏（V2.0.1-alpha · Phase UI-2）：
  * 左：TeacherDesk · 当前版本；右：GitHub（预留）/ 云同步状态 / 构建信息。
  * 轻量、不抢视觉——hairline 上边框 + 辅助文字色。
+ * 版本号来自 vite define（__APP_VERSION__ ← package.json），单一来源。
  */
-const APP_VERSION = 'v2.0.1-alpha'
-const BUILD_TAG = 'CDL v6.0 · UI-2'
+const APP_VERSION = __APP_VERSION__
+const BUILD_TAG = 'CDL v6.0 · UI-5B'
 
 const { enabled, statusView } = useCloudSync()
 

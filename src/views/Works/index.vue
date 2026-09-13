@@ -1,23 +1,37 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import { AppButton } from '@/components/ui'
+import { AppButton, EmptyState } from '@/components/ui'
+import { useNow } from '@/composables/useToday'
 import { useToast } from '@/composables/useToast'
 import { useWorkStore } from '@/stores/work'
 import type { WorkCategory, WorkFilter, WorkItem } from '@/types/work'
-import { sortWorks, weekEndOf } from '@/utils/work'
+import { formatDateLabel } from '@/utils/date'
+import { filterWorks, sortWorks, weekEndOf } from '@/utils/work'
+import { Plus, Search, Sparkles } from 'lucide-vue-next'
+import TaskGroup from './components/TaskGroup.vue'
+import TaskStats from './components/TaskStats.vue'
+import TaskTimeline from './components/TaskTimeline.vue'
+import TasksHero from './components/TasksHero.vue'
+import TodayTaskList from './components/TodayTaskList.vue'
 import WorkEditDrawer from './components/WorkEditDrawer.vue'
 import WorkImportModal from './components/WorkImportModal.vue'
-import WorkRow from './components/WorkRow.vue'
 
 /**
- * 工作清单页面（V1.1.3 · 「工作管理」第二个板块）。
+ * 工作清单页面（V2.0.9-alpha · Phase UI-5B · Tasks Hub）。
  *
- * 列表分组：今日 / 本周剩余 / 逾期，按 `utils/work.ts#sortWorks` 同款口径排序。
- * 筛选：「全部 / 待完成 / 进行中 / 已完成」与需求给出的四项一致。
+ * Action First 四层：Hero → 统计 → 今日待办｜即将到来（桌面双列）→ 已完成时间轴。
+ * 分组沿用 store 口径：todayList（≤ 今天未完成，含逾期）/ weekList（本周剩余）/
+ * laterList（本周日之后）/ 已完成（时间轴倒序）。
+ * 增删改 / 完成 / 导入逻辑全部原样保留。
  */
 const toast = useToast()
 const workStore = useWorkStore()
+const now = useNow()
+
+const dateLabel = computed(() => formatDateLabel(now.value))
+
+/* ---------- 状态筛选（保留原四项；「全部」= Action First 分层视图） ---------- */
 
 const filter = ref<WorkFilter>('all')
 
@@ -45,11 +59,11 @@ const overdueList = computed(() =>
   workStore.sortedWorks.filter((work) => work.date < workStore.today && work.status !== 'done'),
 )
 
-/** 当前筛选下的全部任务 */
-const filteredAll = computed(() => {
-  if (filter.value === 'all') return workStore.sortedWorks
-  return workStore.sortedWorks.filter((work) => work.status === filter.value)
-})
+/** 已完成（时间轴数据源） */
+const doneList = computed(() => workStore.works.filter((work) => work.status === 'done'))
+
+/** 当前筛选下的全部任务（非「全部」视图用） */
+const filteredList = computed(() => filterWorks(workStore.works, filter.value))
 
 /* ---------- 抽屉 / 弹窗 ---------- */
 
@@ -126,29 +140,29 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
 </script>
 
 <template>
-  <div class="works-page">
-    <header class="works-head">
-      <div class="head-text">
-        <p class="head-sub">
-          今日未完成 <strong>{{ workStore.summary.todayOpen }}</strong> · 本周剩余
-          <strong>{{ workStore.summary.weekOpen }}</strong>
-          <span v-if="workStore.summary.overdue > 0" class="head-overdue">
-            · 逾期 <strong>{{ workStore.summary.overdue }}</strong>
-          </span>
-        </p>
-      </div>
-      <div class="head-actions">
-        <AppButton variant="secondary" @click="importOpen = true">从 Excel 导入</AppButton>
-        <AppButton @click="openCreate">＋ 新建工作</AppButton>
-      </div>
-    </header>
+  <div class="tasks-page">
+    <!-- ===== Action First · Layer 1：Today Hero ===== -->
+    <TasksHero
+      :date-label="dateLabel"
+      :today-open="workStore.summary.todayOpen"
+      :today-done="workStore.summary.todayDone"
+      :overdue="workStore.summary.overdue"
+    >
+      <template #actions>
+        <AppButton variant="secondary" size="sm" @click="importOpen = true">Excel 导入</AppButton>
+      </template>
+    </TasksHero>
 
-    <nav class="filter-tabs" aria-label="筛选状态">
+    <!-- ===== Layer 2：今日概览统计 ===== -->
+    <TaskStats :summary="workStore.summary" />
+
+    <!-- 状态筛选：保留原四项，切换 200ms；「全部」= 分层视图 -->
+    <nav class="filter-chips" aria-label="筛选状态">
       <button
         v-for="option in FILTER_OPTIONS"
         :key="option.value"
         type="button"
-        class="filter-tab"
+        class="filter-chip"
         :class="{ 'is-active': filter === option.value }"
         @click="filter = option.value"
       >
@@ -156,84 +170,102 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
       </button>
     </nav>
 
+    <!-- ===== 「全部」：Action First 分层视图 ===== -->
     <template v-if="filter === 'all'">
-      <section v-if="overdueList.length > 0" class="work-section">
-        <h2 class="section-title is-overdue">逾期</h2>
-        <WorkRow
-          v-for="work in overdueList"
-          :key="work.id"
-          :work="work"
-          @toggle="toggleDone"
-          @edit="openEdit"
-          @remove="remove"
-        />
-      </section>
+      <div class="tasks-columns">
+        <div class="col-main">
+          <!-- Layer 2 主体：今日待办置顶 -->
+          <section class="today-section">
+            <h2 class="section-title is-today">今天</h2>
+            <TodayTaskList
+              :works="todayList"
+              @toggle="toggleDone"
+              @edit="openEdit"
+              @remove="remove"
+            />
+            <!-- 逾期并入今天列表展示后，若仍有单独口径才展示本组 -->
+            <template v-if="overdueList.length > 0 && todayList.length === 0">
+              <TaskGroup
+                title="已逾期"
+                tone="overdue"
+                :works="overdueList"
+                @toggle="toggleDone"
+                @edit="openEdit"
+                @remove="remove"
+              />
+            </template>
+          </section>
 
-      <section v-if="todayList.length > 0" class="work-section">
-        <h2 class="section-title">今日</h2>
-        <WorkRow
-          v-for="work in todayList"
-          :key="work.id"
-          :work="work"
-          @toggle="toggleDone"
-          @edit="openEdit"
-          @remove="remove"
-        />
-      </section>
+          <!-- Layer 4：已完成时间轴（今天之下，视觉权重低） -->
+          <section v-if="doneList.length > 0" class="done-section">
+            <h2 class="section-title">已完成</h2>
+            <TaskTimeline :works="doneList" @toggle="toggleDone" />
+          </section>
+        </div>
 
-      <section v-if="weekList.length > 0" class="work-section">
-        <h2 class="section-title">本周剩余</h2>
-        <WorkRow
-          v-for="work in weekList"
-          :key="work.id"
-          :work="work"
-          @toggle="toggleDone"
-          @edit="openEdit"
-          @remove="remove"
-        />
-      </section>
+        <div class="col-side">
+          <!-- Layer 3：任务分组（即将到来） -->
+          <TaskGroup
+            title="本周剩余"
+            :works="weekList"
+            @toggle="toggleDone"
+            @edit="openEdit"
+            @remove="remove"
+          >
+            <template #empty>
+              <p class="group-empty">本周其他天没有安排。</p>
+            </template>
+          </TaskGroup>
 
-      <section v-if="laterList.length > 0" class="work-section">
-        <h2 class="section-title">稍后</h2>
-        <WorkRow
-          v-for="work in laterList"
-          :key="work.id"
-          :work="work"
-          @toggle="toggleDone"
-          @edit="openEdit"
-          @remove="remove"
-        />
-      </section>
+          <TaskGroup
+            v-if="laterList.length > 0"
+            title="稍后"
+            :works="laterList"
+            @toggle="toggleDone"
+            @edit="openEdit"
+            @remove="remove"
+          />
+        </div>
+      </div>
 
-      <section
+      <!-- 整体空态：今天/本周/稍后/已完成全空 -->
+      <EmptyState
         v-if="
-          overdueList.length === 0 &&
           todayList.length === 0 &&
           weekList.length === 0 &&
-          laterList.length === 0
+          laterList.length === 0 &&
+          doneList.length === 0
         "
-        class="empty"
-      >
-        <p class="empty-text">目前没有待办。</p>
-        <AppButton @click="openCreate">＋ 新建工作</AppButton>
-      </section>
+        :icon="Sparkles"
+        title="任务清单是空的"
+        description="用右下角的「＋ 新建工作」记录今天要做的事。"
+      />
     </template>
 
+    <!-- ===== 非「全部」：平铺筛选结果 ===== -->
     <template v-else>
-      <section class="work-section">
-        <WorkRow
-          v-for="work in filteredAll"
-          :key="work.id"
-          :work="work"
+      <div class="filtered-list">
+        <TaskGroup
+          :title="FILTER_OPTIONS.find((option) => option.value === filter)?.label ?? ''"
+          :works="filteredList"
           @toggle="toggleDone"
           @edit="openEdit"
           @remove="remove"
         />
-        <div v-if="filteredAll.length === 0" class="empty">
-          <p class="empty-text">没有符合筛选条件的工作。</p>
-        </div>
-      </section>
+        <EmptyState
+          v-if="filteredList.length === 0"
+          :icon="Search"
+          title="没有符合筛选条件的任务"
+          description="换个状态筛选，或新建一条工作。"
+        />
+      </div>
     </template>
+
+    <!-- ===== 新建入口：FAB（Action First：录入降级到最末） ===== -->
+    <button type="button" class="tasks-fab" aria-label="新建工作" @click="openCreate">
+      <Plus :size="22" :stroke-width="2" aria-hidden="true" />
+      <span class="fab-label">新建工作</span>
+    </button>
 
     <WorkEditDrawer v-model="drawerOpen" :work="editing" @submit="onSubmit" />
 
@@ -246,109 +278,160 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
 </template>
 
 <style scoped>
-.works-page {
-  max-width: 720px;
+.tasks-page {
+  max-width: 1080px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-}
-
-.works-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-4);
 }
 
-.head-actions {
-  display: flex;
-  gap: var(--space-2);
-  flex-shrink: 0;
-}
-
-.head-sub {
-  margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.head-sub strong {
-  color: var(--color-primary-strong);
-}
-
-.head-overdue strong {
-  color: var(--color-danger-strong);
-}
-
-.filter-tabs {
-  display: flex;
+/* 状态筛选 Chips（iOS 风，切换 200ms） */
+.filter-chips {
+  display: inline-flex;
+  align-self: flex-start;
   gap: var(--space-1);
-  padding: 4px;
-  border-radius: var(--radius-md);
+  padding: 3px;
+  border-radius: var(--radius-full);
   background: var(--color-fill-disabled);
 }
 
-.filter-tab {
-  flex: 1;
-  padding: var(--space-2);
+.filter-chip {
+  padding: 6px 16px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   background: transparent;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-medium);
   color: var(--color-text-secondary);
   cursor: pointer;
   transition:
-    background var(--transition-fast),
-    color var(--transition-fast);
+    background var(--duration-base) var(--ease-out),
+    color var(--transition-fast),
+    box-shadow var(--duration-base) var(--ease-out);
 }
 
-.filter-tab:hover {
-  color: var(--color-text);
+.filter-chip:hover {
+  color: var(--color-text-primary);
 }
 
-.filter-tab.is-active {
-  background: var(--color-surface);
+.filter-chip.is-active {
+  background: var(--bg-card);
   color: var(--color-primary-strong);
+  box-shadow: var(--shadow-xs);
 }
 
-.work-section {
+/* 桌面双列：今日(主) | 即将到来(次) */
+.tasks-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.col-main,
+.col-side {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-5);
+  min-width: 0;
 }
 
-.section-title {
-  font-size: var(--text-md);
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-1);
-}
-
-.section-title.is-overdue {
-  color: var(--color-danger-strong);
-}
-
-.empty {
-  padding: var(--space-7) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--color-fill-disabled);
-  text-align: center;
+.today-section,
+.done-section {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: var(--space-3);
 }
 
-.empty-title {
-  font-size: 36px;
+.section-title {
   margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
 }
 
-.empty-text {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+.section-title.is-today {
+  color: var(--color-primary-strong);
+}
+
+.group-empty {
   margin: 0;
+  padding: var(--space-3) 0;
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.filtered-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 新建入口 FAB：与 Leave Hub 同款（Action First 层级最低但随手可达） */
+.tasks-fab {
+  position: fixed;
+  right: max(var(--space-5), env(safe-area-inset-right, 0px));
+  bottom: max(var(--space-5), env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-sticky);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 48px;
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    background var(--transition-fast),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+
+.tasks-fab:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
+}
+
+.tasks-fab:active {
+  transform: scale(0.97);
+}
+
+.tasks-fab:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+@media (max-width: 960px) {
+  .tasks-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .col-side {
+    gap: var(--space-4);
+  }
+}
+
+@media (max-width: 640px) {
+  .tasks-fab {
+    right: var(--space-4);
+    bottom: var(--space-4);
+  }
+
+  .fab-label {
+    display: none;
+  }
+
+  .tasks-fab {
+    width: 48px;
+    padding: 0;
+    justify-content: center;
+  }
 }
 </style>

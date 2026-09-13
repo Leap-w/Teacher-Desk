@@ -4,8 +4,13 @@ import vue from '@vitejs/plugin-vue'
 import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import pkg from './package.json' with { type: 'json' }
 
 export default defineConfig({
+  // 页脚/关于页显示的应用版本：随 package.json 单一来源走，不再手工同步
+  define: {
+    __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
+  },
   plugins: [
     vue(),
     UnoCSS(),

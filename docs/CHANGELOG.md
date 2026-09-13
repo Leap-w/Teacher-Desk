@@ -6,6 +6,22 @@
 
 ---
 
+## v2.0.9-alpha —— Phase UI-5B · Tasks Hub 工作清单中心（2026-09-13，tag `v2.0.9-alpha`）
+
+> 只升级 UI 与布局；Work Store / 数据模型 / localStorage Key / 完成与导入逻辑 **零改动**。详见开发手册 **§9.47**。
+
+### 新增
+
+- **Action First 分层视图**：今日 Hero（日期 + 待办数 + 逾期警示）→ 四统计 → 今天待办置顶｜本周剩余/稍后（桌面双列）→ 已完成时间轴（按完成日分组倒序）；新建入口降级为 FAB（与请假页同款）。
+- 新组件 7 个：`TasksHero` / `TaskCard`（22px 标题 + Things 风勾选，取代 `WorkRow`）/ `TodayTaskList` / `TaskGroup` / `TaskTimeline` / `TaskStats` / `TaskStatusBadge`；统计卡复用 `DashboardStatCard`。
+- 状态筛选保留原四项（全部/待完成/进行中/已完成），重设计为 iOS 风 Chips；「全部」即分层视图。
+
+### 修复
+
+- 页脚版本号硬编码 `v2.0.1-alpha` 的遗留问题：改为 vite define 注入 `__APP_VERSION__`（单一来源 `package.json`），随构建自动更新。
+
+---
+
 ## v2.0.8-alpha —— Phase UI-5A · Schedule Hub 课程表工作台（Work Hub 起步）（2026-09-13，tag `v2.0.8-alpha`）
 
 > 只升级 UI 与布局；Schedule Store / 节次算法 / 课程数据模型 / 换课 / 导入 / localStorage Key **零改动**。详见开发手册 **§9.46**。
