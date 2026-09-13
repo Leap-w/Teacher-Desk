@@ -6,6 +6,30 @@
 
 ---
 
+## v2.0.6-alpha —— Phase UI-4D · Duty Hub 值日管理中心（2026-09-13，tag `v2.0.6-alpha`）
+
+> 只升级 UI；Duty Store / 分组 / 轮换算法 / 历史数据 / localStorage Key **零改动**（新统计均为只读派生）。数据模型**不含完成打卡**（Phase 6 拍板口径），故不伪造完成率——统计用真实可算口径。详见开发手册 **§9.44**。
+
+### 新增组件（`views/Duty/components/`）
+
+- **DutyHero**：今日值日 Hero（Today First 视觉中心）——日期 + 今日组名 + 组员胶囊 + 状态；极轻渐变、进入 200ms 渐入；周末不排 / 待设起点 / 未建组三种空态各带下一步。
+- **DutyStats**：四统计（今日值日人数 / 值日组总数 / 7 天轮值天数 / 缺档组员）——「缺档组员」警示色（学生已删但仍在组里，需教师处理）。
+- **DutyCard + DutyStatusBadge**：今日成员卡（StudentCard 风格：头像 + 姓名 22px + 组名 + 徽章「今日值日」/「已不在档案」）。数据模型无完成打卡，不放假「完成」按钮。
+- **TodayDutyList**：今日名单卡片流 + 空态引导。
+- **DutyTimeline + DutyTimelineItem**：近 7 天轮换安排时间轴（今天松石青实心高亮 + 「今天」徽章；周末轮空日灰节点标注）。
+
+### 变化
+
+- 页面 Today First 四层：Hero → 概览 → 今日名单｜轮换安排（桌面 3fr/2fr 双列）→ 值日组管理 + 轮换设置（低频配置置底）。
+- 删除 `DutyTodayCard.vue`（被 DutyHero 取代）、`DutyUpcomingList.vue`（被 DutyTimeline 取代）；分组 / 轮换 / 导入 / 删除逻辑一行未动。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸（1440/768/390）：Hero 渐入、统计 0/3/5/0（周日：今日不值日 + 3 组 + 5 个轮值日 + 0 缺档）、时间轴 7 天含今天徽章、组卡片与轮换设置在位；三尺寸无横向滚动 + 截图复核。
+
+---
+
 ## v2.0.5-alpha —— Phase UI-4C · Leave Hub 请假记录中心（2026-09-13，tag `v2.0.5-alpha`）
 
 > 只升级 UI；Leave Store / 数据模型 / localStorage Key / CloudBase / 登记与删除逻辑**零改动**（新增统计均为只读派生）。本模块是**记录制**：记录即生效，不存在线上审批（修订版规范与此对齐）。详见开发手册 **§9.43**。

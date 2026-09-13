@@ -6,15 +6,26 @@ import { useToast } from '@/composables/useToast'
 import { useNow } from '@/composables/useToday'
 import { useDutyStore } from '@/stores/duty'
 import { useStudentStore } from '@/stores/student'
-import { formatDateOnly, formatWeekdayLabel, isWeekendDateKey } from '@/utils/date'
+import {
+  formatDateOnly,
+  formatMonthDay,
+  formatWeekdayLabel,
+  isWeekendDateKey,
+  weekdayOfDateKey,
+} from '@/utils/date'
+import { WEEKDAY_LABELS } from '@/utils/timetable'
 import DutyGroupCard from './components/DutyGroupCard.vue'
 import DutyGroupEditModal from './components/DutyGroupEditModal.vue'
+import DutyHero from './components/DutyHero.vue'
 import DutyImportModal from './components/DutyImportModal.vue'
 import DutyRotationPanel from './components/DutyRotationPanel.vue'
-import DutyTodayCard from './components/DutyTodayCard.vue'
-import DutyUpcomingList from './components/DutyUpcomingList.vue'
+import DutyStats from './components/DutyStats.vue'
+import DutyTimeline from './components/DutyTimeline.vue'
+import type { DutyTimelineEntry } from './components/DutyTimeline.vue'
+import TodayDutyList from './components/TodayDutyList.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import type { DutyGroup, DutySettings } from '@/types/duty'
+import type { DutyDay } from '@/utils/duty'
 
 const dutyStore = useDutyStore()
 const studentStore = useStudentStore()
@@ -45,6 +56,39 @@ const pageSubtitle = computed(() =>
 
 const todayMembers = computed(() =>
   dutyStore.todayGroup ? dutyStore.membersOf(dutyStore.todayGroup) : [],
+)
+
+/* ---------- Today First：概览统计与轮换时间轴（全部真实派生） ---------- */
+
+const stats = computed(() => {
+  let missing = 0
+  const seen = new Set<string>()
+  for (const group of dutyStore.groups) {
+    for (const member of dutyStore.membersOf(group)) {
+      if (!member.active && !seen.has(member.id)) {
+        seen.add(member.id)
+        missing += 1
+      }
+    }
+  }
+  return {
+    todayMemberCount: todayMembers.value.length,
+    groupCount: dutyStore.groups.length,
+    upcomingDays: timelineEntries.value.filter((entry) => entry.group).length,
+    missingMembers: missing,
+  }
+})
+
+/** 近 7 天轮换时间轴（含今天；不值日的日子也列出，明确「这天轮空」） */
+const timelineEntries = computed<DutyTimelineEntry[]>(() =>
+  dutyStore.upcomingDays.map((day: DutyDay) => ({
+    dateKey: day.dateKey,
+    label: `${formatMonthDay(day.dateKey)} ${WEEKDAY_LABELS[weekdayOfDateKey(day.dateKey)]}`,
+    group: day.group
+      ? { name: day.group.name, memberCount: dutyStore.membersOf(day.group).length }
+      : undefined,
+    isToday: day.dateKey === dutyStore.todayKey,
+  })),
 )
 
 /**
@@ -174,11 +218,12 @@ function openImport(mode: 'groups' | 'arrange'): void {
 
 <template>
   <div class="duty-page">
-    <header class="page-toolbar">
+    <header class="page-head">
       <div>
+        <h1 class="page-title">值日管理</h1>
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
-      <div class="toolbar-actions">
+      <div class="head-actions">
         <SettingsEntryButton module="duty" />
         <AppButton variant="secondary" @click="openImport('groups')">导入分组</AppButton>
         <AppButton variant="secondary" @click="openImport('arrange')">导入安排</AppButton>
@@ -186,48 +231,65 @@ function openImport(mode: 'groups' | 'arrange'): void {
       </div>
     </header>
 
-    <div class="duty-stack">
-      <DutyTodayCard
-        :group="dutyStore.todayGroup"
-        :members="todayMembers"
-        :date-label="todayLabel"
-        :weekend-skipped="weekendSkipped"
-        :needs-setup="needsSetup"
-        @create="openCreate"
-      />
+    <!-- ===== Layer 1：今日值日 Hero（Today First 视觉中心） ===== -->
+    <DutyHero
+      :group="dutyStore.todayGroup"
+      :members="todayMembers"
+      :date-label="todayLabel"
+      :weekday-label="formatWeekdayLabel(now)"
+      :weekend-skipped="weekendSkipped"
+      :needs-setup="needsSetup"
+      @create="openCreate"
+    />
 
-      <DutyUpcomingList
-        :days="dutyStore.upcomingDays"
-        :today-key="dutyStore.todayKey"
-        :has-groups="dutyStore.groups.length > 0"
-        :scheduled="!needsSetup"
-      />
+    <!-- ===== Layer 2：今日概览 ===== -->
+    <section class="layer-section">
+      <DutyStats :stats="stats" />
+    </section>
 
-      <section v-if="dutyStore.groups.length > 0" class="group-section">
-        <h2 class="section-title">值日组（轮换顺序）</h2>
-        <div class="group-list">
-          <DutyGroupCard
-            v-for="group in dutyStore.groups"
-            :key="group.id"
-            :group="group"
-            :members="dutyStore.membersOf(group)"
-            :anchor="group.id === dutyStore.settings.startGroupId"
-            @edit="openEdit"
-            @remove="askRemove"
-          />
-        </div>
+    <!-- ===== Layer 3：今日名单 | 轮换时间轴（桌面双列） ===== -->
+    <div class="lower-grid">
+      <section class="layer-section">
+        <h2 class="layer-title">今日名单</h2>
+        <TodayDutyList :members="todayMembers" :group-name="dutyStore.todayGroup?.name ?? ''" />
       </section>
 
-      <!-- 没有组时轮换设置无处可设（起点组的下拉是空的），整块隐藏：空页面上只留一条清晰的下一步 -->
+      <section class="layer-section">
+        <h2 class="layer-title">轮换安排（近 7 天）</h2>
+        <div class="panel">
+          <DutyTimeline v-if="dutyStore.groups.length > 0" :entries="timelineEntries" />
+          <p v-else class="panel-empty">建好值日组后，这里会显示按天轮换的安排。</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===== Layer 4：值日组管理 + 轮换设置（低频配置，放最底） ===== -->
+    <section v-if="dutyStore.groups.length > 0" class="layer-section">
+      <h2 class="layer-title">值日组（轮换顺序）</h2>
+      <div class="group-list">
+        <DutyGroupCard
+          v-for="group in dutyStore.groups"
+          :key="group.id"
+          :group="group"
+          :members="dutyStore.membersOf(group)"
+          :anchor="group.id === dutyStore.settings.startGroupId"
+          @edit="openEdit"
+          @remove="askRemove"
+        />
+      </div>
+    </section>
+
+    <!-- 没有组时轮换设置无处可设（起点组的下拉是空的），整块隐藏：空页面上只留一条清晰的下一步 -->
+    <section v-if="dutyStore.groups.length > 0" class="layer-section">
+      <h2 class="layer-title">轮换设置</h2>
       <DutyRotationPanel
-        v-if="dutyStore.groups.length > 0"
         :settings="dutyStore.settings"
         :groups="dutyStore.groups"
         :summary="dutyStore.rotationSummary"
         :misaligned="dutyStore.rotationMisaligned"
         @change="onRotationChange"
       />
-    </div>
+    </section>
 
     <DutyGroupEditModal
       v-model="groupModalOpen"
@@ -263,48 +325,75 @@ function openImport(mode: 'groups' | 'arrange'): void {
 
 <style scoped>
 .duty-page {
-  max-width: 960px;
+  max-width: 1080px;
 }
 
-.page-toolbar {
+.page-head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--spacing-lg);
 }
 
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  flex-wrap: wrap;
+.page-title {
+  font-size: var(--font-h2);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
 .page-subtitle {
   margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
 }
 
-.duty-stack {
+.head-actions {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.group-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+.layer-section {
+  margin-top: var(--section-gap);
 }
 
-/* 组序 = 轮换顺序：标题把这件事说出来，教师才知道拖动不了但删了会重排 */
-.section-title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text-secondary);
+.layer-title {
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+/* Layer 3：今日名单 | 轮换时间轴（桌面双列）；iPad/手机单列 */
+.lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--section-gap);
+}
+
+@media (min-width: 900px) {
+  .lower-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.panel {
+  padding: var(--spacing-card);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.panel-empty {
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .group-list {
