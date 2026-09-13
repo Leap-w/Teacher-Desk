@@ -83,9 +83,34 @@ UI（同步徽章 / 提示条）──只读──► SyncSnapshot
         │  ConflictResolver(Local Wins 占位)                           │
         └───────────────────────────┬─────────────────────────────────┘
                                     │ 注入 SyncTransport（唯一接缝）
-                    SimulatedTransport（现在，不发网络）
-                    CloudAdapter 实现（Cloud-3，未来）
+                    CloudTransport（Cloud-3，真实通道）
+                    SimulatedTransport（测试与本地演示）
 ```
+
+### 云同步流程（Cloud-3：Repository → SyncEngine → CloudBase）
+
+```
+本地写盘（Store → Repository → LocalStorageAdapter）
+  └─ services/sync 广播键名 → onSyncDirty(key)
+        └─ autoSync（调度层）：isCloudReady() ? engine.enqueue(key) : 忽略（本地模式）
+              └─ 防抖 1.5s → SyncEngine.flush()
+                    └─ CloudTransport.push(key) → pushKeyNow(key)
+                          └─ RemotePort.push({ key, payload, updatedAt }) → CloudBase 文档
+
+触发整轮对账（SyncEngine.runCycle → CloudTransport.sync → syncNow）：
+  应用启动 ｜ 邮箱登录完成 ｜ 回到前台 ｜ 重新联网 ｜ 手动「立即同步」
+    └─ pull 全量文档 → decideKey（LWW + 首次同步保护）逐键裁决
+         ├─ push   ：本机更新 → 推上去 + 记对齐记账（seen / syncedAt / localUpdatedAt）
+         ├─ adopt  ：云端更新 → 写盘采纳 → applySyncKeys 让内存与其它标签页跟上
+         └─ conflict：两边都改过且首次同步 → 一个字都不动，列进待裁决（工具箱逐键选择）
+
+首次初始化（§六）：登录后 probeFirstSync()
+  empty → 正常开始 ｜ local-only → 问「是否用本机数据初始化云端」
+  cloud-only → 直接拉 ｜ both → 交给逐键裁决
+```
+
+**回声抑制**：整轮对账采纳远端时的写盘（状态为 `syncing`）**不再入队**——
+否则会把刚取下来的内容又推回去，两台设备之间来回多推一轮。
 
 **Sync Engine First（长期规范）**：CloudBase、Widget、跨设备同步、定时同步**只能调用
 `SyncEngine`**，不得直接调用 `CloudAdapter`——后者永远只是数据通道，同步策略

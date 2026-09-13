@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 
 import App from './App.vue'
 import router from './router'
-import { startCloudSync } from './services/cloudSync'
+import { startAutoSync } from './sync/autoSync'
 import { onSyncReload } from './services/sync'
 
 import 'virtual:uno.css'
@@ -23,15 +23,16 @@ import './styles/main.css'
 onSyncReload(() => window.location.reload())
 
 /**
- * 云端同步的接线（Phase 9B）：启动即对齐一次，并把「本页写盘 / 重新联网 / 回到前台」
- * 三种时刻接到同步上（见 `services/cloudSync.ts` 的 `startCloudSync`）。
+ * 云端同步的接线（Phase 9B 起，Cloud-3 改为经同步引擎）：启动即对账一次，
+ * 并把「本页写盘（防抖）/ 重新联网 / 回到前台」三种时刻接到引擎上
+ * （见 `src/sync/autoSync.ts`）。
  *
  * 注册在 mount **之前**与 9A 同理：首屏那几个 store 一起来就会读盘、必要时播种示例数据，
  * 而 store 是懒加载的——某个模块第一次被打开时播种的示例数据，必须被同步看见并按
  * 「云端已有数据」处理掉，否则它会以「本地新数据」的身份推上云，把真实数据盖掉。
- * 没配环境 ID 时它只是把自己标成 `disabled`，不发任何请求。
+ * 没配环境 ID 时什么都不注册，本地模式照常工作（引擎保持 LocalOnly）。
  */
-startCloudSync()
+startAutoSync()
 
 const app = createApp(App)
 

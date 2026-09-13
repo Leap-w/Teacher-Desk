@@ -6,6 +6,35 @@
 
 ---
 
+## v2.2.2-alpha —— Phase Cloud-3 · CloudBase 单用户云同步（2026-09-14，tag `v2.2.2-alpha`）
+
+> **Single User Cloud**：一个班主任、多个设备。不做多人协作 / 班级共享 / 学生账号。
+> **Local First**：localStorage 仍是主缓存，断网照常用；Store API / Repository API / 数据模型 / 存储键**零改动**。
+
+### 新增
+
+- `src/sync/CloudTransport.ts`：把既有的 CloudBase 通道（登录 / 拉全量 / 单键推 / LWW 记账）适配成 `SyncTransport`——**Sync Engine First 的接缝**：引擎只管排队、重试、状态、冲突，网络与鉴权全在通道侧。含 `connect` / `disconnect` / `push` / `pull` / `sync`（整轮对账）。
+- `src/sync/autoSync.ts`：自动同步调度。四个触发点全部经引擎：**应用启动**、**登录完成**、**回到前台 / 重新联网**（整轮对账）、**本页写盘后**（防抖 1.5s，按键入队走快通道）。含回声抑制（对账采纳远端时的写盘不再入队）与「未登录 → 收引擎回本地模式」。
+- `src/sync/transportRegistry.ts`：运行时通道路由（核心不 import 云模块，SDK 不进 node 测试环境）。
+- 云层增量：`pushKeyNow` / `pullKeyNow` / `pushAllLocalNow`（首次初始化）/ `probeFirstSync`（四态判定）/ `signInWithEmailAndSync` / `isCloudReady`。
+- 「我的 → 控制中心」新增**云端同步面板**：当前账号、最近同步时间、同步状态、**立即同步**、**邮箱登录**、退出登录；首次初始化确认弹窗（「检测到本地已有班级数据，是否初始化云端？」）。
+
+### 自动 / 手动同步
+
+- 自动：启动、登录、回前台、联网、改动后（1.5s 防抖）；本地模式（未配置 / 未登录）**完全不打扰**。
+- 手动：Profile → 云端同步 → 立即同步（状态经 `SyncState`：同步中 / 已同步 / 失败原因）。
+
+### 测试
+
+- 新增 `src/__tests__/cloudTransport.test.ts` **56 条**（登录 4 / 会话 7 / 推送 7 / 拉取 5 / 整轮 6 / 引擎集成 12 / 自动调度 8 / 首次初始化 7），常驻 **372 → 428**。
+
+### 文档
+
+- 新增 `docs/cloudbase-setup.md`（控制台固定配置：环境 ID / 登录方式 / 集合与权限 / Bucket / 云函数 / Runtime + 核对清单）；
+- `docs/ARCHITECTURE.md` 增补**云同步流程图**；`docs/roadmap.md` Cloud-3 标记交付。
+
+---
+
 ## v2.2.1-alpha —— Phase Cloud-2 · 同步引擎（本地模拟，不联网）（2026-09-14，tag `v2.2.1-alpha`）
 
 > **Sync Engine First**：CloudBase / Widget / 跨设备同步只调 `SyncEngine`，不得直连 CloudAdapter。

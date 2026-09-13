@@ -15,6 +15,7 @@ import { ConflictResolver } from './ConflictResolver'
 import { SyncEvents } from './SyncEvents'
 import { SyncQueue } from './SyncQueue'
 import { SyncStateMachine } from './SyncState'
+import { activeTransport } from './transportRegistry'
 import {
   SyncState,
   type SyncEngineOptions,
@@ -130,6 +131,48 @@ export class SyncEngine {
     return this.flush()
   }
 
+  /**
+   * **整轮对账**（Cloud-3 透传）：把「拉全量 + 按记账裁决 + 推脏键 / 采纳远端」这件事
+   * 交给通道的 `sync()`（`CloudTransport` 实现；模拟传输没有这个能力则直接成功返回）。
+   *
+   * 为什么放在引擎而不是让调用方直接摸通道：**Sync Engine First** ——
+   * 自动同步的四个触发点（启动 / 登录 / 回前台 / 改动后）都经引擎，通道始终只是通道。
+   * 状态机与事件照常驱动，界面因此能看到 Syncing / Synced / Error。
+   */
+  async runCycle(): Promise<TransportOutcome> {
+    if (!this.transport.sync) {
+      return { ok: true, at: this.now() }
+    }
+
+    this.machine.transition(SyncState.Syncing, 'runCycle')
+    let outcome: TransportOutcome
+    try {
+      outcome = await this.transport.sync()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      outcome = { ok: false, error: message, retryable: true }
+    }
+
+    if (outcome.ok) {
+      this.succeeded += 1
+      this.lastSyncedAt = outcome.at
+      this.lastError = null
+      this.events.emit('sync:success', { at: outcome.at, key: 'all' })
+    } else {
+      this.failed += 1
+      this.lastError = outcome.error
+      this.events.emit('sync:error', { at: this.now(), key: 'all', message: outcome.error })
+    }
+    this.settle()
+    return outcome
+  }
+
+  /** 队列与记账之外的一次「立刻推一个键」（不做全量裁决；UI 用不到，测试与诊断用） */
+  async pushOne(key: string): Promise<TransportOutcome> {
+    const task: SyncTask = { id: 0, key, op: 'push', enqueuedAt: this.now(), attempts: 0 }
+    return this.runTask(task)
+  }
+
   /** 清空队列并回到本地模式（关闭同步 / 切换账号时用） */
   clear(): number {
     const dropped = this.queue.clear()
@@ -236,5 +279,34 @@ export function createSimulatedTransport(options: SimulatedTransportOptions = {}
   }
 }
 
-/** 运行时默认引擎：模拟传输、无延迟、不失败（本地模式下的空闲态） */
-export const syncEngine = new SyncEngine({ transport: createSimulatedTransport() })
+/**
+ * 运行时默认引擎：传输走**路由表**（`transportRegistry`）。
+ *
+ * 没注册通道时（纯本地模式 / 单元测试）就是空传输：成功但什么都不做，
+ * 引擎保持空闲 `LocalOnly`；接线层（`autoSync.ts`，只有 main.ts 引它）
+ * 注册 `CloudTransport` 之后，同一个单例即为真实的云端通道。
+ * **核心因此永远不 import 云模块**——SDK 不会进 node 测试环境。
+ */
+export const syncEngine = new SyncEngine({
+  transport: createRuntimeTransport(),
+  retryDelayMs: 1000,
+})
+
+function createRuntimeTransport(): SyncTransport {
+  const noop = (): TransportOutcome => ({ ok: true, at: Date.now() })
+  return {
+    kind: 'simulated',
+    async push(task) {
+      const active = activeTransport()
+      return active ? active.push(task) : noop()
+    },
+    async pull(key) {
+      const active = activeTransport()
+      return active ? active.pull(key) : noop()
+    },
+    async sync() {
+      const active = activeTransport()
+      return active?.sync ? active.sync() : noop()
+    },
+  }
+}

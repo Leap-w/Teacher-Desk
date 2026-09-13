@@ -13,7 +13,7 @@
 | V2.4     | 教学工具             | 成绩、评语、家长沟通等教学侧工具                             | 规划中                |
 | V3.0     | 正式版               | 稳定版：本地 + 云同步双轨、完整教学闭环                      | 愿景                  |
 
-**V2.2 分解**：Cloud-1 `v2.2.0-alpha` Repository 数据访问层（Repository First）✅ → Cloud-2 `v2.2.1-alpha` 同步引擎（Queue/State/Conflict/Events，本地模拟；Sync Engine First）✅ → Cloud-3 CloudAdapter 实装（pull/push/sync 接 CloudBase、SyncStatus 真实化、队列持久化）→ Cloud-4 多端验证（两台设备回归、冲突场景、断网恢复）。
+**V2.2 分解**：Cloud-1 `v2.2.0-alpha` Repository 数据访问层（Repository First）✅ → Cloud-2 `v2.2.1-alpha` 同步引擎（Queue/State/Conflict/Events，本地模拟；Sync Engine First）✅ → Cloud-3 `v2.2.2-alpha` CloudBase 单用户云同步（CloudTransport 真实通道、邮箱登录、自动同步四触发点、首次初始化确认、Local First + LWW）✅ → Cloud-4 多端验证（两台设备回归、冲突场景、断网恢复）。
 
 **节奏约定**：① 一阶段一 tag、一条 CHANGELOG、一段开发手册小节；② 架构规范只在阶段里立、不在阶段里破（Repository First / Sync Engine First / Consistency Before Features）；③ 新功能先补数据模型与仓储，页面不直连数据源。
 

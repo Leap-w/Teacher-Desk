@@ -15,6 +15,7 @@ import {
 
 import SettingsCell from './SettingsCell.vue'
 import SettingsSection from './SettingsSection.vue'
+import SyncPanel from './SyncPanel.vue'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useSyncEngine } from '@/composables/useSyncEngine'
 
@@ -128,6 +129,9 @@ const PREF_CELLS: PrefCell[] = [
         @click="emit('open-tools')"
       />
     </SettingsSection>
+
+    <!-- Cloud-3：云端同步面板（账号 / 最近同步 / 立即同步 / 登录 / 登出；首次初始化确认） -->
+    <SyncPanel />
 
     <!-- 工具箱：独立入口卡（Hover 抬升 + 箭头） -->
     <button type="button" class="toolbox-card" @click="emit('open-tools')">

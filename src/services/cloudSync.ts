@@ -32,6 +32,7 @@ import {
   createCloudBaseRemote,
   currentUser,
   isCloudConfigured,
+  signInWithEmail,
   signInWithUsername,
   signOutCloud,
 } from '@/services/cloudbase'
@@ -689,4 +690,152 @@ export async function signOutAndStop(): Promise<void> {
     adoptedCount: 0,
     conflicts: [],
   })
+}
+
+/* ==================== Cloud-3：单键通道 / 邮箱登录 / 首次初始化判定 ==================== */
+
+/**
+ * 云同步是否**可用**：配了环境 ID、查过登录状态、且当前有账号。
+ * 同步引擎的调度层据此决定「要不要把脏键入队」——本地模式下不入队，
+ * 引擎状态因此保持 `LocalOnly`，界面不会被无谓的失败打扰。
+ */
+export function isCloudReady(): boolean {
+  if (!isCloudConfigured()) return false
+  const snapshot = state.value
+  return snapshot.checked && snapshot.account !== null
+}
+
+/** 单键同步结果（Cloud-3 快通道：引擎队列里一个脏键的即时推送） */
+export type KeySyncOutcome =
+  | { ok: true; pushed: boolean }
+  | { ok: false; status: CloudSyncStatus; error: string; retryable: boolean }
+
+/** 错误是否值得重试：断网 / 超时算，被拒（鉴权、权限、集合不存在）不算 */
+function isRetryableStatus(status: CloudSyncStatus): boolean {
+  return status === 'offline' || status === 'syncing'
+}
+
+/**
+ * 上传**一个**键（Cloud-3）：同步引擎队列的快通道。
+ * 与整轮 `syncNow()` 的差别只在于「不拉全量、不裁决其它键」——
+ * 记账口径完全一致（`pushKey` 内部同一份实现），所以两条路径不会打架。
+ */
+export async function pushKeyNow(key: string): Promise<KeySyncOutcome> {
+  if (!isCloudReady()) {
+    return { ok: false, status: 'signedOut', error: '未登录云端', retryable: false }
+  }
+  const port = (remote ??= createCloudBaseRemote())
+  const localText = safeRead(key)
+  if (localText === null) return { ok: true, pushed: false }
+  const meta = readMeta()
+  const outcome = await pushKey(port, key, localText, Date.now(), meta)
+  if (outcome.kind === 'failed') {
+    return {
+      ok: false,
+      status: outcome.status,
+      error: outcome.error,
+      retryable: isRetryableStatus(outcome.status),
+    }
+  }
+  if (outcome.kind === 'pushed') {
+    writeMeta(meta)
+    return { ok: true, pushed: true }
+  }
+  // skipped（本地内容不是列表 / 解析失败）：不重试，留给整轮同步按裁决流程处置
+  return { ok: true, pushed: false }
+}
+
+/**
+ * 拉取**一个**键的云端文档（Cloud-3）：给引擎的 `pull` 用。
+ * 只读不写盘——是否采纳由调用方按 LWW 判定（真实处置仍在整轮同步里）。
+ */
+export async function pullKeyNow(key: string): Promise<RemoteDoc | null> {
+  if (!isCloudReady()) return null
+  const port = (remote ??= createCloudBaseRemote())
+  const docs = await port.pull()
+  return docs.find((doc) => doc.key === key) ?? null
+}
+
+/**
+ * 把本机**全部已注册键**推上云（首次初始化的「确认」按钮走这条）。
+ * 与逐键裁决无关：教师已经明确回答了「用本机这份初始化云端」，这里照办。
+ * 返回成功 / 失败条数，调用方据此给出可读结果。
+ */
+export async function pushAllLocalNow(): Promise<{ pushed: number; failed: number }> {
+  if (!isCloudReady()) return { pushed: 0, failed: 0 }
+  const port = (remote ??= createCloudBaseRemote())
+  const meta = readMeta()
+  const now = Date.now()
+  let pushed = 0
+  let failed = 0
+  for (const key of syncedKeys()) {
+    const localText = safeRead(key)
+    if (localText === null) continue
+    const result = await pushKey(port, key, localText, now, meta)
+    if (result.kind === 'pushed') pushed += 1
+    else if (result.kind === 'failed') failed += 1
+  }
+  writeMeta(meta)
+  setState({
+    status: failed > 0 ? 'error' : 'idle',
+    lastSyncedAt: failed > 0 ? state.value.lastSyncedAt : now,
+    error: failed > 0 ? `${failed} 个模块初始化失败，稍后会自动重试` : null,
+    pushedCount: pushed,
+  })
+  return { pushed, failed }
+}
+
+/** 首次同步的处境（界面据此决定「要不要问教师一句」） */
+export type FirstSyncSituation =
+  /** 两边都没有数据：正常开始 */
+  | 'empty'
+  /** 本机有真实数据、云端空：**要问**「是否用本机数据初始化云端」 */
+  | 'local-only'
+  /** 云端有、本机空（新设备）：直接拉取 */
+  | 'cloud-only'
+  /** 两边都有：交给首次同步的裁决流程（需教师确认保留哪一份） */
+  | 'both'
+  /** 已经对齐过（记账齐全、无差异）：不用问也不用拉 */
+  | 'aligned'
+
+/**
+ * 判定首次同步处境（Cloud-3）：**只读**，不写盘、不推不拉。
+ * 用既有的 `hasNoLocalData`（播种基线 + 空列表判定）区分「真实数据 / 初始化内容」，
+ * 与整轮同步的判定同源，不会出现「弹窗说本地有数据、同步却不这么认为」。
+ */
+export async function probeFirstSync(): Promise<FirstSyncSituation> {
+  if (!isCloudConfigured()) return 'empty'
+  if (!isCloudReady()) return 'empty'
+
+  const keys = syncedKeys()
+  const localReal = keys.filter((key) => !hasNoLocalData(key, safeRead(key)))
+  const meta = readMeta()
+
+  let docs: RemoteDoc[]
+  try {
+    const port = (remote ??= createCloudBaseRemote())
+    docs = await port.pull()
+  } catch (error) {
+    console.warn('[cloud] 首次同步处境判定失败（按无云端数据处理）：', error)
+    return localReal.length > 0 ? 'local-only' : 'empty'
+  }
+
+  const cloudReal = docs.filter((doc) => Array.isArray(doc.payload) && doc.payload.length > 0)
+
+  if (localReal.length === 0 && cloudReal.length === 0) {
+    return Object.keys(meta).length > 0 ? 'aligned' : 'empty'
+  }
+  if (localReal.length > 0 && cloudReal.length === 0) return 'local-only'
+  if (localReal.length === 0 && cloudReal.length > 0) return 'cloud-only'
+  return 'both'
+}
+
+/**
+ * 邮箱 + 密码登录并立刻对齐一次（Cloud-3 的登录形态）。
+ * 失败**不吞**：登录是教师主动发起的动作，必须让他看到原因。
+ */
+export async function signInWithEmailAndSync(email: string, password: string): Promise<void> {
+  await signInWithEmail(email, password)
+  remote = null
+  await syncNow()
 }

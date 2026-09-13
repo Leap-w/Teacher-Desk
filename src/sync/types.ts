@@ -80,6 +80,12 @@ export interface SyncTransport {
   push(task: SyncTask): Promise<TransportOutcome>
   /** 拉取一个键（Cloud-3 起使用；模拟阶段返回空快照） */
   pull(key: string): Promise<TransportOutcome>
+  /**
+   * 整轮对账（可选能力）：拉全量 → 按记账裁决 → 推脏键 / 采纳远端。
+   * 只有「有全量语义」的通道才实现它（CloudTransport 实现；模拟传输不实现）。
+   * 引擎的 `runCycle()` 会透传调用它——**引擎核心不认识云端**，只认这个可选方法。
+   */
+  sync?(): Promise<TransportOutcome>
 }
 
 /** 引擎对外快照（UI 只读这一份，别直接摸内部字段） */
