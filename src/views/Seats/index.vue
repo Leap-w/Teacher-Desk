@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import { AppButton, AppCard, AppModal, AppSelect, EmptyState } from '@/components/ui'
+import { AppButton, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
 import { useSeatStore } from '@/stores/seat'
@@ -28,12 +28,15 @@ import StudentDetailModal from '@/views/Students/components/StudentDetailModal.v
 import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
 import type { Student } from '@/types'
 import SeatClassroom from './components/SeatClassroom.vue'
+import SeatCanvas from './components/SeatCanvas.vue'
+import SeatExportMenu from './components/SeatExportMenu.vue'
+import SeatStatusBar from './components/SeatStatusBar.vue'
+import SeatToolbar from './components/SeatToolbar.vue'
 import SeatPlanPanel from './components/SeatPlanPanel.vue'
 import SeatSearch from './components/SeatSearch.vue'
 import ConstraintPanel from './components/ConstraintPanel.vue'
 import ConstraintEditModal from './components/ConstraintEditModal.vue'
 import ConstraintManageModal from './components/ConstraintManageModal.vue'
-import SeatExportDialog from './components/SeatExportDialog.vue'
 import SeatExportGraphic from './components/SeatExportGraphic.vue'
 import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
@@ -42,7 +45,6 @@ import SeatImportModal from './components/SeatImportModal.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import SeatConstraintModal from './components/SeatConstraintModal.vue'
 import { Armchair } from 'lucide-vue-next'
-
 type SeatView = 'teacher' | 'student'
 
 /** 座位强调标记图例（颜色一律取自 theme.css，与 SeatClassroom 标记一致） */
@@ -81,16 +83,27 @@ function seatStudent(seatId: string): Student | undefined {
   return seat?.studentId ? studentMap.value.get(seat.studentId) : undefined
 }
 
-const planOptions = computed(() =>
-  plans.value.map((plan) => ({ value: plan.id, label: plan.name })),
+/** UI-4B：方案切换器选项（胶囊 Dropdown 用；创建时间来自方案元数据，只读） */
+const schemeOptions = computed(() =>
+  plans.value.map((plan) => ({
+    id: plan.id,
+    name: plan.name,
+    createdAt: plan.createdAt,
+    isCurrent: plan.isCurrent,
+  })),
 )
 
-/** 页面副标题：教室配置 + 当前就座进度，全部来自 config */
-const roomSummary = computed(() => {
-  const blocks = config.blocks.join('-')
-  return `${config.name} · ${config.rows} 排 × ${config.cols} 列 · 分列 ${blocks} · 已就座 ${seatStore.occupiedCount}/${config.occupiedSeats}`
+/** 底部状态栏：最后修改时间（本地格式，只读展示） */
+const planUpdatedAtLabel = computed(() => {
+  const iso = seatStore.currentPlan?.updatedAt
+  if (!iso) return undefined
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return undefined
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${hhmm}`
 })
 
+/** 页面副标题：教室配置 + 当前就座进度，全部来自 config */
 /** 方案下拉：切换当前方案（目标是当前或不存在时由 store 拒绝并静默） */
 const currentPlanId = computed<string>({
   get: () => seatStore.currentPlan?.id ?? '',
@@ -688,7 +701,6 @@ function undoArrange() {
 
 /* ========== Phase 3C：导出（PNG / PDF；离屏静态图渲染，不触碰页面状态） ========== */
 
-const exportOpen = ref(false)
 const exportBusy = ref<SeatExportKind | null>(null)
 const compareBusy = ref(false)
 /** 导出日期文案（每次导出开始固定，保证标题 / 副标题 / 文件名同一天） */
@@ -799,11 +811,25 @@ async function runCompareExport() {
 
 <template>
   <div class="seats-page">
-    <header class="page-toolbar">
-      <div>
-        <p class="page-subtitle">{{ roomSummary }}</p>
-      </div>
-      <div class="toolbar-actions">
+    <!-- ========== Layer 1：浮动工具栏（方案 / 双视角 / 工具；视觉权重低于画布） ========== -->
+    <SeatToolbar
+      v-model:view="view"
+      v-model:scheme-id="currentPlanId"
+      :plan-name="seatStore.currentPlan?.name ?? '—'"
+      :occupancy="`${seatStore.occupiedCount}/${config.occupiedSeats}`"
+      :pending-count="seatStore.pendingLogsCount"
+      :view-note="VIEW_NOTES[view]"
+      :scheme-options="schemeOptions"
+      :scheme-disabled="!plans.length"
+      @scheme-create="createPlan"
+    >
+      <template #actions>
+        <!-- Phase 3C：学生定位（姓名 / 学号后四位） -->
+        <SeatSearch
+          :students="studentStore.activeStudents"
+          :position-of="searchPositionOf"
+          @locate="locateStudent"
+        />
         <SettingsEntryButton module="seats" />
         <AppButton
           v-if="hasPending"
@@ -811,103 +837,49 @@ async function runCompareExport() {
           title="把本次调整记录归档到当前方案"
           @click="saveAdjustments"
         >
-          保存本次调整（{{ seatStore.pendingLogsCount }}）
+          保存调整（{{ seatStore.pendingLogsCount }}）
         </AppButton>
-        <AppButton
-          v-if="!compareActive"
-          variant="secondary"
-          :disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
-          title="按约束与规则自动生成一份新方案"
-          @click="openArrange"
-        >
-          自动排座
-        </AppButton>
-        <AppButton
-          v-if="!compareActive"
-          variant="secondary"
-          :disabled="plans.length < 2"
-          title="对比两份方案的座位差异（只读查看）"
-          @click="compareOpen = true"
-        >
-          方案对比
-        </AppButton>
-        <AppButton
-          v-if="!compareActive"
-          variant="secondary"
-          :disabled="!seatStore.currentPlan"
-          title="从 Excel 批量导入座位安排（先预览后写入）"
-          @click="importOpen = true"
-        >
-          导入座位
-        </AppButton>
-        <AppButton
-          v-if="!compareActive"
-          variant="secondary"
-          :disabled="!seatStore.currentPlan"
-          title="不能同桌 / 三人不能相邻 / 前排后排标记"
-          @click="constraintOpen = true"
-        >
-          排座约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
-        </AppButton>
-        <AppButton
-          v-if="!compareActive"
-          :disabled="!seatStore.currentPlan"
-          title="导出当前方案座位图为图片 / PDF"
-          @click="exportOpen = true"
-        >
-          导出座位图
-        </AppButton>
-        <AppButton variant="ghost" @click="createPlan">＋ 新建方案</AppButton>
-      </div>
-    </header>
-
-    <div class="toolbar-row">
-      <div class="segmented" role="group" aria-label="教室视角">
-        <button
-          type="button"
-          class="segmented-item"
-          :class="{ 'is-active': view === 'teacher' }"
-          @click="view = 'teacher'"
-        >
-          老师视角
-        </button>
-        <button
-          type="button"
-          class="segmented-item"
-          :class="{ 'is-active': view === 'student' }"
-          @click="view = 'student'"
-        >
-          学生视角
-        </button>
-      </div>
-
-      <!-- 视角切换要「非常明显」：控件旁直接写明当前视角意味着什么（V1.1.2 Phase 1） -->
-      <span class="view-note">{{ VIEW_NOTES[view] }}</span>
-
-      <div class="plan-switch">
-        <span class="plan-switch-label">当前方案</span>
-        <AppSelect
-          v-model="currentPlanId"
-          class="plan-switch-select"
-          :options="planOptions"
-          :disabled="!plans.length"
-        />
-      </div>
-
-      <!-- Phase 3C：学生定位（姓名 / 学号后四位） -->
-      <SeatSearch
-        :students="studentStore.activeStudents"
-        :position-of="searchPositionOf"
-        @locate="locateStudent"
-      />
-
-      <ul class="legend" aria-label="座位标记图例">
-        <li v-for="item in ACCENT_LEGEND" :key="item.key" class="legend-item">
-          <i class="swatch" :class="[item.cls, { 'is-dot': item.dot }]" aria-hidden="true"></i>
-          {{ item.label }}
-        </li>
-      </ul>
-    </div>
+        <template v-if="!compareActive">
+          <AppButton
+            variant="secondary"
+            :disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
+            title="按约束与规则自动生成一份新方案"
+            @click="openArrange"
+          >
+            自动排座
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            :disabled="plans.length < 2"
+            title="对比两份方案的座位差异（只读查看）"
+            @click="compareOpen = true"
+          >
+            方案对比
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            :disabled="!seatStore.currentPlan"
+            title="从 Excel 批量导入座位安排（先预览后写入）"
+            @click="importOpen = true"
+          >
+            导入
+          </AppButton>
+          <AppButton
+            variant="secondary"
+            :disabled="!seatStore.currentPlan"
+            title="不能同桌 / 三人不能相邻 / 前排后排标记"
+            @click="constraintOpen = true"
+          >
+            约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
+          </AppButton>
+          <SeatExportMenu
+            :disabled="!seatStore.currentPlan"
+            :busy="exportBusy"
+            @request="runExport"
+          />
+        </template>
+      </template>
+    </SeatToolbar>
 
     <!-- 点击换座模式提示条 -->
     <div v-if="pickerFrom" class="picker-hint" role="status">
@@ -979,7 +951,8 @@ async function runCompareExport() {
     </div>
 
     <div class="seats-layout">
-      <AppCard padding="none" class="room-card">
+      <!-- ========== Layer 2：教室画布（页面视觉中心） ========== -->
+      <SeatCanvas class="room-canvas">
         <SeatClassroom
           v-if="seatStore.currentPlan"
           ref="classroomRef"
@@ -1002,11 +975,11 @@ async function runCompareExport() {
           v-else
           :icon="Armchair"
           title="暂无座位方案"
-          description="点击右上角「＋ 新建方案」创建第一份排座方案。"
+          description="在上方方案切换器里选择「新建方案」，创建第一份排座方案。"
         >
           <AppButton size="sm" @click="createPlan">新建方案</AppButton>
         </EmptyState>
-      </AppCard>
+      </SeatCanvas>
 
       <aside class="side-col">
         <ConstraintPanel
@@ -1027,6 +1000,20 @@ async function runCompareExport() {
         />
       </aside>
     </div>
+
+    <!-- ========== Layer 3：底部状态栏（最低视觉权重；右侧放座位标记图例） ========== -->
+    <SeatStatusBar
+      :plan-name="seatStore.currentPlan?.name ?? '—'"
+      :updated-at="planUpdatedAtLabel"
+      :pending-count="seatStore.pendingLogsCount"
+    >
+      <ul class="legend" aria-label="座位标记图例">
+        <li v-for="item in ACCENT_LEGEND" :key="item.key" class="legend-item">
+          <i class="swatch" :class="[item.cls, { 'is-dot': item.dot }]" aria-hidden="true"></i>
+          {{ item.label }}
+        </li>
+      </ul>
+    </SeatStatusBar>
 
     <!-- ========== Phase 3C：离屏导出渲染区（双视角实例常驻；对比页在对比查看时挂载） ========== -->
     <div class="export-stage" aria-hidden="true">
@@ -1089,13 +1076,7 @@ async function runCompareExport() {
       </template>
     </div>
 
-    <!-- Phase 3C：导出面板 -->
-    <SeatExportDialog
-      v-model="exportOpen"
-      :plan-name="seatStore.currentPlan?.name ?? ''"
-      :busy="exportBusy"
-      @request="runExport"
-    />
+    <!-- Phase 3C：导出入口已并入工具栏导出菜单（SeatExportMenu，执行逻辑不变） -->
 
     <!-- Phase 3C：方案对比弹窗（选择 A/B，展示结果明细） -->
     <SeatCompareModal
@@ -1181,99 +1162,15 @@ async function runCompareExport() {
 
 <style scoped>
 .seats-page {
-  max-width: 1200px;
+  max-width: 1280px;
 }
 
-.page-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.page-subtitle {
-  margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.toolbar-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-5);
-}
-
-/* 视角切换（模式同学生页筛选分段控件） */
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--color-fill-disabled);
-  border-radius: var(--radius-md);
-}
-
-.segmented-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  padding: 6px 14px;
-  border-radius: 9px;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    box-shadow var(--transition-fast);
-}
-
-.segmented-item.is-active {
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
-}
-
-.plan-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* 视角说明（V1.1.2 Phase 1）：切换视角时这句话跟着变，教师一眼看出画面为何不同 */
-.view-note {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  max-width: 320px;
-}
-
-.plan-switch-label {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-}
-
-.plan-switch-select {
-  width: 190px;
-}
-
+/* 图例（放在 SeatStatusBar 右侧插槽，最低视觉权重） */
 .legend {
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
   list-style: none;
-  margin-left: auto;
 }
 
 .legend-item {
@@ -1417,7 +1314,8 @@ async function runCompareExport() {
   gap: var(--space-2);
 }
 
-.room-card {
+/* 教室画布（视觉中心）：占据除侧栏外的全部宽度 */
+.room-canvas {
   flex: 1;
   min-width: 0;
 }
@@ -1452,6 +1350,11 @@ async function runCompareExport() {
 @media (max-width: 960px) {
   .seats-layout {
     flex-direction: column;
+  }
+
+  /* 纵向排布时画布不再由 flex 拉伸约束：显式全宽，内部 room-scroll 负责横向滚动 */
+  .room-canvas {
+    width: 100%;
   }
 
   .side-col {

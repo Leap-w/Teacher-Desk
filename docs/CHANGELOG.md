@@ -6,6 +6,34 @@
 
 ---
 
+## v2.0.4-alpha —— Phase UI-4B · Seat Hub 教室工作台（2026-09-13，tag `v2.0.4-alpha`）
+
+> 只升级视觉与布局；SeatPlan Store / 拖拽（Pointer Events）/ 导出 / Excel 导入逻辑 / 3-3-3 布局 / 第 63 号尾座**零改动**（拖拽冒烟断言通过）。详见开发手册 **§9.42**。
+
+### 新增组件（`views/Seats/components/`，值日 / 考场座位可复用）
+
+- **SeatToolbar**：浮动玻璃工具栏（sticky + blur20）——左方案切换与就座/编辑状态，中双视角切换，右动作插槽（页面编排层注入，逻辑不过组件）；窄屏自动两行。
+- **SeatViewToggle**：iOS Segmented Control（胶囊 + 滑块 200ms 平移），全站教室场景统一。
+- **SeatSchemeSelector**：方案胶囊 Dropdown（当前方案 + 创建时间 + 「当前」徽章 + 新建入口），替代传统 Select。
+- **SeatCanvas**：画布框（白纸质感 + 大留白 + 圆角 24），座位图成为页面视觉中心。
+- **SeatCard**：统一座位卡（固定尺寸 clamp 56-64px × 72px）——Hover 2px 抬升 + 主色描边；空座统一「空座插画 + 虚线」；拖拽落点松石青边框 + Glow；拖拽幽灵放大 3%。**纯展示组件**：交互由父级原生事件穿透（`data-seat-id` 落根按钮，拖拽落点判定不受影响）。
+- **SeatExportMenu**：导出胶囊菜单（PNG×2 / PDF×2），busy 转圈；替代原导出弹窗（`SeatExportDialog.vue` 删除），`runExport` 执行逻辑不变。
+- **SeatImportCard**：Card Upload 上传卡（Excel 图标 + 点击/拖入 + 文件名显示），`readFile(file)` 与 input 选择同一条解析路径。
+- **SeatStatusBar**：底部状态栏（方案 · 最后修改 · 已保存/未保存 + 图例），最低视觉权重。
+
+### 变化
+
+- 首页层级重排为「画布 > 编辑控制 > 辅助工具 > 状态信息」（UI-4B 产品规范：座位图优先于工具栏）。
+- **SeatClassroom**：座位按钮替换为 SeatCard（样式迁移），拖拽 / 长按 / 快捷卡逻辑一行未动。
+- ModuleLayout 次级胶囊 Tab 允许换行（修复 390px 横向溢出）。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸（1440/768/390）：sticky 玻璃工具栏、63 座统一尺寸、状态栏/图例、方案下拉（当前徽章+新建）、导出菜单 4 项、三尺寸无页面级横向滚动（390 画布内滚动，符合规范）；交互冒烟：点击选中→再点取消、双视角切换 63 座不变。
+
+---
+
 ## v2.0.3-alpha —— Phase UI-4A · Student Hub 学生中心（2026-09-13，tag `v2.0.3-alpha`）
 
 > 只重构学生档案 UI；Student Store / localStorage Key / CloudBase / 学生字段 / 班委数据 / 重名逻辑 / 家庭地址统计零改动（新增筛选均为只读派生）。详见开发手册 **§9.41**。

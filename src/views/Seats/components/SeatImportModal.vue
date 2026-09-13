@@ -12,6 +12,7 @@ import {
   SEAT_IMPORT_SAMPLE,
 } from '@/services/seatImport'
 import type { ParsedSeatRow, SeatImportResult } from '@/services/seatImport'
+import SeatImportCard from './SeatImportCard.vue'
 import { useSeatStore } from '@/stores/seat'
 import { useStudentStore } from '@/stores/student'
 
@@ -97,7 +98,11 @@ async function onFilePicked(event: Event): Promise<void> {
   // 选同一个文件两次也要能触发 change
   input.value = ''
   if (!file) return
+  await readFile(file)
+}
 
+/** UI-4B：拖入上传卡的文件与 input 选出的文件走同一条解析路径 */
+async function readFile(file: File): Promise<void> {
   reset()
   if (file.size > MAX_FILE_BYTES) {
     parseError.value = `文件超过 ${MAX_FILE_BYTES / 1024 / 1024} MB，请确认选的是座位表`
@@ -190,8 +195,9 @@ function close(): void {
       @change="onFilePicked"
     />
 
-    <!-- 未选文件：先讲清表格该怎么摆，教师回去改表比来回试快 -->
+    <!-- 未选文件：上传卡（点击 / 拖入）+ 先讲清表格该怎么摆，教师回去改表比来回试快 -->
     <div v-if="!filename && !parseError" class="intro">
+      <SeatImportCard class="intro-upload" :busy="busy" @pick="pickFile" @file="readFile" />
       <p class="intro-lead">选择一份 Excel 座位表（.xlsx / .xls），第一行为表头。</p>
       <ul class="intro-list">
         <li><strong>必需列</strong>：{{ SEAT_IMPORT_HEADERS.join('、') }}</li>
@@ -311,10 +317,11 @@ function close(): void {
 
     <template #footer>
       <AppButton variant="ghost" @click="close">取消</AppButton>
-      <AppButton v-if="!result" :disabled="busy" @click="pickFile">
-        {{ busy ? '读取中…' : '选择 Excel 文件' }}
-      </AppButton>
-      <AppButton v-else :disabled="result.assignable === 0 || result.blocked > 0" @click="confirm">
+      <AppButton
+        v-if="result"
+        :disabled="result.assignable === 0 || result.blocked > 0"
+        @click="confirm"
+      >
         确认导入 {{ result.assignable }} 个座位
       </AppButton>
     </template>
@@ -324,6 +331,10 @@ function close(): void {
 <style scoped>
 .file-input {
   display: none;
+}
+
+.intro-upload {
+  margin-bottom: var(--space-4);
 }
 
 .intro-lead {

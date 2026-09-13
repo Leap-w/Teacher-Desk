@@ -14,6 +14,7 @@ import type { RowUnit } from '@/utils/seatView'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
+import SeatCard from './SeatCard.vue'
 import SeatQuickCard from './SeatQuickCard.vue'
 
 /** 判定“移动”与“点击”的指针位移阈值（px）：超过即视为拖拽 */
@@ -373,26 +374,24 @@ defineExpose({ revealSeat, openQuickCard })
               <template v-for="unit in rowUnits(item.row)" :key="unit.key">
                 <span v-if="unit.kind === 'aisle'" class="aisle" aria-hidden="true"></span>
                 <span v-else class="seat-block">
-                  <template v-for="seat in unit.seats" :key="seat.id">
-                    <button
-                      type="button"
-                      class="seat"
-                      :class="seatClass(seat)"
-                      :data-seat-id="seat.id"
-                      :title="seatTitle(seat)"
-                      @click="pick(seat.id)"
-                      @pointerdown="onSeatPointerDown(seat, $event)"
-                    >
-                      <template v-if="occupantOf(seat)">
-                        <span class="seat-avatar" aria-hidden="true">{{ occupantChar(seat) }}</span>
-                        <span class="seat-name">{{ occupantName(seat) }}</span>
-                        <span class="seat-no"
-                          >{{ seatOrdinal(seat.row, seat.col, config) }} 号</span
-                        >
-                      </template>
-                      <span v-else class="seat-plus" aria-hidden="true">＋</span>
-                    </button>
-                  </template>
+                  <!--
+                    UI-4B：座位块抽为 SeatCard 纯展示组件（统一样式 / Hover / 空座态）。
+                    点击与拖拽处理仍在本组件：原生事件穿透 + data-seat-id 落到根按钮，
+                    拖拽落点判定 `closest('[data-seat-id]')` 不受影响，Pointer 逻辑零改动。
+                  -->
+                  <SeatCard
+                    v-for="seat in unit.seats"
+                    :key="seat.id"
+                    :data-seat-id="seat.id"
+                    :title="seatTitle(seat)"
+                    :empty="!occupantOf(seat)"
+                    :name="occupantName(seat)"
+                    :char="occupantChar(seat)"
+                    :ordinal="`${seatOrdinal(seat.row, seat.col, config)} 号`"
+                    :classes="seatClass(seat)"
+                    @click="pick(seat.id)"
+                    @pointerdown="onSeatPointerDown(seat, $event)"
+                  />
                 </span>
               </template>
             </div>
@@ -577,176 +576,8 @@ defineExpose({ revealSeat, openQuickCard })
   flex-shrink: 0;
 }
 
-/* ---- 座位（窄列纵向布局：首字头像 / 姓名 / 座位号） ---- */
-.seat {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  width: clamp(54px, 5.4vw, 62px);
-  height: 70px;
-  padding: 6px 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  font: inherit;
-  text-align: center;
-  cursor: pointer;
-  overflow: hidden;
-  user-select: none; /* 防拖拽过程中选中文字产生原生拖影 */
-  -webkit-user-select: none;
-  touch-action: pan-y; /* 保留页面纵向滚动，拖拽方向判定在 pointermove 内完成 */
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    background var(--transition-fast),
-    opacity var(--transition-fast);
-}
-
-.seat:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.seat:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
-}
-
-/* Phase 3C：对比变化高亮 = 琥珀描边（先于选中态声明，选中环仍可覆盖；不碰强调顶条/角点） */
-.seat.is-changed {
-  border-color: var(--color-warning-strong);
-  box-shadow: 0 0 0 2px var(--color-warning-soft);
-}
-
-/* Phase 3C：定位闪烁（动画 3 次约 1.5s，页面定时移除类以支持重放） */
-.seat.is-flashing {
-  animation: seat-flash 0.5s ease-in-out 3;
-}
-
-@keyframes seat-flash {
-  0%,
-  100% {
-    border-color: var(--color-border);
-    box-shadow: none;
-  }
-
-  45% {
-    border-color: var(--color-warning-strong);
-    box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.55);
-  }
-}
-
-.seat.is-selected {
-  border-color: var(--color-primary);
-  box-shadow: var(--ring-focus);
-}
-
-.seat.is-empty {
-  background: var(--color-fill-disabled);
-  border-style: dashed;
-  cursor: default;
-}
-
-.seat-plus {
-  font-size: var(--text-lg);
-  font-weight: 300;
-  color: var(--color-text-faint);
-  line-height: 1;
-  user-select: none;
-}
-
-.seat-avatar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.seat-name {
-  width: 100%;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--color-text);
-  line-height: 1.3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.seat-no {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-/* 强调标记（颜色一律来自 theme.css，见页面图例）：班委 = 顶条主色，高个 = 顶条琥珀，其他标签 = 角点 */
-.seat.is-cadre::before,
-.seat.is-tall::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-}
-
-.seat.is-cadre::before {
-  background: var(--color-primary-strong);
-}
-
-.seat.is-tall::before {
-  background: var(--color-warning);
-}
-
-.seat.is-tag::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-text-secondary);
-}
-
-/* ---- Phase 3B 拖拽与换座模式反馈 ---- */
-/* 拖拽源座位：压暗，弱化“学生已随指针离开” */
-.seat.is-drag-source {
-  opacity: 0.45;
-  border-color: var(--color-primary);
-}
-
-/* 指针下的有效落点：已就座（将交换）与空位（将移入）同样高亮 */
-.seat.is-drop-target {
-  border-color: var(--color-primary-strong);
-  box-shadow: var(--ring-focus);
-}
-
-.seat.is-drop-target.is-empty {
-  border-style: solid;
-}
-
-/* 点击换座模式源座位（长按卡「开始换座」）：虚线框 + 选中环 */
-.seat.is-pick-source {
-  border-color: var(--color-primary-strong);
-  outline: 2px dashed var(--color-primary);
-  outline-offset: 2px;
-  box-shadow: var(--ring-focus);
-}
-
-.seat-classroom.is-dragging .seat {
+/* UI-4B：座位样式已整体抽到 SeatCard.vue（统一尺寸 / Hover / 拖拽态 / 空座态） */
+.seat-classroom.is-dragging :deep(.seat) {
   cursor: grabbing;
 }
 
@@ -763,7 +594,8 @@ defineExpose({ revealSeat, openQuickCard })
   background: var(--color-surface);
   box-shadow: var(--shadow-md);
   pointer-events: none;
-  transform: translate(-50%, calc(-100% - 12px));
+  /* 拖拽中放大 3%（UI-4B 动效规范） */
+  transform: translate(-50%, calc(-100% - 12px)) scale(1.03);
   max-width: 168px;
 }
 

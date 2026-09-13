@@ -92,14 +92,15 @@ const tabs = computed(() => {
 .module-page__tabs {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
+  max-width: 100%;
   padding: 3px;
   margin: var(--spacing-lg) 0 var(--spacing-xl);
   background: var(--color-border-light);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
   font-size: var(--font-secondary);
   font-weight: var(--font-weight-medium);
-  align-self: flex-start;
 }
 
 /* UI-2：桌面端二级导航由侧栏接管，胶囊 Tab 只在小屏（<1024px）显示 */
