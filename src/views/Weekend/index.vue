@@ -1,19 +1,34 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import { AppButton, AppCard, AppModal, EmptyState } from '@/components/ui'
+import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { useDutyStore } from '@/stores/duty'
 import { useStudentStore } from '@/stores/student'
 import { useWeekendStore } from '@/stores/weekend'
 import { describeWeekend, formatWeekendLabel } from '@/utils/weekend'
+import { FAMILY_SCOPE_LABELS, familyScopeLabel } from '@/utils/student'
+import type { FamilyScope } from '@/types'
 import type { WeekendReturnRecord } from '@/types/weekend'
+import CurrentReturnList from './components/CurrentReturnList.vue'
+import RegionSummary from './components/RegionSummary.vue'
+import type { RegionStat } from './components/RegionCard.vue'
+import WeekendHero from './components/WeekendHero.vue'
+import WeekendStats from './components/WeekendStats.vue'
+import WeekendTimeline from './components/WeekendTimeline.vue'
+import type { WeekendTimelineEvent } from './components/WeekendTimeline.vue'
 import WeekendReturnDrawer from './components/WeekendReturnDrawer.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
-import WeekendReturnRoster from './components/WeekendReturnRoster.vue'
-import { Luggage } from 'lucide-vue-next'
 
+/**
+ * 周末返校中心（V2.0.7-alpha · Phase UI-4E，Return First）：
+ * 打开页面第一眼 = 这一期谁返家（人不在校）、谁留校；地区分布联动筛选是班主任特色；
+ * 登记入口在页头。数据模型只记「学生 × 周末是否返家」——离校 / 返校时刻、手机交接
+ * 在数据模型中不存在，不发明假事件。
+ */
 const weekendStore = useWeekendStore()
 const studentStore = useStudentStore()
+const dutyStore = useDutyStore()
 const toast = useToast()
 
 /**
@@ -21,9 +36,6 @@ const toast = useToast()
  * 跨零点时「本周末」会翻篇，但教师正看着的那一期不该跟着跳走。
  */
 const selected = ref(weekendStore.currentWeekend)
-
-/** 在读学生的 id 列表：只用来给名单标注「已不在档案」，人数不从这里数 */
-const activeIds = computed(() => studentStore.activeStudents.map((item) => item.id))
 
 /** **完整**名单（含已退档学生的历史记录，由名单组件标注后照常列出） */
 const roster = computed(() => weekendStore.listReturns(selected.value))
@@ -39,6 +51,98 @@ const staleCount = computed(() => weekendStore.staleCountOf(selected.value))
 
 const selectedLabel = computed(() => formatWeekendLabel(selected.value))
 const selectedRelative = computed(() => describeWeekend(selected.value, weekendStore.todayKey))
+
+/* ---------- 学生 / 值日组只读查表（地区 / 第几组展示用） ---------- */
+
+const studentById = computed(
+  () => new Map(studentStore.activeStudents.map((item) => [item.id, item])),
+)
+
+const dutyGroupNames = computed(() => {
+  const map = new Map<string, string>()
+  for (const group of dutyStore.groups) {
+    for (const id of group.studentIds) {
+      if (!map.has(id)) map.set(id, group.name)
+    }
+  }
+  return map
+})
+
+/** 学生 id → 家庭地区文案（在读学生；只读展示） */
+const regionNames = computed(() => {
+  const map = new Map<string, string>()
+  for (const [id, student] of studentById.value) {
+    const label = familyScopeLabel(student.familyLocation)
+    if (label) map.set(id, label)
+  }
+  return map
+})
+
+/* ---------- 地区联动筛选（昌都市区 / 其他县 / 市外；家庭地区算法不改，只做只读分组） ---------- */
+
+const regionFilter = ref<FamilyScope | undefined>(undefined)
+
+const regionStats = computed<RegionStat[]>(() => {
+  const counts = new Map<FamilyScope, number>()
+  for (const record of roster.value) {
+    const scope = studentById.value.get(record.studentId)?.familyLocation?.scope
+    if (scope) counts.set(scope, (counts.get(scope) ?? 0) + 1)
+  }
+  return (Object.keys(FAMILY_SCOPE_LABELS) as FamilyScope[]).map((scope) => ({
+    scope,
+    label: FAMILY_SCOPE_LABELS[scope],
+    count: counts.get(scope) ?? 0,
+    active: regionFilter.value === scope,
+  }))
+})
+
+/** 地区筛选后的名单（已不在档案的记录不受地区筛选影响，始终保留展示） */
+const filteredRoster = computed(() => {
+  if (!regionFilter.value) return roster.value
+  return roster.value.filter(
+    (record) =>
+      studentById.value.get(record.studentId)?.familyLocation?.scope === regionFilter.value,
+  )
+})
+
+const regionFilterLabel = computed(() =>
+  regionFilter.value ? FAMILY_SCOPE_LABELS[regionFilter.value] : undefined,
+)
+
+/* ---------- Layer 4：登记时间轴（createdAt 派生，新 → 旧） ---------- */
+
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  month: 'long',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const timelineEvents = computed<WeekendTimelineEvent[]>(() =>
+  [...roster.value]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((record) => ({
+      id: record.id,
+      studentName: record.studentName,
+      timeLabel: timeFormatter.format(new Date(record.createdAt)),
+    })),
+)
+
+const stats = computed(() => ({
+  returnedCount: returnedCount.value,
+  stayCount: stayCount.value,
+  staleCount: staleCount.value,
+  monthCount: weekendStore.monthReturnCount,
+}))
+
+const createdAtLabels = computed(() => {
+  const map = new Map<string, string>()
+  for (const record of roster.value) {
+    const date = new Date(record.createdAt)
+    if (!Number.isNaN(date.getTime())) map.set(record.id, timeFormatter.format(date))
+  }
+  return map
+})
 
 /* ---------- 登记返家 ---------- */
 
@@ -91,20 +195,26 @@ function confirmRemove() {
 
 <template>
   <div class="weekend-page">
-    <header class="page-toolbar">
+    <header class="page-head">
       <div>
-        <p class="page-subtitle">
-          本周末返家 {{ weekendStore.currentCount }} 人 · 本月累计
-          {{ weekendStore.monthReturnCount }} 人次
-        </p>
+        <h1 class="page-title">周末管理</h1>
+        <p class="page-subtitle">本月累计 {{ weekendStore.monthReturnCount }} 人次</p>
       </div>
-      <div class="toolbar-actions">
+      <div class="head-actions">
         <SettingsEntryButton module="weekend" />
-        <AppButton @click="registerOpen = true">＋ 登记返家</AppButton>
       </div>
     </header>
 
-    <!-- 周末切换条：手机横向滚动，PC 一行放得下 -->
+    <!-- ===== Layer 1：返校状态 Hero（Return First 视觉中心） ===== -->
+    <WeekendHero
+      :relative-label="selectedRelative || '本周末'"
+      :period-label="selectedLabel"
+      :returned-count="returnedCount"
+      :stay-count="stayCount"
+      @register="registerOpen = true"
+    />
+
+    <!-- 期次切换条（手机横向滚动，PC 一行放得下） -->
     <div class="weekend-strip" role="group" aria-label="切换周末">
       <button
         v-for="key in weekendStore.weekendKeys"
@@ -122,35 +232,50 @@ function confirmRemove() {
       </button>
     </div>
 
-    <div class="section-head">
-      <h2 class="section-title">
-        {{ selectedRelative || selectedLabel }}
-        <span v-if="selectedRelative" class="section-date">{{ selectedLabel }}</span>
+    <!-- ===== Layer 2：概览统计 ===== -->
+    <section class="layer-section">
+      <WeekendStats :stats="stats" />
+    </section>
+
+    <!-- ===== Layer 3：地区分布（点击联动筛选） + 本期返家名单 ===== -->
+    <section class="layer-section">
+      <h2 class="layer-title">家庭地区分布</h2>
+      <RegionSummary
+        :stats="regionStats"
+        :selected="regionFilter"
+        @select="regionFilter = regionFilter === $event ? undefined : ($event as FamilyScope)"
+      />
+    </section>
+
+    <section class="layer-section">
+      <h2 class="layer-title">
+        本期返家名单<span v-if="regionFilterLabel" class="title-filter"
+          >（{{ regionFilterLabel }}）</span
+        >
+        <span class="title-sub">{{ selectedRelative || selectedLabel }}</span>
       </h2>
-      <p class="section-sub">
-        返家 {{ returnedCount }} 人 · 留校 {{ stayCount }} 人
-        <span v-if="staleCount" class="section-note">
-          （另有 {{ staleCount }} 条已不在档案的返家记录，仍列在下方）
-        </span>
+      <CurrentReturnList
+        :records="filteredRoster"
+        :region-names="regionNames"
+        :duty-group-names="dutyGroupNames"
+        :created-at-labels="createdAtLabels"
+        :region-label="regionFilterLabel"
+        @remove="askRemove"
+      />
+      <p v-if="staleCount" class="stale-note">
+        另有 {{ staleCount }} 条已不在档案的返家记录
+        <template v-if="regionFilter">（可能被地区筛选隐藏）</template>，撤销后即从名单移除。
       </p>
-    </div>
+    </section>
 
-    <WeekendReturnRoster
-      v-if="roster.length"
-      :records="roster"
-      :active-ids="activeIds"
-      @remove="askRemove"
-    />
-
-    <AppCard v-else padding="none" class="empty-card">
-      <EmptyState
-        :icon="Luggage"
-        title="这一期还没有登记返家"
-        description="点击右上角「登记返家」，勾上这个周末回家的学生。没登记的学生即视为留校。"
-      >
-        <AppButton size="sm" @click="registerOpen = true">登记返家</AppButton>
-      </EmptyState>
-    </AppCard>
+    <!-- ===== Layer 4：登记时间轴（本期，新 → 旧） ===== -->
+    <section class="layer-section">
+      <h2 class="layer-title">登记时间轴</h2>
+      <div class="panel">
+        <WeekendTimeline v-if="timelineEvents.length" :events="timelineEvents" />
+        <p v-else class="panel-empty">这一期还没有登记记录。</p>
+      </div>
+    </section>
 
     <WeekendReturnDrawer
       v-model="registerOpen"
@@ -176,27 +301,40 @@ function confirmRemove() {
 
 <style scoped>
 .weekend-page {
-  max-width: 960px;
+  max-width: 1080px;
 }
 
-.page-toolbar {
+.page-head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--spacing-lg);
+}
+
+.page-title {
+  font-size: var(--font-h2);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
 .page-subtitle {
   margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .weekend-strip {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  margin-top: var(--space-4);
   padding-bottom: var(--space-1);
   overflow-x: auto;
 }
@@ -226,10 +364,15 @@ function confirmRemove() {
   border-color: var(--color-primary);
 }
 
+.weekend-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
 .chip-name {
   font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
   white-space: nowrap;
 }
 
@@ -238,38 +381,48 @@ function confirmRemove() {
   color: var(--color-text-faint);
 }
 
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-3);
+.layer-section {
+  margin-top: var(--section-gap);
 }
 
-.section-title {
-  font-size: var(--text-md);
-  font-weight: 600;
+.layer-title {
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
-.section-date {
+.title-filter {
+  color: var(--color-primary-dark);
+}
+
+.title-sub {
   margin-left: var(--space-2);
-  font-weight: 400;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-tertiary);
 }
 
-.section-sub {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.section-note {
+.stale-note {
+  margin-top: var(--space-3);
+  font-size: var(--font-caption);
   color: var(--color-text-faint);
 }
 
-.empty-card {
-  padding: var(--space-6);
+.panel {
+  padding: var(--spacing-card);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.panel-empty {
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .confirm-text {
@@ -280,12 +433,5 @@ function confirmRemove() {
 
 .confirm-text strong {
   color: var(--color-text);
-}
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  flex-wrap: wrap;
 }
 </style>

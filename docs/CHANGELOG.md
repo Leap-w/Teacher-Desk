@@ -6,6 +6,33 @@
 
 ---
 
+## v2.0.7-alpha —— Phase UI-4E · Weekend Hub 周末返校中心（Class Hub 收官）（2026-09-13，tag `v2.0.7-alpha`）
+
+> 只升级 UI；Weekend Store / 家庭地区算法 / 返家登记与撤销 / localStorage Key **零改动**（地区统计为学生档案只读分组）。本模块是**登记制**：一条记录 = 学生 × 周末「是否返家」，留校是派生口径，离/返校时刻与手机交接在数据模型中不存在、不做假事件。详见开发手册 **§9.45**。
+
+### 新增组件（`views/Weekend/components/`，外出登记 / 节假日可复用）
+
+- **WeekendHero**：期次 Hero（Return First 视觉中心）——返家 / 留校双数字 + 返家率 + 期次徽章；200ms 渐入。
+- **WeekendStats**：四统计（本期返家 / 留校 / 本月累计 / 历史遗留警示）。
+- **WeekendCard + WeekendStatusBadge**：返家学生卡（StudentCard 风格：姓名 22px 两行保护 + 家庭地区 + 值日组 + 登记时间 + 撤销；历史遗留标橙）。
+- **RegionSummary + RegionCard**：**家庭地区分布三卡**（昌都市区 / 其他县 / 市外，Apple Maps 信息卡风）——点击联动筛选名单（班主任特色功能；统计来自 `familyLocation.scope` 只读分组）。
+- **CurrentReturnList**：返家名单卡片流（跟随地区筛选，空态带筛选说明）。
+- **WeekendTimeline + Item**：登记时间轴（createdAt 派生，新 → 旧，逐项渐入）。
+
+### 变化
+
+- 页面 Return First 层级：Hero → 期次切换条 + 概览统计 → 地区分布（联动筛选）→ 返家名单 → 登记时间轴。
+- 删除 `WeekendReturnRoster.vue`（名单改卡片流，一行一条的名字列表退役）。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸（1440/768/390）：Hero 3 返家/3 留校/50%、统计 3/3/5/0、地区卡 1/1/1、**地区筛选联动实测**（点「昌都市其他县」→ 名单只剩李明 + 清除按钮）、时间轴 3 事件；三尺寸无横向滚动 + 截图复核。
+
+**至此 Class Hub 五大模块（Student / Seat / Leave / Duty / Weekend）视觉重构全部完成。**
+
+---
+
 ## v2.0.6-alpha —— Phase UI-4D · Duty Hub 值日管理中心（2026-09-13，tag `v2.0.6-alpha`）
 
 > 只升级 UI；Duty Store / 分组 / 轮换算法 / 历史数据 / localStorage Key **零改动**（新统计均为只读派生）。数据模型**不含完成打卡**（Phase 6 拍板口径），故不伪造完成率——统计用真实可算口径。详见开发手册 **§9.44**。
