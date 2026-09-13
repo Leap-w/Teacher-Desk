@@ -7,7 +7,7 @@
  * 为什么单独成件：以后 CloudBase 的多键批量、优先级、持久化队列都要在这里长，
  * 引擎只依赖这四个能力（enqueue/dequeue/retry/clear）即可完成全部编排。
  */
-import type { SyncOp, SyncTask } from './types'
+import type { SerializedQueue, SyncOp, SyncTask } from './types'
 
 export class SyncQueue {
   private nextId = 1
@@ -67,5 +67,52 @@ export class SyncQueue {
   /** 队列快照（只读拷贝；测试与诊断用，避免外部改到内部数组） */
   toArray(): SyncTask[] {
     return this.items.map((task) => ({ ...task }))
+  }
+
+  /** 序列化（Cloud-4 队列持久化）：刷新 / 关标签 / 重启后据此接着推 */
+  serialize(): SerializedQueue {
+    return { nextId: this.nextId, items: this.items.map((task) => ({ ...task })) }
+  }
+
+  /**
+   * 从快照恢复（Cloud-4）：
+   * - 逐条做**形状守卫**（坏数据宁可丢掉也不能让队列带着脏条目跑）；
+   * - 同一个键**只保留一条**（恢复时与运行中同一口径：一份数据推两次没有意义）；
+   * - `nextId` 取「快照值」与「已有最大 id + 1」的较大者，保证新任务 id 不撞。
+   */
+  restore(snapshot: SerializedQueue | null): number {
+    this.items = []
+    this.nextId = 1
+    if (!snapshot || !Array.isArray(snapshot.items)) return 0
+
+    const seen = new Set<string>()
+    for (const raw of snapshot.items) {
+      const task = normalizeTask(raw)
+      if (!task) continue
+      const identity = `${task.op}:${task.key}`
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      this.items.push(task)
+    }
+    const maxId = this.items.reduce((max, task) => Math.max(max, task.id), 0)
+    this.nextId = Math.max(snapshot.nextId ?? 1, maxId + 1)
+    return this.items.length
+  }
+}
+
+/** 恢复时的形状守卫：键名 / 操作 / 尝试次数都得像话，否则丢掉这条 */
+function normalizeTask(raw: unknown): SyncTask | null {
+  if (!raw || typeof raw !== 'object') return null
+  const task = raw as Partial<SyncTask>
+  if (typeof task.key !== 'string' || !task.key) return null
+  const op: SyncOp = task.op === 'pull' ? 'pull' : 'push'
+  const attempts = typeof task.attempts === 'number' && task.attempts >= 0 ? task.attempts : 0
+  return {
+    id: typeof task.id === 'number' && task.id > 0 ? task.id : 0,
+    key: task.key,
+    op,
+    enqueuedAt: typeof task.enqueuedAt === 'number' ? task.enqueuedAt : 0,
+    attempts,
+    payload: task.payload,
   }
 }

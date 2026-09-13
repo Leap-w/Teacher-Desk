@@ -6,6 +6,32 @@
 
 ---
 
+## v2.2.3-alpha —— Phase Cloud-4 · 多设备验证与同步可靠性（V2.2 Cloud Foundation 收官）（2026-09-14，tag `v2.2.3-alpha`）
+
+> **Observable Sync**（新增长期规范）：任何同步问题都必须能通过「当前状态 / 队列长度 / 待同步键 / 最近同步时间 / 最近错误 / 当前通道」定位，而不是去翻控制台。
+> 不新增业务功能；Store API / Repository API / 数据模型 / 存储键**零改动**。
+
+### 新增
+
+- **队列持久化**：`teacherdesk:sync-queue`（新增 `syncQueueRepository`）——刷新 / 关标签 / 重启后恢复待同步队列并**继续同步**；推成功即出队并落盘为空，**不重复执行**；恢复时逐条形状守卫 + 同键去重。
+- **Outbox**：`SyncEngine.outbox()` / `pendingKeys()` / `serializeQueue()` / `restoreQueue()`——待同步列表、已同步清理、重试计数，Widget 可复用同一份。
+- **同步诊断**（我的 → 工具箱）：`SyncDiagnosticsCard` + `useSyncDiagnostics`——状态 / 队列长度 / 待同步 Key / 最近同步时间 / 最近错误 / 当前通道 / 累计成功失败 / Outbox / 队列存储键；**开发模式默认展开，正式默认折叠**（折叠仍有一行摘要）。
+- **健壮性**：重试**指数退避 1s → 2s → 4s**（上限 30s）、单次通道调用**20s 超时**（按可重试失败处理，不把界面挂在「同步中」）。
+- **状态可观测修复**：状态机每次迁移都广播 `sync:state` 事件——此前 `settle()` 收敛出的 Synced/Error 没有事件，界面会停在 Syncing（诊断卡测试抓出来的真问题）。
+- **CI**：`.github/workflows/ci.yml`（npm ci → prettier --check → eslint → vue-tsc → npm test → npm run build），push / PR / tag 全跑。
+
+### 验证（双设备模拟 + 冲突 + 网络）
+
+- **八个模块**双设备验证：学生档案 / 座位 / 请假 / 值日 / 周末 / 课程表 / 工作清单 / 我的——A 新增 → 同步 → B 看到同一份；B 修改 / 清空 → A 同步后一致。
+- **冲突**：LWW 正确（新者胜）、首次同步两边都有数据 → 一个字不动并列进待裁决、无死循环（重复同步不再产生推送）、`resolveConflicts` 两种裁决都验证。
+- **网络恢复**：断网改动 → 联网自动补推、队列清空、状态回「已同步」。
+
+### 测试
+
+- 新增 `syncQueuePersistence.test.ts`（24 条）+ `multiDevice.test.ts`（26 条）= **50 条**，常驻 **428 → 478**。
+
+---
+
 ## v2.2.2-alpha —— Phase Cloud-3 · CloudBase 单用户云同步（2026-09-14，tag `v2.2.2-alpha`）
 
 > **Single User Cloud**：一个班主任、多个设备。不做多人协作 / 班级共享 / 学生账号。

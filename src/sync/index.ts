@@ -17,6 +17,8 @@ export { SyncEvents } from './SyncEvents'
 export type { SyncEventListener, SyncEventName, SyncEventPayload } from './SyncEvents'
 export { SyncState } from './types'
 export type {
+  OutboxEntry,
+  SerializedQueue,
   ConflictInput,
   ConflictResolution,
   ConflictStrategy,

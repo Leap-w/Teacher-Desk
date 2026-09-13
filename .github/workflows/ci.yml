@@ -1,0 +1,53 @@
+# TeacherDesk CI（Cloud-4 起启用）
+#
+# 每个 push 与每个 tag 都跑同一条链：
+#   npm ci → prettier --check → eslint → vue-tsc → npm test → npm run build
+#
+# 为什么在同步系统迭代阶段尤其重要：同步的回归往往不是「报错」而是「静默不一致」
+# （少推一个键、多推一轮、队列丢了），只有常驻测试 + 类型检查能当场拦住。
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖（锁文件为准）
+        run: npm ci
+
+      - name: 代码格式（prettier --check）
+        run: npx prettier --check "src/**/*.{ts,vue,css}" "vite.config.ts" "uno.config.ts"
+
+      - name: 静态检查（eslint）
+        run: npm run lint
+
+      - name: 类型检查（vue-tsc）
+        run: npm run type-check
+
+      - name: 常驻测试（vitest）
+        run: npm test
+
+      - name: 构建（vite build）
+        run: npm run build

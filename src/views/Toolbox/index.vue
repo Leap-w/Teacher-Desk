@@ -28,6 +28,7 @@ import {
   type MergeStat,
 } from '@/utils/backup'
 import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
+import SyncDiagnosticsCard from './components/SyncDiagnosticsCard.vue'
 
 /**
  * 工具箱（近期增量「数据管理」，见 docs/开发计划.md §六）。
@@ -440,6 +441,9 @@ onMounted(() => {
         <p class="page-subtitle">数据备份与恢复；教学小工具规划中。</p>
       </div>
     </header>
+
+    <!-- Cloud-4：同步诊断（Observable Sync：状态 / 队列 / 待同步键 / 最近错误 / 通道） -->
+    <SyncDiagnosticsCard />
 
     <AppCard
       title="数据管理"

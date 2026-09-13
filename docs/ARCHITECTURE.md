@@ -112,6 +112,47 @@ UI（同步徽章 / 提示条）──只读──► SyncSnapshot
 **回声抑制**：整轮对账采纳远端时的写盘（状态为 `syncing`）**不再入队**——
 否则会把刚取下来的内容又推回去，两台设备之间来回多推一轮。
 
+### 同步时序（一次本地改动，Cloud-4 完整链路）
+
+```
+Store（业务动作）
+  ↓ 改 ref
+Repository（bind 的 watch）
+  ↓ 幂等写盘
+LocalStorageAdapter → services/storage（写盘记账）+ services/sync（广播键名）
+  ↓ onSyncDirty(key)
+autoSync 调度层（只有这里 import 云模块）
+  ↓ isCloudReady() ? engine.enqueue(key) : 忽略（本地模式）
+SyncEngine 队列（FIFO + 同键去重 + 指数退避 1s→2s→4s + 20s 超时）
+  ↓ 防抖 150ms 落盘（teacherdesk:sync-queue）→ 防抖 1.5s → flush()
+CloudTransport（SyncTransport 实现）
+  ↓ pushKeyNow(key)
+services/cloudSync（LWW 记账：seen / syncedAt / localUpdatedAt）
+  ↓ RemotePort.push
+CloudBase 文档（key / payload / updatedAt）
+  ↓ 事件 sync:start / sync:success / sync:error / sync:retry / sync:state
+UI（同步徽章 / 首页提示条 / 工具箱诊断卡）＋ 队列快照落盘
+```
+
+### 冲突处理流程（Single User · Last Write Wins）
+
+```
+decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种内容)
+  ├─ 本地无此键            → adopt（以云端为准）
+  ├─ 云端无此键            → push（本机这份是新数据）
+  ├─ 本地未变 + 云端更新    → adopt（云端胜）
+  ├─ 本地未变 + 云端未变    → skip（一个字节都不动）
+  ├─ 本地改了 + 云端也变了
+  │    ├─ 首次同步（无记账）
+  │    │    ├─ 本机只有播种内容 → adopt（新设备装上就该看到已有数据）
+  │    │    └─ 本机有真实数据   → conflict（一个字不动，交教师逐键裁决）
+  │    └─ 不是首次同步         → 比 updatedAt：新者胜出（push 或 adopt）
+  └─ 云端两轮之间被改动、本机也改 → 同上比时间
+```
+
+**不传播删除**（无墓碑）：本地清空后重新播种，把「云端缺失」当删除指令会让一次误删
+沿所有设备清干净；空数组（**键还在，内容为空**）则会正常同步。
+
 **Sync Engine First（长期规范）**：CloudBase、Widget、跨设备同步、定时同步**只能调用
 `SyncEngine`**，不得直接调用 `CloudAdapter`——后者永远只是数据通道，同步策略
 （排队 / 重试 / 冲突 / 状态）始终集中在一层。

@@ -18,6 +18,8 @@ import { SyncStateMachine } from './SyncState'
 import { activeTransport } from './transportRegistry'
 import {
   SyncState,
+  type OutboxEntry,
+  type SerializedQueue,
   type SyncEngineOptions,
   type SyncSnapshot,
   type SyncTask,
@@ -26,6 +28,7 @@ import {
 } from './types'
 
 const DEFAULT_MAX_ATTEMPTS = 3
+const DEFAULT_TIMEOUT_MS = 20_000
 
 export class SyncEngine {
   private readonly queue = new SyncQueue()
@@ -35,6 +38,7 @@ export class SyncEngine {
   private readonly transport: SyncTransport
   private readonly maxAttempts: number
   private readonly retryDelayMs: number
+  private readonly timeoutMs: number
   private readonly now: () => number
 
   private lastSyncedAt: number | null = null
@@ -46,8 +50,19 @@ export class SyncEngine {
     this.transport = options.transport
     this.maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
     this.retryDelayMs = options.retryDelayMs ?? 0
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
     this.now = options.now ?? (() => Date.now())
     this.resolver = new ConflictResolver(options.conflictStrategy ?? 'local-wins')
+
+    // 状态机每次迁移都广播一条事件：**Observable Sync 的要求**——
+    // 界面（同步徽章 / 诊断卡）必须看到最终状态，而不是只看到「发事件那一刻」的中间态。
+    // （此前 settle() 收敛出来的 Synced/Error 没有事件，界面会停在 Syncing。）
+    this.machine.subscribe((state, previous) => {
+      this.events.emit('sync:state', {
+        at: this.now(),
+        message: `${previous} → ${state}`,
+      })
+    })
   }
 
   /** 事件总线（UI / 诊断订阅） */
@@ -147,7 +162,7 @@ export class SyncEngine {
     this.machine.transition(SyncState.Syncing, 'runCycle')
     let outcome: TransportOutcome
     try {
-      outcome = await this.transport.sync()
+      outcome = await this.withTimeout(() => this.transport.sync!())
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       outcome = { ok: false, error: message, retryable: true }
@@ -181,6 +196,50 @@ export class SyncEngine {
     return dropped
   }
 
+  /**
+   * Outbox（Cloud-4）：待同步列表的可读视图——键、操作、已尝试次数、入队时间。
+   * 「已同步清理」由队列本身保证（推成功即出队，不留在 Outbox 里）；
+   * 界面（同步诊断）与未来的 Widget 都读这一份。
+   */
+  outbox(): OutboxEntry[] {
+    return this.queue.toArray().map((task) => ({
+      key: task.key,
+      op: task.op,
+      attempts: task.attempts,
+      enqueuedAt: task.enqueuedAt,
+    }))
+  }
+
+  /** 待同步的键（去重后的顺序列表；诊断与测试用） */
+  pendingKeys(): string[] {
+    const seen = new Set<string>()
+    const keys: string[] = []
+    for (const task of this.queue.toArray()) {
+      if (seen.has(task.key)) continue
+      seen.add(task.key)
+      keys.push(task.key)
+    }
+    return keys
+  }
+
+  /** 队列快照（持久化用；见 `autoSync` 的落盘时机） */
+  serializeQueue(): SerializedQueue {
+    return this.queue.serialize()
+  }
+
+  /**
+   * 从持久化快照恢复队列（Cloud-4）：刷新 / 关标签 / 重启后接着推。
+   * 非空即进入 `SyncPending`（界面立刻能看到「有 N 项等待同步」）。
+   * 返回恢复的任务数。
+   */
+  restoreQueue(snapshot: SerializedQueue | null): number {
+    const restored = this.queue.restore(snapshot)
+    if (restored > 0) {
+      this.machine.transition(SyncState.SyncPending, 'restoreQueue')
+    }
+    return restored
+  }
+
   /** UI 只读快照 */
   snapshot(): SyncSnapshot {
     return {
@@ -203,21 +262,20 @@ export class SyncEngine {
     while (attempt < this.maxAttempts) {
       attempt += 1
       this.events.emit('sync:start', { at: this.now(), task, key: task.key })
-      last = await this.transport.push({ ...task, attempts: attempt })
+      last = await this.withTimeout(() => this.transport.push({ ...task, attempts: attempt }))
       if (last.ok) return last
 
       const exhausted = attempt >= this.maxAttempts
       if (!last.retryable || exhausted) return last
 
+      const waitMs = this.backoffFor(attempt)
       this.events.emit('sync:retry', {
         at: this.now(),
         task,
         key: task.key,
-        message: `第 ${attempt} 次失败：${last.error}，准备重试`,
+        message: `第 ${attempt} 次失败：${last.error}，${waitMs > 0 ? `${waitMs}ms 后` : ''}重试`,
       })
-      if (this.retryDelayMs > 0) {
-        await this.delay(this.retryDelayMs * attempt)
-      }
+      if (waitMs > 0) await this.delay(waitMs)
     }
 
     return last
@@ -234,6 +292,31 @@ export class SyncEngine {
       return
     }
     this.machine.transition(SyncState.Synced, '队列清空')
+  }
+
+  /** 指数退避：第 n 次失败后等 base × 2^(n-1)（1s → 2s → 4s），上限 30s */
+  private backoffFor(attempt: number): number {
+    if (this.retryDelayMs <= 0) return 0
+    return Math.min(this.retryDelayMs * 2 ** (attempt - 1), 30_000)
+  }
+
+  /** 通道调用超时：超时按「可重试失败」返回，不把界面挂在「同步中」 */
+  private async withTimeout(call: () => Promise<TransportOutcome>): Promise<TransportOutcome> {
+    if (this.timeoutMs <= 0) return call()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    try {
+      return await Promise.race([
+        call(),
+        new Promise<TransportOutcome>((resolve) => {
+          timer = setTimeout(
+            () => resolve({ ok: false, error: `请求超时（${this.timeoutMs}ms）`, retryable: true }),
+            this.timeoutMs,
+          )
+        }),
+      ])
+    } finally {
+      if (timer !== null) clearTimeout(timer)
+    }
   }
 
   private delay(ms: number): Promise<void> {

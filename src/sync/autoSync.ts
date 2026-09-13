@@ -15,6 +15,7 @@
  * 2. **不做回声**：整轮对账会在采纳远端数据时写盘，那次写盘不该再被当成
  *    「本地改动」推回去——所以 `cloudSyncState.status === 'syncing'` 期间不收脏键。
  */
+import { syncQueueRepository } from '@/repositories/sync/syncQueueRepository'
 import { isCloudConfigured } from '@/services/cloudbase'
 import { cloudSyncState, isCloudReady, SYNC_DEBOUNCE_MS } from '@/services/cloudSync'
 import { onSyncDirty } from '@/services/sync'
@@ -26,6 +27,39 @@ import { setActiveTransport } from './transportRegistry'
 let transport: CloudTransport | null = null
 let started = false
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+let unsubscribes: (() => void)[] = []
+
+/** 队列落盘防抖：连续入队只写一次盘（写盘本身很便宜，但没必要每次事件都写） */
+const PERSIST_DEBOUNCE_MS = 150
+
+/**
+ * 把队列快照落盘（Cloud-4）：刷新 / 关标签 / 重启后据此接着推。
+ * 落盘时机＝队列发生变化（入队 / 成功 / 失败 / 清空），防抖合并同批变化。
+ */
+function schedulePersist(): void {
+  if (persistTimer !== null) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    syncQueueRepository.save(syncEngine.serializeQueue())
+  }, PERSIST_DEBOUNCE_MS)
+}
+
+/**
+ * 恢复上次会话留下的待同步队列（Cloud-4）。
+ *
+ * **不重复执行**：快照只包含「还没推成功的」任务——推成功即出队、随后落盘，
+ * 所以恢复后不会把已经同步过的键再推一遍；同一个键在恢复时也只保留一条。
+ * 未登录时不恢复（本地模式没有云端可推，留着队列没意义，下次登录会重新判定）。
+ */
+function restoreQueue(): number {
+  if (!isCloudConfigured()) return 0
+  const snapshot = syncQueueRepository.load()
+  if (!snapshot) return 0
+  const restored = syncEngine.restoreQueue(snapshot)
+  if (restored === 0) syncQueueRepository.clear()
+  return restored
+}
 
 /** 已注册的云通道（未配置环境 ID 时为 null → 纯本地模式） */
 function ensureTransport(): CloudTransport | null {
@@ -74,6 +108,8 @@ export async function signOutAndReset(): Promise<void> {
   const channel = ensureTransport()
   if (channel) await channel.disconnect()
   syncEngine.clear()
+  // 队列记录随登出一起清掉：它属于「这个账号的待办」，换账号该重新判定
+  syncQueueRepository.clear()
 }
 
 /**
@@ -89,10 +125,18 @@ export function startAutoSync(): void {
   const channel = ensureTransport()
   if (!channel) return
 
-  // ① 应用启动：整轮对账（未登录时只是把状态问清楚，不发数据）
+  // ① 恢复上次会话的待同步队列（先恢复、再启动），并订阅队列变化落盘
+  restoreQueue()
+  const persistOnChange = () => schedulePersist()
+  unsubscribes.push(syncEngine.on(persistOnChange))
+
+  // ② 应用启动：整轮对账（未登录时只是把状态问清楚，不发数据）
   void runCycleGuarded()
 
-  // ② 本页写盘后：脏键入队 → 防抖冲刷（快通道，只推这一个键）
+  // 队列里还有恢复出来的待办：立刻接着推（不用等下一次编辑）
+  if (syncEngine.pending > 0) void syncEngine.flush()
+
+  // ③ 本页写盘后：脏键入队 → 防抖冲刷（快通道，只推这一个键）
   onSyncDirty((key) => {
     if (!isCloudReady()) return
     // 整轮对账期间的写盘是「采纳远端」的副作用，不是教师的改动：不入队，避免回声
@@ -100,7 +144,7 @@ export function startAutoSync(): void {
     if (syncEngine.enqueue(key)) scheduleFlush()
   })
 
-  // ③ 重新联网 / 回到前台：一次整轮对账（补上断网期间与后台期间的改动）
+  // ④ 重新联网 / 回到前台：一次整轮对账（补上断网期间与后台期间的改动）
   if (typeof window !== 'undefined') {
     window.addEventListener('online', () => {
       void runCycleGuarded()
@@ -131,6 +175,12 @@ export function resetAutoSyncForTest(): void {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  for (const off of unsubscribes) off()
+  unsubscribes = []
   transport = null
   started = false
   setActiveTransport(null)

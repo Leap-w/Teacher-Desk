@@ -101,13 +101,36 @@ export interface SyncSnapshot {
   failed: number
 }
 
+/**
+ * Outbox 条目（Cloud-4）：队列里一条待同步任务的可读视图。
+ * 界面（同步诊断）与未来的 Widget 都只读这一份，不直接摸队列内部。
+ */
+export interface OutboxEntry {
+  key: string
+  op: SyncOp
+  /** 已经失败过几次（0 = 还没试过） */
+  attempts: number
+  enqueuedAt: number
+}
+
+/** 队列的可持久化快照（Cloud-4：刷新 / 关标签 / 重启后继续同步） */
+export interface SerializedQueue {
+  nextId: number
+  items: SyncTask[]
+}
+
 /** 引擎配置 */
 export interface SyncEngineOptions {
   transport: SyncTransport
   /** 单任务最大尝试次数（含首次）；默认 3 */
   maxAttempts?: number
-  /** 重试间隔基数（毫秒，指数退避 attempts 次方）；默认 0 = 立即重试（测试友好） */
+  /**
+   * 重试退避基数（毫秒）：第 n 次失败后等 `retryDelayMs × 2^(n-1)`——
+   * 默认 1000 → 1s → 2s → 4s（避免瞬间连续请求）。0 = 立即重试（测试友好）。
+   */
   retryDelayMs?: number
+  /** 单次通道调用的超时（毫秒）；默认 20000。超时按「可重试失败」处理 */
+  timeoutMs?: number
   /** 冲突策略；默认 local-wins */
   conflictStrategy?: ConflictStrategy
   /** 时钟注入（测试可控）；默认 Date.now */
