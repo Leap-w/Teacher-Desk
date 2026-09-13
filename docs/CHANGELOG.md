@@ -6,6 +6,22 @@
 
 ---
 
+## v2.1.0-beta —— Phase UI-5C · Profile Hub 控制中心（Work Hub 收官 · 首个 Beta）（2026-09-13，tag `v2.1.0-beta`）
+
+> 只升级 UI 与信息架构；用户 Store / 头像上传 / 资料编辑 / 设置表单 / 工具箱 / 同步与备份逻辑 **零改动**。详见开发手册 **§9.48**。
+
+### 新增
+
+- **Control Center 五层**：Profile Hero（头像 + 身份徽章 + 编辑入口）→ 工作信息条（班级人数/本周课时/当前版本）→ 工作时光（支教天数/学期进度/当前学年）→ 控制中心（数据与同步真实状态 + 工具箱独立入口卡 + 偏好设置六模块第二入口）→ 数据管理（Apple Settings Cell，操作保留在工具箱页）→ 关于。
+- 新组件 7 个：`SettingsSection` / `SettingsCell`（Apple Settings 风：着色图标 + 标题/副标题 + 值/徽章 + Chevron，点击反馈 200ms，全站设置页可复用）/ `ProfileHero` / `ProfileStats` / `WorkTimeCard` / `ControlCenter` / `AboutCard`。
+- 「功能设置」Tab 原样保留为各模块设置第一入口（双入口不迁移），设置行统一换用 SettingsCell。
+
+### 修复
+
+- `appConfig.version` 硬编码 `1.3.2`：改为构建期从 package.json 读取（与页脚 `import.meta.env.APP_VERSION` 同一单一来源），备份文件元信息随之自动更新。
+
+---
+
 ## v2.0.9-alpha —— Phase UI-5B · Tasks Hub 工作清单中心（2026-09-13，tag `v2.0.9-alpha`）
 
 > 只升级 UI 与布局；Work Store / 数据模型 / localStorage Key / 完成与导入逻辑 **零改动**。详见开发手册 **§9.47**。

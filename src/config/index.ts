@@ -1,4 +1,6 @@
 /** 应用全局配置 */
+import pkg from '../../package.json'
+
 export interface AppConfig {
   name: string
   version: string
@@ -17,10 +19,10 @@ export interface AppConfig {
 export const appConfig: AppConfig = {
   name: 'TeacherDesk',
   /**
-   * 应用版本：与 package.json 的 version 保持同步（交付打 tag 时一起改）。
+   * 应用版本：单一来源 package.json（构建期读取，UI-5C 起不再手工同步）。
    * 备份文件的元信息会带上它，用于日后诊断「这份备份出自哪个版本」（utils/backup.ts）。
    */
-  version: '1.3.2',
+  version: pkg.version,
   storageKeyPrefix: 'teacherdesk',
   /**
    * 环境 ID 不是秘密（它本来就会随前端代码发到浏览器里，访问与否由云端身份认证与
