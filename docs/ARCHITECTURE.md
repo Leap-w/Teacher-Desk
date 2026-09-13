@@ -2,7 +2,7 @@
 
 > 一页看懂 TeacherDesk 的分层与数据流。Phase Cloud-1（v2.2.0-alpha）起，
 > 数据访问统一走 **Repository 层**——这是 Web（当前）、CloudBase（未来）、
-> PostgreSQL（未来）、macOS Widget（未来）共享的唯一数据规范（Repository First）。
+> PostgreSQL（未来）共享的唯一数据规范（Repository First）。
 
 ## 总体架构
 
@@ -153,7 +153,7 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 **不传播删除**（无墓碑）：本地清空后重新播种，把「云端缺失」当删除指令会让一次误删
 沿所有设备清干净；空数组（**键还在，内容为空**）则会正常同步。
 
-**Sync Engine First（长期规范）**：CloudBase、Widget、跨设备同步、定时同步**只能调用
+**Sync Engine First（长期规范）**：CloudBase、跨设备同步、定时同步**只能调用
 `SyncEngine`**，不得直接调用 `CloudAdapter`——后者永远只是数据通道，同步策略
 （排队 / 重试 / 冲突 / 状态）始终集中在一层。
 
@@ -176,8 +176,6 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 - **CloudAdapter 实现**：pull/push/sync 对接 CloudBase（作为 `SyncTransport` 注入 SyncEngine，
   遵守 Sync Engine First）；冲突口径迁自 `services/cloudSync.ts`；`SyncState` 由真实动作驱动
   （UI 徽章与提示条随之点亮）；同步队列持久化（断网恢复后继续推）。
-- **macOS Widget**：经同一套 Repository 读数据（Swift 侧走云端或共享存储，
-  复用相同键名与 revive 规则的移植版）。
 - **PostgreSQL（可选远端）**：只新增一个 `DataSourceAdapter` 实现，Store 与页面零改动。
 
 详细历史决策见 `docs/开发手册.md` §9（按阶段编号）；用户可感知的变化见 `docs/CHANGELOG.md`。

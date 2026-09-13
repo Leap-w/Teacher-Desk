@@ -3,7 +3,7 @@
  *
  * 三块自检：
  * - **队列持久化**：刷新 / 关标签 / 重启后接着推，且**不重复执行**（已经推成功的键不在快照里）；
- * - **Outbox**：待同步列表 / 已同步清理 / 重试计数——界面与未来的 Widget 都读这一份；
+ * - **Outbox**：待同步列表 / 已同步清理 / 重试计数——界面只读这一份；
  * - **诊断**：Observable Sync 规范要求的五个读数（状态 / 队列 / 待同步键 / 最近时间 / 最近错误 / 通道）。
  *
  * 不连真 CloudBase（`@/services/cloudbase` 整块换成内存假云端），时间用假时钟。
@@ -321,7 +321,7 @@ describe('Outbox · 待同步列表 / 已同步清理 / 重试计数', () => {
     expect(engine.pending).toBe(0)
   })
 
-  it('18. 恢复后的任务出现在 outbox 里（Widget / 诊断据此展示待办）', async () => {
+  it('18. 恢复后的任务出现在 outbox 里（同步诊断据此展示待办）', async () => {
     const engine = await makeEngine()
     engine.restoreQueue({
       nextId: 2,

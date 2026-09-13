@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-09-14 · 架构决策（不发版）：macOS Widget 规划整体废弃
+
+> **TeacherDesk 不再开发 macOS Widget**，相关规划全部废弃、不作为后续版本目标，**也不再保留任何预留架构**。
+
+- **移除**：`macos/` 独立 Xcode 工程（35 个文件：宿主 App + Widget 扩展 + Shared 快照模型 / 派生 / 存储 / 深链 + Samples + Tools）、Snapshot First 规范、WidgetSnapshot 数据协议、预览与铺样例脚本；`ARCHITECTURE.md` 的 Widget 分层、`roadmap.md` 的 Widget 规划、`README` / `开发计划` / `开发手册`（§9.22 原逐项记录已删除）的阶段状态一并移除或标记废弃。
+- **保留**：**CloudBase 继续作为唯一云同步方案**（`services/cloudbase` + `remote` + `cloudSync` + `src/sync` 全链路不变）。
+- **可追溯**：历史实现仍可从 tag `v1.0.0` 取回（`git checkout v1.0.0 -- macos`）。决策记录见开发手册 **§9.55**。
+
 ## v2.3.0-alpha —— Phase Classroom-1 · 课堂工具（V2.3 起步）（2026-09-14，tag `v2.3.0-alpha`）
 
 > **One-Tap Classroom**（新增长期规范）：一秒内启动（进页面即可用）、大控件远距离可操作、**直接读现有数据**（学生 → Student Store，值日组 → Duty Store，不维护第二份）。
@@ -663,6 +671,9 @@
 ### Phase 12：macOS 原生 Widget（随本版入库；**七项真机验收仍未做**）
 
 **本节就是上一版收尾时那条「待验收」内容的正文**（版号由预留的 `v0.15.0` 并入本版）。**状态一字未松口**：代码在手、工程自检六档全绿，**但七项真机验收一项都没验**——它随本版入库，是「上线这个版本时它已经在仓库里」的结果，**不是验收结论**。
+
+> ⚠️ **本节记录已作废（2026-09-14）**：Phase 12 macOS Widget 整体废弃，代码与规范已从仓库移除——
+> 以下内容仅作历史留档，不代表当前能力；恢复方式见开发手册 §9.55。原「待验收」结论一并失效。
 
 **位置**：全部在 `macos/`（与 Web 项目**并列**的独立 Xcode 工程），**Web/PWA 侧一行未改**——`src/`、八个业务 store、`services/cloudSync.ts`、`RemotePort` 一个字节都没动，Phase 9C 的 81 项常驻测试仍全绿。「不动 Web 项目结构来凑 Widget」是规格 §十的原话，也是本阶段的边界。
 

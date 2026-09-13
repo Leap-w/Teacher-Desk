@@ -1,7 +1,7 @@
 /**
  * 同步引擎公共类型（V2.2.1-alpha · Phase Cloud-2）。
  *
- * **Sync Engine First（长期规范）**：CloudBase、Widget、跨设备同步、定时同步等
+ * **Sync Engine First（长期规范）**：CloudBase、跨设备同步、定时同步等
  * 一切同步能力只能调用 `SyncEngine`，不得直接调用 `CloudAdapter`——
  * 后者永远只是「数据通道」，同步策略（排队 / 重试 / 冲突 / 状态）始终集中在这一层。
  *
@@ -103,7 +103,7 @@ export interface SyncSnapshot {
 
 /**
  * Outbox 条目（Cloud-4）：队列里一条待同步任务的可读视图。
- * 界面（同步诊断）与未来的 Widget 都只读这一份，不直接摸队列内部。
+ * 界面（同步诊断）读的就是这一份，不直接摸队列内部。
  */
 export interface OutboxEntry {
   key: string

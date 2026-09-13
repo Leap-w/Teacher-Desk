@@ -1,6 +1,6 @@
 # CloudBase 控制台规范（TeacherDesk）
 
-> 一页固定配置。**重装 MacBook、接手机端、接 Widget 时照着核对即可**，不用再摸索一遍。
+> 一页固定配置。**重装 MacBook、换浏览器、接手机端（Web / PWA）时照着核对即可**，不用再摸索一遍。
 > 应用侧的接入代码在 `src/services/cloudbase.ts`（唯一 import SDK 的模块）与
 > `src/sync/CloudTransport.ts`（把通道接进同步引擎）。
 

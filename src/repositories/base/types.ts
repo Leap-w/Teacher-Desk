@@ -1,9 +1,9 @@
 /**
  * Repository 层公共类型（V2.2.0-alpha · Phase Cloud-1）。
  *
- * **Repository First 规范**：任何新功能（CloudBase、Widget、导入导出、同步）
+ * **Repository First 规范**：任何新功能（CloudBase、导入导出、同步）
  * 都不允许直接访问数据源（localStorage / 未来云端），必须经过 Repository——
- * Web（当前）、CloudBase（未来）、PostgreSQL（未来）、macOS Widget（未来）
+ * Web（当前）、CloudBase（未来）、PostgreSQL（未来）
  * 共享同一套数据访问规范，而不是四套逻辑。
  *
  * 本层只定义契约；localStorage 实现在 `adapters/LocalStorageAdapter.ts`，

@@ -1,7 +1,7 @@
 /**
  * 同步引擎统一出口（V2.2.1-alpha · Phase Cloud-2）。
  *
- * **Sync Engine First**：CloudBase、Widget、跨设备同步、定时同步都只从这里拿能力，
+ * **Sync Engine First**：CloudBase、跨设备同步、定时同步都只从这里拿能力，
  * 不得直接调用 `CloudAdapter`（那是数据通道，不是同步策略）。
  *
  * **本文件保持零云依赖**（不 import CloudBase SDK）：核心能在 node 测试里直接跑。

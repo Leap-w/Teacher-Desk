@@ -1,7 +1,7 @@
 /**
  * 同步引擎（V2.2.1-alpha · Phase Cloud-2 核心）。
  *
- * 统一入口（**Sync Engine First**：CloudBase / Widget / 跨设备 / 定时同步都只调这里）：
+ * 统一入口（**Sync Engine First**：CloudBase / 跨设备 / 定时同步都只调这里）：
  * - `enqueue(key)`  记一笔待同步；空闲态自动进入 SyncPending
  * - `flush()`       逐条执行队列（FIFO），失败按上限重试，成功计一次
  * - `sync()`        flush 的语义化别名（「把该推的推上去」）
@@ -199,7 +199,7 @@ export class SyncEngine {
   /**
    * Outbox（Cloud-4）：待同步列表的可读视图——键、操作、已尝试次数、入队时间。
    * 「已同步清理」由队列本身保证（推成功即出队，不留在 Outbox 里）；
-   * 界面（同步诊断）与未来的 Widget 都读这一份。
+   * 界面（同步诊断）读的就是这一份。
    */
   outbox(): OutboxEntry[] {
     return this.queue.toArray().map((task) => ({
