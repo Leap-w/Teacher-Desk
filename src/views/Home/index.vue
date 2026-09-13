@@ -30,6 +30,7 @@ import { useWeekendStore } from '@/stores/weekend'
 import { isLeaveToday } from '@/utils/leave'
 import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
 import NextCourseCard from './components/NextCourseCard.vue'
+import SyncHintBar from './components/SyncHintBar.vue'
 
 /**
  * 首页 = 班主任今日工作中心（V2.0.2-alpha · Phase UI-3）：
@@ -119,10 +120,7 @@ const classEvents = computed(() => {
       icon: Paintbrush,
       tone: 'primary',
       title: `今日值日 · ${dutyStore.todayGroup.name}`,
-      desc:
-        members.length > 0
-          ? members.map((member) => member.name).join(' · ')
-          : '组员待安排',
+      desc: members.length > 0 ? members.map((member) => member.name).join(' · ') : '组员待安排',
     })
   } else if (dutyNeedsSetup.value) {
     events.push({
@@ -160,6 +158,9 @@ const quickActions: QuickAction[] = [
 
     <!-- ===== Layer 1：Hero ===== -->
     <DashboardHero :greeting="greeting" :date-line="dateLine" :badges="heroBadges" />
+
+    <!-- Cloud-2：同步提示条（只读 SyncState；本地模式与已同步时不显示，无任何按钮） -->
+    <div class="sync-row"><SyncHintBar /></div>
 
     <!-- ===== Layer 2：今日工作（桌面两列：左大卡 + 右统计/动态） ===== -->
     <div class="today-grid">
@@ -284,5 +285,15 @@ const quickActions: QuickAction[] = [
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
+}
+
+/* Cloud-2：同步提示条容器（空态不占位：内部 v-if 为假时高度为 0） */
+.sync-row {
+  display: flex;
+  min-height: 0;
+}
+
+.sync-row:empty {
+  display: none;
 }
 </style>

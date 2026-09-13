@@ -71,20 +71,45 @@
 （示例学生是否都在读）→ `repo.writeSeed(seed)` 登记基线 → 首次云同步据此
 认出「本机只有示例数据」。守卫规则在仓储里，Store 与 adapter 都不掺和。
 
+## 同步层（V2.2.1-alpha · Phase Cloud-2 起）
+
+```
+UI（同步徽章 / 提示条）──只读──► SyncSnapshot
+                                    ▲
+                     useSyncEngine（响应式桥）
+                                    ▲
+        ┌───────────── SyncEngine（sync / enqueue / flush）────────────┐
+        │  SyncQueue(FIFO+retry)  SyncStateMachine(5 态)  SyncEvents    │
+        │  ConflictResolver(Local Wins 占位)                           │
+        └───────────────────────────┬─────────────────────────────────┘
+                                    │ 注入 SyncTransport（唯一接缝）
+                    SimulatedTransport（现在，不发网络）
+                    CloudAdapter 实现（Cloud-3，未来）
+```
+
+**Sync Engine First（长期规范）**：CloudBase、Widget、跨设备同步、定时同步**只能调用
+`SyncEngine`**，不得直接调用 `CloudAdapter`——后者永远只是数据通道，同步策略
+（排队 / 重试 / 冲突 / 状态）始终集中在一层。
+
+状态机：`LocalOnly → SyncPending → Syncing → Synced`，失败进 `Error`（重试耗尽）。
+本阶段引擎空闲态即 `LocalOnly`（模拟传输、无网络、无用户可见行为变化）。
+
 ## 分层规则（改代码前先看）
 
 | 层           | 允许                                           | 禁止                                             |
 | ------------ | ---------------------------------------------- | ------------------------------------------------ |
-| views        | 调 Store、组件                                 | 碰 repositories / services / localStorage        |
+| views        | 调 Store、组件、只读同步状态                   | 碰 repositories / services / localStorage        |
 | stores       | 调 Repository、utils                           | 碰 services/storage、services/sync、localStorage |
+| sync         | 调注入的 SyncTransport                         | 直接调 CloudAdapter / fetch / localStorage       |
 | repositories | 调 adapter、utils、（seed 可读 student store） | 碰业务 Store 的其它成员、组件                    |
 | adapters     | 调 services/storage、services/sync             | 业务判断（normalize / 播种守卫）                 |
 | services     | —                                              | 不 import 上层（保持可独立测试）                 |
 
-## 下一步（Phase Cloud-2+）
+## 下一步（Phase Cloud-3+）
 
-- **CloudAdapter 实现**：pull/push/sync 对接 CloudBase；冲突口径整体迁自
-  `services/cloudSync.ts`；`SyncStatus` 由真实状态驱动（UI 的同步徽章随之点亮）。
+- **CloudAdapter 实现**：pull/push/sync 对接 CloudBase（作为 `SyncTransport` 注入 SyncEngine，
+  遵守 Sync Engine First）；冲突口径迁自 `services/cloudSync.ts`；`SyncState` 由真实动作驱动
+  （UI 徽章与提示条随之点亮）；同步队列持久化（断网恢复后继续推）。
 - **macOS Widget**：经同一套 Repository 读数据（Swift 侧走云端或共享存储，
   复用相同键名与 revive 规则的移植版）。
 - **PostgreSQL（可选远端）**：只新增一个 `DataSourceAdapter` 实现，Store 与页面零改动。

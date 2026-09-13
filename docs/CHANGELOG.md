@@ -6,6 +6,31 @@
 
 ---
 
+## v2.2.1-alpha —— Phase Cloud-2 · 同步引擎（本地模拟，不联网）（2026-09-14，tag `v2.2.1-alpha`）
+
+> **Sync Engine First**：CloudBase / Widget / 跨设备同步只调 `SyncEngine`，不得直连 CloudAdapter。
+> Store API / Repository API / localStorage Key / UI 交互**零变化**；本地模式仍是唯一工作模式。
+
+### 新增
+
+- `src/sync/`：`SyncEngine`（`enqueue` / `flush` / `sync` / `snapshot` / `clear`）、`SyncQueue`（FIFO + retry 回队尾 + clear + 同键入队去重）、`SyncStateMachine`（五态：LocalOnly / SyncPending / Syncing / Synced / Error，非法迁移拒绝并告警）、`ConflictResolver`（**Local Wins 默认**，cloud-wins / merge 为占位扩展点）、`SyncEvents`（`sync:start/success/error/retry/enqueue`，监听器隔离）、`types.ts`（`SyncTransport` 契约 + 模拟传输 `createSimulatedTransport`）。
+- `composables/useSyncEngine.ts`：状态机 → 响应式的只读桥（label / pending / hint / isLocalOnly）。
+
+### 界面（轻微增强，无新增交互）
+
+- 「我的 → 控制中心」同步徽章：云同步未启用时显示**同步引擎状态**（本地模式 / 待同步 N / 同步中 / 已同步 / 同步失败）。
+- 首页新增**同步提示条**：仅在待同步 / 同步中 / 同步失败时出现（本地模式与已同步不显示，无按钮）。
+
+### 测试
+
+- 新增 `src/__tests__/syncEngine.test.ts` **36 条**（队列 7 / 状态机 7 / 事件 4 / 冲突 3 / 引擎 15），常驻测试 **336 → 372**。
+
+### 文档
+
+- `docs/roadmap.md` 顶部新增**版本路线图（V2.x 一览）**；`docs/ARCHITECTURE.md` 增补同步层与 Sync Engine First 分层规则。
+
+---
+
 ## v2.2.0-alpha —— Phase Cloud-1 · Repository 数据访问层（架构升级，用户无感知）（2026-09-14，tag `v2.2.0-alpha`）
 
 > **Repository First**：Store 不再直接读写 localStorage，全部经 `src/repositories/`。

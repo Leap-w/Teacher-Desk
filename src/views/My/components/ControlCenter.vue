@@ -16,11 +16,15 @@ import {
 import SettingsCell from './SettingsCell.vue'
 import SettingsSection from './SettingsSection.vue'
 import { useCloudSync } from '@/composables/useCloudSync'
+import { useSyncEngine } from '@/composables/useSyncEngine'
 
 /**
  * ControlCenter — 控制中心（V2.1.0-beta · Phase UI-5C）：
  * 第三层（核心）：数据与同步（真实同步状态）→ 工具箱独立入口卡 → 偏好设置
  * （各模块设置第二入口；原「功能设置」Tab 入口保留，双入口不迁移）。
+ *
+ * Cloud-2 起：云同步未启用时，徽章显示**同步引擎状态**（本地模式 / 待同步 N /
+ * 同步中 / 已同步 / 同步失败）——只读展示，不新增任何按钮与交互。
  */
 const emit = defineEmits<{
   /** 打开功能设置 Tab 的对应分组 */
@@ -29,12 +33,25 @@ const emit = defineEmits<{
 }>()
 
 const { enabled, statusView } = useCloudSync()
+const { label: engineLabel, pending: enginePending, state: engineState } = useSyncEngine()
 
 const syncBadgeVariant = computed(() => {
-  const text = statusView.value.text
-  if (text.includes('已同步')) return 'success'
-  if (text.includes('失败') || text.includes('冲突')) return 'danger'
+  if (enabled.value) {
+    const text = statusView.value.text
+    if (text.includes('已同步')) return 'success'
+    if (text.includes('失败') || text.includes('冲突')) return 'danger'
+    return 'neutral'
+  }
+  // 本地模式：引擎状态驱动（State 映射色）
+  if (engineState.value === 'synced') return 'success'
+  if (engineState.value === 'error') return 'danger'
+  if (engineState.value === 'sync-pending' || engineState.value === 'syncing') return 'warning'
   return 'neutral'
+})
+
+const syncBadgeText = computed(() => {
+  if (enabled.value) return statusView.value.text
+  return enginePending.value > 0 ? `${engineLabel.value} ${enginePending.value}` : engineLabel.value
 })
 
 interface PrefCell {
@@ -99,7 +116,7 @@ const PREF_CELLS: PrefCell[] = [
         :icon="enabled ? Cloud : CloudOff"
         :title="enabled ? '云同步' : '本地模式'"
         subtitle="同步状态 · 登录 · 手动同步"
-        :badge-text="statusView.text"
+        :badge-text="syncBadgeText"
         :badge-variant="syncBadgeVariant"
         @click="emit('open-tools')"
       />
