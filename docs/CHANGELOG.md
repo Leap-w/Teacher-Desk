@@ -6,6 +6,32 @@
 
 ---
 
+## v2.0.5-alpha —— Phase UI-4C · Leave Hub 请假记录中心（2026-09-13，tag `v2.0.5-alpha`）
+
+> 只升级 UI；Leave Store / 数据模型 / localStorage Key / CloudBase / 登记与删除逻辑**零改动**（新增统计均为只读派生）。本模块是**记录制**：记录即生效，不存在线上审批（修订版规范与此对齐）。详见开发手册 **§9.43**。
+
+### 新增组件（`views/Leave/components/`，值日 / 周末返校可复用）
+
+- **LeaveStats**：今日概览四统计卡（今日请假 / 校外未返校 / 今日返校 / 本周累计）——「校外未返校」警示色，是班主任要找的数字。
+- **LeaveStatusBadge**：记录口径派生状态（不落库）：校外中（橙，已离校未返校）> 请假中（蓝）> 已返校（灰）/ 已作废（灰）。
+- **LeaveCard**（替换 LeaveRecordCard）：姓名 22px > 状态徽章 > 时间/时长 > 原因 > 登记操作；校外中记录强调描边；值日组「第几组」上卡。
+- **CurrentLeaveList**：请假中区（校外未返校置顶，强调卡 + 空态「当前没有学生在外」）。
+- **LeaveTimeline + LeaveTimelineItem**：今日登记时间轴（离校=松石青节点 / 返校=绿节点，竖向连线，逐项 200ms 渐入）。
+- **LeaveHistorySection**：历史记录（Chips 筛选 + 搜索 + 卡片列表，沿用既有 filterLeaveRecords）。
+
+### 变化
+
+- 页面四层（Record First）：今日概览 → 请假中 → 今日时间轴 | 历史记录（桌面 2fr/3fr 双列）→ **FAB「记录请假」**（录入降级到最末，右下角悬浮）。
+- 统计 / 时间轴 / 「第几组」均为只读派生（isLeaveToday / outLeaves / 登记端点 / 值日 Store 反查），不改任何写路径。
+- 删除 `LeaveRecordCard.vue`（被 LeaveCard 取代）。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸（1440/768/390）：统计 1/1/0/1（真实数据）、校外中卡片（陈思远 · 第 3 组 · 病假 · 强调描边）、时间轴「登记离校」事件、历史 3 卡 + 5 Chips、FAB；三尺寸均无横向滚动 + 截图复核。
+
+---
+
 ## v2.0.4-alpha —— Phase UI-4B · Seat Hub 教室工作台（2026-09-13，tag `v2.0.4-alpha`）
 
 > 只升级视觉与布局；SeatPlan Store / 拖拽（Pointer Events）/ 导出 / Excel 导入逻辑 / 3-3-3 布局 / 第 63 号尾座**零改动**（拖拽冒烟断言通过）。详见开发手册 **§9.42**。

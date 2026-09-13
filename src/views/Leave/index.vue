@@ -1,28 +1,42 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Plus } from 'lucide-vue-next'
 
 import RegisterPointModal from '@/components/flow/RegisterPointModal.vue'
-import { AppButton, AppCard, AppInput, AppModal, EmptyState } from '@/components/ui'
+import { AppButton, AppModal } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
 import { useToast } from '@/composables/useToast'
+import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { formatDateKey } from '@/utils/date'
 import { formatLeavePeriod } from '@/utils/leave'
-import { REGISTER_MODE_LABELS, formatDayPoint } from '@/utils/point'
+import { REGISTER_MODE_LABELS, formatDayPoint, halfDayKey } from '@/utils/point'
 import type { LeaveInput, LeaveRecord } from '@/types/leave'
 import type { DayPoint, RegisterMode } from '@/types/point'
-import { LEAVE_FILTER_LABELS, filterLeaveRecords } from '@/utils/leave'
+import {
+  LEAVE_FILTER_LABELS,
+  filterLeaveRecords,
+  isLeaveThisWeek,
+  isLeaveToday,
+  sortLeaveRecords,
+} from '@/utils/leave'
 import type { LeaveFilter } from '@/utils/leave'
+import CurrentLeaveList from './components/CurrentLeaveList.vue'
 import LeaveFormDrawer from './components/LeaveFormDrawer.vue'
-import LeaveRecordCard from './components/LeaveRecordCard.vue'
+import LeaveHistorySection from './components/LeaveHistorySection.vue'
+import LeaveStats from './components/LeaveStats.vue'
+import LeaveTimeline from './components/LeaveTimeline.vue'
+import type { LeaveTimelineEvent } from './components/LeaveTimelineItem.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
-import { Search, NotebookPen } from 'lucide-vue-next'
 
 /**
- * 请假管理（V1.1.5 记录口径）：只做「请假记录」——新建 / 编辑 / 删除 / 查询 /
- * 登记离校返校。**没有审批**：应用不替班主任决定「批不批」，记录本身就是事实。
+ * 请假记录中心（V2.0.5-alpha · Phase UI-4C，Record First）：
+ * 流程 = 学生线下请假 → 班主任线下签字 → 这里记录 → 返校核对。
+ * 四层：今日概览（统计）→ 请假中（校外未返校，第一屏重点）→ 今日时间轴 → 历史记录。
+ * 数据全部来自 Leave Store 的真实派生；登记 / 编辑 / 删除逻辑一行未动。
  */
 const leaveStore = useLeaveStore()
+const dutyStore = useDutyStore()
 const toast = useToast()
 /** 今天（共享时钟，跨零点自动翻篇；与 store 的 monthLeaveCount 同一口径） */
 const now = useNow()
@@ -53,7 +67,78 @@ const filterCounts = computed(() => {
   } satisfies Record<LeaveFilter, number>
 })
 
-/* ---------- 新增 / 编辑抽屉 ---------- */
+const chipOptions = computed(() =>
+  FILTER_OPTIONS.map((option) => ({
+    key: option.value as string,
+    label: option.label,
+    count: filterCounts.value[option.value],
+  })),
+)
+
+/* ---------- Layer 1：今日概览（真实派生；已作废记录不算请假事实） ---------- */
+
+const activeLeaves = computed(() => leaveStore.leaves.filter((item) => item.status !== 'rejected'))
+
+const stats = computed(() => ({
+  todayCount: activeLeaves.value.filter((item) => isLeaveToday(item, today.value)).length,
+  outCount: leaveStore.outLeaves.length,
+  backTodayCount: activeLeaves.value.filter((item) => item.backToSchool?.date === today.value)
+    .length,
+  weekCount: activeLeaves.value.filter((item) => isLeaveThisWeek(item, today.value)).length,
+}))
+
+/* ---------- Layer 2：请假中（校外未返校，需登记返校） ---------- */
+
+const currentLeaves = computed(() => sortLeaveRecords(leaveStore.outLeaves))
+
+/** 学生 id → 值日组名（卡片「第几组」；值日 Store 只读派生） */
+const dutyGroupNames = computed(() => {
+  const map = new Map<string, string>()
+  for (const group of dutyStore.groups) {
+    for (const id of group.studentIds) {
+      if (!map.has(id)) map.set(id, group.name)
+    }
+  }
+  return map
+})
+
+/* ---------- Layer 3：今日登记时间轴（离校 / 返校端点派生事件） ---------- */
+
+const todayEvents = computed<LeaveTimelineEvent[]>(() => {
+  const events: (LeaveTimelineEvent & { sortHalf: number })[] = []
+  for (const record of leaveStore.leaves) {
+    if (record.status === 'rejected') continue
+    const left = record.leftSchool
+    if (left && left.date === today.value) {
+      events.push({
+        id: `${record.id}-left`,
+        kind: 'left',
+        studentName: record.studentName,
+        timeLabel: formatDayPoint(left),
+        sortKey: `${left.date}-${left.half}`,
+        sortHalf: halfDayKey(left),
+      })
+    }
+    const back = record.backToSchool
+    if (back && back.date === today.value) {
+      events.push({
+        id: `${record.id}-back`,
+        kind: 'back',
+        studentName: record.studentName,
+        timeLabel: formatDayPoint(back),
+        sortKey: `${back.date}-${back.half}`,
+        sortHalf: halfDayKey(back),
+      })
+    }
+  }
+  // 同半天内离校在前、返校在后；跨半天按上午/下午排
+  return events.sort(
+    (a, b) =>
+      a.sortHalf - b.sortHalf || (a.kind === 'left' ? -1 : 1) - (b.kind === 'left' ? -1 : 1),
+  )
+})
+
+/* ---------- 新增 / 编辑抽屉（登记入口：右下角 FAB，Record First 降级到最末） ---------- */
 
 const formOpen = ref(false)
 const editing = ref<LeaveRecord | undefined>(undefined)
@@ -147,47 +232,28 @@ function clearFilters() {
 
 <template>
   <div class="leave-page">
-    <header class="page-toolbar">
+    <header class="page-head">
       <div>
+        <h1 class="page-title">请假记录</h1>
         <p class="page-subtitle">
           本月已记录 {{ leaveStore.monthLeaveCount }} 人次 · 未返校
           {{ leaveStore.outLeaves.length }} 人
         </p>
       </div>
-      <div class="toolbar-actions">
+      <div class="head-actions">
         <SettingsEntryButton module="leave" />
-        <AppButton @click="openCreate">＋ 新增请假记录</AppButton>
       </div>
     </header>
 
-    <div class="toolbar-row">
-      <AppInput
-        v-model="keyword"
-        class="search-input"
-        placeholder="搜索学生姓名或学号后四位"
-        clearable
-      />
-      <div class="segmented" role="group" aria-label="请假记录筛选">
-        <button
-          v-for="option in FILTER_OPTIONS"
-          :key="option.value"
-          type="button"
-          class="segmented-item"
-          :class="{ 'is-active': filter === option.value }"
-          :aria-pressed="filter === option.value"
-          @click="filter = option.value"
-        >
-          {{ option.label }}
-          <span class="segmented-count">{{ filterCounts[option.value] }}</span>
-        </button>
-      </div>
-    </div>
+    <!-- ===== Layer 1：今日概览 ===== -->
+    <LeaveStats :stats="stats" />
 
-    <section v-if="records.length" class="record-list">
-      <LeaveRecordCard
-        v-for="record in records"
-        :key="record.id"
-        :record="record"
+    <!-- ===== Layer 2：请假中（校外未返校，第一屏重点） ===== -->
+    <section class="layer-section">
+      <h2 class="layer-title">请假中 · 需要登记返校</h2>
+      <CurrentLeaveList
+        :records="currentLeaves"
+        :duty-group-names="dutyGroupNames"
         @edit="openEdit"
         @register-left="askRegister($event, 'left')"
         @register-back="askRegister($event, 'back')"
@@ -195,24 +261,45 @@ function clearFilters() {
       />
     </section>
 
-    <AppCard v-else padding="none" class="empty-card">
-      <EmptyState
-        v-if="leaveStore.leaves.length"
-        :icon="Search"
-        title="未找到匹配的请假记录"
-        description="换个关键词，或清除筛选条件再试试。"
-      >
-        <AppButton size="sm" variant="secondary" @click="clearFilters">清除筛选</AppButton>
-      </EmptyState>
-      <EmptyState
-        v-else
-        :icon="NotebookPen"
-        title="暂无请假记录"
-        description="点击右上角「新增请假记录」，记录第一条学生请假。"
-      >
-        <AppButton size="sm" @click="openCreate">新增请假记录</AppButton>
-      </EmptyState>
-    </AppCard>
+    <!-- ===== Layer 3 + 4：今日时间轴 | 历史记录（桌面双列） ===== -->
+    <div class="lower-grid">
+      <section class="layer-section">
+        <h2 class="layer-title">今日登记</h2>
+        <div class="panel">
+          <LeaveTimeline v-if="todayEvents.length" :events="todayEvents" />
+          <p v-else class="panel-empty">今天还没有离校 / 返校登记。</p>
+        </div>
+      </section>
+
+      <section class="layer-section">
+        <h2 class="layer-title">历史记录</h2>
+        <LeaveHistorySection
+          :records="records"
+          :chip-options="chipOptions"
+          :filter="filter"
+          :keyword="keyword"
+          :has-any="leaveStore.leaves.length > 0"
+          :duty-group-names="dutyGroupNames"
+          @update:filter="filter = $event as LeaveFilter"
+          @update:keyword="keyword = $event"
+          @clear="clearFilters"
+          @edit="openEdit"
+          @register-left="askRegister($event, 'left')"
+          @register-back="askRegister($event, 'back')"
+          @remove="askRemove"
+        >
+          <template #clearAction>
+            <AppButton size="sm" variant="secondary" @click="clearFilters">清除筛选</AppButton>
+          </template>
+        </LeaveHistorySection>
+      </section>
+    </div>
+
+    <!-- ===== 登记入口：FAB（Record First：录入降级到最末） ===== -->
+    <button type="button" class="leave-fab" aria-label="记录请假" @click="openCreate">
+      <Plus :size="22" :stroke-width="2" aria-hidden="true" />
+      <span class="fab-label">记录请假</span>
+    </button>
 
     <LeaveFormDrawer v-model="formOpen" :record="editing" @submit="onSubmit" />
 
@@ -248,90 +335,115 @@ function clearFilters() {
 
 <style scoped>
 .leave-page {
-  max-width: 960px;
+  max-width: 1080px;
+  padding-bottom: var(--spacing-2xl);
 }
 
-.toolbar-actions {
+.page-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.page-toolbar {
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--spacing-lg);
+}
+
+.page-title {
+  font-size: var(--font-h2);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
 .page-subtitle {
   margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
 }
 
-.toolbar-row {
+.head-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-5);
+  gap: var(--space-2);
 }
 
-.search-input {
-  width: 280px;
-  max-width: 100%;
+.layer-section {
+  margin-top: var(--section-gap);
 }
 
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--color-fill-disabled);
-  border-radius: var(--radius-md);
+.layer-title {
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
 }
 
-.segmented-item {
+/* Layer 3 + 4：桌面双列（时间轴窄列 + 历史宽列）；iPad/手机单列 */
+.lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--section-gap);
+}
+
+@media (min-width: 900px) {
+  .lower-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+}
+
+.panel {
+  padding: var(--spacing-card);
+  background: var(--color-bg-white);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.panel-empty {
+  padding: var(--space-4) 0;
+  text-align: center;
+  font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
+}
+
+/* 登记入口 FAB：右下角，Record First 层级最低但随手可达 */
+.leave-fab {
+  position: fixed;
+  right: max(var(--space-5), env(safe-area-inset-right, 0px));
+  bottom: max(var(--space-5), env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-sticky);
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-2);
+  height: 48px;
+  padding: 0 var(--space-5);
   border: none;
-  background: transparent;
-  padding: 6px 14px;
-  border-radius: 9px;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-semibold);
+  box-shadow: var(--shadow-lg);
   cursor: pointer;
   transition:
+    transform var(--duration-base) var(--ease-out),
     background var(--transition-fast),
-    color var(--transition-fast),
-    box-shadow var(--transition-fast);
+    box-shadow var(--duration-base) var(--ease-out);
 }
 
-.segmented-item.is-active {
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
+.leave-fab:hover {
+  background: var(--color-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl);
 }
 
-.segmented-count {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
+.leave-fab:active {
+  transform: scale(0.97);
 }
 
-.record-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.empty-card {
-  padding: var(--space-6);
+.leave-fab:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 .confirm-text {
