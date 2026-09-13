@@ -20,8 +20,7 @@ import QuickActionGrid, { type QuickAction } from '@/components/dashboard/QuickA
 import { EmptyState } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
 import { greetingByHour, formatDateLabel } from '@/utils/date'
-import { COURSE_PERIODS } from '@/types/timetable'
-import type { CoursePeriodId } from '@/types/timetable'
+import { scheduleNowOf } from '@/utils/scheduleNow'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
@@ -59,69 +58,29 @@ const dateLine = computed(
 
 const heroBadges = computed(() => [`${className.value} · 班主任`, `${profile.value.subject} 教师`])
 
-/* ---- Layer 2a：下一节课 ---- */
+/* ---- Layer 2a：下一节课（状态机与课程表共用：utils/scheduleNow.ts） ---- */
 const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
 
-const periodOrder = computed(() => new Map(COURSE_PERIODS.map((p, i) => [p.id, i])))
-const periodOf = (id: CoursePeriodId) => COURSE_PERIODS.find((p) => p.id === id)
-
-const hhmmNow = computed(() => {
-  const d = now.value
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-})
-
-/** 分钟差：hh:mm - hh:mm（同日） */
-function minutesFromNow(hhmm: string): number {
-  const [h, m] = hhmm.split(':').map(Number)
-  const [nh, nm] = hhmmNow.value.split(':').map(Number)
-  return h * 60 + m - (nh * 60 + nm)
-}
-
-const sortedLessons = computed(() =>
-  [...timetableStore.todayLessons].sort(
-    (a, b) => (periodOrder.value.get(a.periodId) ?? 0) - (periodOrder.value.get(b.periodId) ?? 0),
-  ),
-)
-
 const nextCourse = computed(() => {
-  const lessons = sortedLessons.value
+  const lessons = timetableStore.todayLessons
   if (lessons.length === 0) {
     return {
       state: 'empty' as const,
       emptyHint: isWeekend.value ? '周末不排课，好好休息。' : '课程表里还没有今天的安排。',
     }
   }
-  // 正在上的课：start <= now < end
-  const ongoing = lessons.find((lesson) => {
-    const period = periodOf(lesson.periodId)
-    return period && period.startTime <= hhmmNow.value && hhmmNow.value < period.endTime
-  })
-  if (ongoing) {
-    const period = periodOf(ongoing.periodId)
-    return {
-      state: 'ongoing' as const,
-      subject: ongoing.subject,
-      className: ongoing.className,
-      timeLabel: period ? `${period.shortLabel} · ${period.startTime}-${period.endTime}` : '',
-      minutesLeft: period ? Math.max(1, minutesFromNow(period.endTime)) : undefined,
-    }
+  const now2 = scheduleNowOf(lessons, now.value)
+  if (now2.state === 'empty' || now2.state === 'done' || !now2.lesson || !now2.period) {
+    return { state: 'done' as const }
   }
-  // 下一节：start >= now 的第一节
-  const upcoming = lessons.find((lesson) => {
-    const period = periodOf(lesson.periodId)
-    return period && period.startTime >= hhmmNow.value
-  })
-  if (upcoming) {
-    const period = periodOf(upcoming.periodId)
-    return {
-      state: 'next' as const,
-      subject: upcoming.subject,
-      className: upcoming.className,
-      timeLabel: period ? `${period.shortLabel} · ${period.startTime}-${period.endTime}` : '',
-      minutesLeft: period ? Math.max(0, minutesFromNow(period.startTime)) : undefined,
-    }
+  const period = now2.period
+  return {
+    state: now2.state,
+    subject: now2.lesson.subject,
+    className: now2.lesson.className,
+    timeLabel: `${period.shortLabel} · ${period.startTime}-${period.endTime}`,
+    minutesLeft: now2.minutesLeft,
   }
-  return { state: 'done' as const }
 })
 
 /* ---- Layer 2b：今日待办统计 ---- */

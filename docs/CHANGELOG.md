@@ -6,6 +6,31 @@
 
 ---
 
+## v2.0.8-alpha —— Phase UI-5A · Schedule Hub 课程表工作台（Work Hub 起步）（2026-09-13，tag `v2.0.8-alpha`）
+
+> 只升级 UI 与布局；Schedule Store / 节次算法 / 课程数据模型 / 换课 / 导入 / localStorage Key **零改动**。详见开发手册 **§9.46**。
+
+### 新增
+
+- **`utils/scheduleNow.ts`（共享状态机）**：「当前 / 下一节」四态判定（ongoing/next/done/empty + 剩余分钟）从首页内联逻辑上收为纯函数——**Dashboard「下一节课」与课程表 Hero 同一份实现**，不再两处漂移。
+- **ScheduleHero**：今日课程 Hero（星期 + 今日节数 + 当前/下一节课大字 + 剩余分钟），200ms 渐入 + 呼吸脉冲。
+- **CourseCard + ScheduleStatusBadge + TodaySchedule**：今日课程时间轴（按节次排序；当前课松石青描边 + 柔和呼吸强调；点击打开详情）。
+- **ScheduleStats**：三统计（本周课时 / 今日课时 / 今日空课节数）。
+- **WeekView**：周视图画布（白纸 + 大留白，同 SeatCanvas 质感），内嵌既有 ScheduleWeekGrid；**WeekColumn 不单独拆**——Grid 是行优先布局（`grid-template-columns` 内聚列定义），强拆列组件会复制布局逻辑。
+- ScheduleWeekGrid / ScheduleLessonCard 新增 `currentLessonId` / `isCurrent` 视觉透传（松石青描边呼吸），交互零改动。
+
+### 变化
+
+- 页面 Calendar First 层级：Hero → Week View（≥760px，画布内横向滚动）/ 手机分日 Tab（<760px）→ 今日时间轴 | 课时统计（桌面 3fr/2fr 双列）。
+- 页头按钮行允许换行（修 390px 溢出）；页面宽度 960→1080。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸（1440/768/390）：Hero「星期日 · 今日 0 节 · 今天没有课」（周日真实状态）、周视图 50 格 + 15 课程卡、时间轴空态、统计 12/0/10；三尺寸无横向滚动 + 截图复核。
+
+---
+
 ## v2.0.7-alpha —— Phase UI-4E · Weekend Hub 周末返校中心（Class Hub 收官）（2026-09-13，tag `v2.0.7-alpha`）
 
 > 只升级 UI；Weekend Store / 家庭地区算法 / 返家登记与撤销 / localStorage Key **零改动**（地区统计为学生档案只读分组）。本模块是**登记制**：一条记录 = 学生 × 周末「是否返家」，留校是派生口径，离/返校时刻与手机交接在数据模型中不存在、不做假事件。详见开发手册 **§9.45**。

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { useNow } from '@/composables/useToday'
 import { useTimetableStore } from '@/stores/timetable'
 import { COURSE_PERIODS } from '@/types/timetable'
 import {
@@ -12,6 +13,7 @@ import {
   periodFullTextOf,
   periodLabelOf,
 } from '@/utils/timetable'
+import { scheduleNowOf, sortLessonsByPeriod } from '@/utils/scheduleNow'
 import type {
   CourseExchange,
   CoursePeriodId,
@@ -23,12 +25,36 @@ import LessonDetailDrawer from './components/LessonDetailDrawer.vue'
 import LessonEditDrawer from './components/LessonEditDrawer.vue'
 import LessonSwapDrawer from './components/LessonSwapDrawer.vue'
 import ScheduleDayList from './components/ScheduleDayList.vue'
+import ScheduleHero from './components/ScheduleHero.vue'
 import ScheduleImportModal from './components/ScheduleImportModal.vue'
+import ScheduleStats from './components/ScheduleStats.vue'
 import ScheduleWeekGrid from './components/ScheduleWeekGrid.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
+import TodaySchedule from './components/TodaySchedule.vue'
+import WeekView from './components/WeekView.vue'
 
 const toast = useToast()
 const timetableStore = useTimetableStore()
+const now = useNow()
+
+/* ---------- Calendar First：当前 / 下一节课（与 Dashboard 同一状态机） ---------- */
+
+const scheduleNow = computed(() => scheduleNowOf(timetableStore.todayLessons, now.value))
+const currentLessonId = computed(() =>
+  scheduleNow.value.lesson && scheduleNow.value.state !== 'done'
+    ? scheduleNow.value.lesson.id
+    : undefined,
+)
+
+const todaySorted = computed(() => sortLessonsByPeriod(timetableStore.todayLessons))
+
+const stats = computed(() => ({
+  weekCount: timetableStore.weekLessonCount,
+  todayCount: timetableStore.todayLessons.length,
+  freePeriods: Math.max(0, COURSE_PERIODS.length - timetableStore.todayLessons.length),
+}))
+
+const weekdayLabel = computed(() => WEEKDAY_LABELS[timetableStore.todayWeekday] ?? '')
 
 /** 周视图列：默认周一~周五；有周末课时自动追加，避免已录入的课在周视图里隐身 */
 const columns = computed<Weekday[]>(() => [...WEEKDAY_COLUMNS, ...timetableStore.weekendWeekdays])
@@ -229,6 +255,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
   <div class="schedule-page">
     <header class="schedule-head">
       <div class="head-text">
+        <h1 class="page-title">课程表</h1>
         <p class="head-sub">
           本周共 <strong>{{ timetableStore.weekLessonCount }}</strong> 节课 · 点课程卡片可查看详情
         </p>
@@ -240,6 +267,22 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
       </div>
     </header>
 
+    <!-- ===== Layer 1：今日课程 Hero（Calendar First 视觉中心） ===== -->
+    <ScheduleHero
+      :weekday-label="weekdayLabel"
+      :today-count="timetableStore.todayLessons.length"
+      :state="scheduleNow.state"
+      :subject="scheduleNow.lesson?.subject"
+      :class-name="scheduleNow.lesson?.className"
+      :time-label="
+        scheduleNow.period
+          ? `${scheduleNow.period.shortLabel} · ${scheduleNow.period.startTime}-${scheduleNow.period.endTime}`
+          : undefined
+      "
+      :minutes-left="scheduleNow.minutesLeft"
+    />
+
+    <!-- 手机分日 Tab（<760px） -->
     <nav class="weekday-tabs" aria-label="选择星期">
       <button
         v-for="weekday in columns"
@@ -268,16 +311,39 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
       @create="openCreate(activeWeekday)"
     />
 
-    <ScheduleWeekGrid
-      class="week-view"
-      :lessons="timetableStore.lessons"
-      :exchanges="timetableStore.exchanges"
-      :weekdays="columns"
-      :today="timetableStore.todayWeekday"
-      @open="openDetail"
-      @open-exchange="openExchangeDetail"
-      @create="(weekday, period) => openCreate(weekday, period)"
-    />
+    <!-- ===== Layer 2：本周 Week View（≥760px；手机横向滚动在画布内） ===== -->
+    <WeekView class="week-view">
+      <div class="week-scroll">
+        <ScheduleWeekGrid
+          :lessons="timetableStore.lessons"
+          :exchanges="timetableStore.exchanges"
+          :weekdays="columns"
+          :today="timetableStore.todayWeekday"
+          :current-lesson-id="currentLessonId"
+          @open="openDetail"
+          @open-exchange="openExchangeDetail"
+          @create="(weekday, period) => openCreate(weekday, period)"
+        />
+      </div>
+    </WeekView>
+
+    <!-- ===== Layer 3 + 4：今日时间轴 | 课时统计（桌面双列） ===== -->
+    <div class="lower-grid">
+      <section class="layer-section">
+        <h2 class="layer-title">今日时间轴</h2>
+        <TodaySchedule
+          :lessons="todaySorted"
+          :current-lesson-id="currentLessonId"
+          :state="scheduleNow.state"
+          @open="openDetail"
+        />
+      </section>
+
+      <section class="layer-section">
+        <h2 class="layer-title">课时统计</h2>
+        <ScheduleStats :stats="stats" />
+      </section>
+    </div>
 
     <!-- 编辑抽屉 -->
     <LessonEditDrawer
@@ -338,11 +404,48 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
 
 <style scoped>
 .schedule-page {
-  max-width: 960px;
+  max-width: 1080px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+}
+
+.page-title {
+  font-size: var(--font-h2);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.layer-section {
+  margin: 0;
+}
+
+.layer-title {
+  margin-bottom: var(--spacing-md);
+  font-size: var(--text-xl);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+/* Layer 3 + 4：桌面双列（时间轴 | 统计）；iPad/手机单列 */
+.lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--section-gap);
+}
+
+@media (min-width: 900px) {
+  .lower-grid {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+/* 手机：周视图在画布内横向滚动（不允许撑破页面） */
+.week-scroll {
+  overflow-x: auto;
 }
 
 .schedule-head {
@@ -350,12 +453,13 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+  flex-wrap: wrap;
 }
 
 .head-actions {
   display: flex;
   gap: var(--space-2);
-  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .head-sub {

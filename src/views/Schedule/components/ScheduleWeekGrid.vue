@@ -16,10 +16,13 @@ interface Props {
   weekdays: Weekday[]
   /** 今天的星期，用于高亮当列 */
   today?: Weekday
+  /** 当前 / 下一节的课程 id（UI-5A：松石青描边呼吸强调；纯视觉，不改交互） */
+  currentLessonId?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   today: undefined,
+  currentLessonId: undefined,
 })
 
 const emit = defineEmits<{
@@ -90,6 +93,7 @@ function swapAt(weekday: Weekday, periodId: CoursePeriodId): CourseExchange | un
           :key="lesson.id"
           compact
           :lesson="lesson"
+          :is-current="lesson.id === props.currentLessonId"
           @open="emit('open', $event)"
         />
 

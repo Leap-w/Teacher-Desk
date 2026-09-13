@@ -9,10 +9,13 @@ interface Props {
   lesson: Lesson
   /** 紧凑模式（PC 周视图的格子里用，行高更小） */
   compact?: boolean
+  /** 当前 / 下一节课（UI-5A：松石青描边呼吸强调；纯视觉） */
+  isCurrent?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   compact: false,
+  isCurrent: false,
 })
 
 const emit = defineEmits<{
@@ -46,6 +49,7 @@ const badgeText = computed(() =>
       'is-compact': compact,
       'is-temp': lesson.type === 'substitute',
       'is-adjusted': lesson.type === 'adjusted',
+      'is-current': isCurrent,
     }"
     :aria-label="ariaLabel"
     @click="emit('open', lesson)"
@@ -114,6 +118,24 @@ const badgeText = computed(() =>
 
 .lesson-card.is-adjusted:hover {
   background: var(--color-fill-disabled);
+}
+
+/* 当前 / 下一节（UI-5A）：松石青描边 + 柔和呼吸，压过代课/调课底色 */
+.lesson-card.is-current {
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-soft-strong);
+  animation: lesson-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes lesson-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--color-primary-soft);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px var(--color-primary-soft);
+  }
 }
 
 .lesson-card.is-compact {
