@@ -1,80 +1,15 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
-import { createSeedWeekendReturns } from '@/services/mock'
-import { readList, writeSeedJSON } from '@/services/storage'
-import { syncPersisted } from '@/services/sync'
+import { weekendRepository, reviveReturns } from '@/repositories/weekend/weekendRepository'
 import { useStudentStore } from '@/stores/student'
 import { addDaysToDateKey, formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
-import {
-  currentWeekendKey,
-  isWeekendKey,
-  normalizeWeekendReturn,
-  sortWeekendReturns,
-} from '@/utils/weekend'
+import { currentWeekendKey, isWeekendKey, sortWeekendReturns } from '@/utils/weekend'
 import type { Student } from '@/types'
 import type { WeekendReturnRecord } from '@/types/weekend'
-
-const STORAGE_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
-
-/**
- * 把盘上的原始列表规范成内存里的返家记录（**首屏加载与跨标签页同步共用**，§11.1）。
- *
- * 两重去重，都只保留首条：同一 id（重复 id 会让列表的 v-for key 冲突）；
- * 同一「学生 + 周末」——本模块的不变量是一条记录对应一个学生一个周末，
- * 篡改出的重复项会让名单里同一个人出现两次、把返家人数算多、留校人数算少
- * （留校 = 在读人数 − 在读返家人数，`stayCountOf` 以此为前提）。
- */
-function reviveReturns(raw: unknown[]): WeekendReturnRecord[] {
-  const seenIds = new Set<string>()
-  const seenPairs = new Set<string>()
-  const records = raw
-    .map((item) => normalizeWeekendReturn(item))
-    .filter((item): item is WeekendReturnRecord => item !== null)
-    .filter((item) => {
-      const pair = `${item.studentId}|${item.weekendDate}`
-      if (seenIds.has(item.id) || seenPairs.has(pair)) return false
-      seenIds.add(item.id)
-      seenPairs.add(pair)
-      return true
-    })
-  if (records.length < raw.length) {
-    console.warn(`[weekend] 丢弃 ${raw.length - records.length} 条不合法的返家记录（缓存原文保留）`)
-  }
-  return records
-}
-
-/**
- * 从 localStorage 读取周末返家记录；首次启动（无缓存）时写入示例数据。
- *
- * 与课表 / 请假 / 值日同口径：**缓存损坏（非 JSON / 非数组）时降级为空列表，不重播示例数据**
- * ——记录可编辑后示例数据不再是唯一来源，重播会盖掉教师自己登记的返家名单（§3.2）。
- * 非法条目逐条丢弃，并保留缓存原文（不覆盖，便于人工找回）。
- *
- * 播种条件比学生 / 课表严一档（同请假、值日）：`teacherdesk:weekendReturns` 是 Phase 7 新增的键，
- * **每个存量用户第一次打开都算「首次启动」**，无条件播种会让从 v0.10.1 升级上来的教师
- * 凭空多出别人家学生的返家记录。返家记录引用学生主键，只在示例学生**都还在读**时
- * （即学生档案同为示例数据）才播种（§11.3）；不播种时**不写盘**，下次启动还会再判一次。
- */
-function loadReturns(students: Student[]): WeekendReturnRecord[] {
-  const stored = readList(STORAGE_KEY)
-  if (stored === null) {
-    const seed = createSeedWeekendReturns()
-    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里，
-    // 只看 id 是否存在，会把「已把示例学生全部退档」的教师也算成「档案仍是示例数据」，
-    // 于是给人家凭空播种 5 条已退档学生的返家记录。退档不算在档案里（§9.17 审查修复）
-    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-    if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
-    writeSeedJSON(STORAGE_KEY, seed)
-    return seed
-  }
-  return reviveReturns(stored)
-}
 
 /**
  * 姓名快照维护已抽到公共件（Phase 7B：与请假记录共用同一份口径，
@@ -117,12 +52,12 @@ export const useWeekendStore = defineStore('weekend', () => {
   const activeIdSet = computed(() => new Set(studentStore.activeStudents.map((item) => item.id)))
 
   const records = ref<WeekendReturnRecord[]>(
-    withStudentNames(loadReturns(studentStore.students), studentStore.students),
+    withStudentNames(weekendRepository.load(studentStore.students), studentStore.students),
   )
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
   // 归一化里带上姓名快照刷新，与首屏加载那条路径**给出一致的结果**（同 `stores/leave.ts` 的说明）
-  syncPersisted(STORAGE_KEY, records, (raw) =>
+  weekendRepository.bind(records, (raw) =>
     withStudentNames(reviveReturns(raw), studentStore.students),
   )
 

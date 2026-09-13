@@ -1,73 +1,17 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
-import { createSeedLeaves } from '@/services/mock'
-import { readList, writeSeedJSON } from '@/services/storage'
-import { syncPersisted } from '@/services/sync'
+import { leaveRepository, reviveLeaves } from '@/repositories/leave/leaveRepository'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
 import { halfDayKey, isDayPoint } from '@/utils/point'
-import {
-  KNOWN_LEAVE_TYPES,
-  isPeriodOverlapping,
-  normalizeLeaveRecord,
-  sortLeaveRecords,
-} from '@/utils/leave'
+import { KNOWN_LEAVE_TYPES, isPeriodOverlapping, sortLeaveRecords } from '@/utils/leave'
 import type { Student } from '@/types'
 import type { DayPoint } from '@/types/point'
 import type { LeaveInput, LeaveRecord, LeaveType } from '@/types/leave'
-
-const STORAGE_KEY = `${appConfig.storageKeyPrefix}:leaves`
-
-/**
- * 把盘上的原始列表规范成内存里的请假记录（**首屏加载与跨标签页同步共用**，§11.1）。
- * 同一 id 只保留首条（重复 id 会让列表的 v-for key 冲突），丢弃条目时告警但保留缓存原文。
- */
-function reviveLeaves(raw: unknown[]): LeaveRecord[] {
-  const seen = new Set<string>()
-  const records = raw
-    .map((item) => normalizeLeaveRecord(item))
-    .filter((item): item is LeaveRecord => item !== null)
-    .filter((item) => {
-      if (seen.has(item.id)) return false
-      seen.add(item.id)
-      return true
-    })
-  if (records.length < raw.length) {
-    console.warn(`[leave] 丢弃 ${raw.length - records.length} 条不合法的请假记录（缓存原文保留）`)
-  }
-  return records
-}
-
-/**
- * 从 localStorage 读取请假记录；首次启动（无缓存）时写入示例数据。
- *
- * 与课表同口径：**缓存损坏（非 JSON / 非数组）时降级为空列表，不重播示例数据**
- * ——记录可编辑后示例数据不再是唯一来源，重播会盖掉教师的真实记录（§3.2）。
- * 非法条目逐条丢弃，并保留缓存原文（不覆盖，便于人工找回）。
- *
- * 播种条件比学生 / 课表严一档：`teacherdesk:leaves` 是 Phase 5 新增的键，
- * **每个存量用户第一次打开都算「首次启动」**，而无条件播种会让从 v0.7.0 升级上来
- * 的教师凭空多出 3 条别人家学生的请假（1 条待处理、1 条已批准）。请假记录引用学生
- * 主键，只在示例学生**都还在读**时（即学生档案同为示例数据）才播种（§11.3）。
- */
-function loadLeaves(students: Student[]): LeaveRecord[] {
-  const stored = readList(STORAGE_KEY)
-  if (stored === null) {
-    const seed = createSeedLeaves()
-    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
-    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-    if (!seed.every((item) => inSchoolIds.has(item.studentId))) return []
-    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
-    writeSeedJSON(STORAGE_KEY, seed)
-    return seed
-  }
-  return reviveLeaves(stored)
-}
 
 /**
  * 姓名快照维护已抽到公共件（Phase 7B：与周末返家记录共用同一份口径，
@@ -108,16 +52,14 @@ export const useLeaveStore = defineStore('leave', () => {
   const now = useNow()
 
   const leaves = ref<LeaveRecord[]>(
-    withStudentNames(loadLeaves(studentStore.students), studentStore.students),
+    withStudentNames(leaveRepository.load(studentStore.students), studentStore.students),
   )
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
   // 归一化里带上姓名快照刷新，与首屏加载那条路径**给出一致的结果**——
-  // 只跑 reviveLeaves 的话，别人改了学生姓名后再广播请假记录，本页会把旧快照吃进内存，
+  // 只跑默认复活的话，别人改了学生姓名后再广播请假记录，本页会把旧快照吃进内存，
   // 而列表中显示的正是这份快照（§11.1 同一份规则，两条路径不许分叉）
-  syncPersisted(STORAGE_KEY, leaves, (raw) =>
-    withStudentNames(reviveLeaves(raw), studentStore.students),
-  )
+  leaveRepository.bind(leaves, (raw) => withStudentNames(reviveLeaves(raw), studentStore.students))
 
   /** 在档案中的学生（新增 / 编辑只能选在读学生） */
   function findStudent(id: string): Student | undefined {

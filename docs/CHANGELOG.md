@@ -6,6 +6,23 @@
 
 ---
 
+## v2.2.0-alpha —— Phase Cloud-1 · Repository 数据访问层（架构升级，用户无感知）（2026-09-14，tag `v2.2.0-alpha`）
+
+> **Repository First**：Store 不再直接读写 localStorage，全部经 `src/repositories/`。
+> Store API / 数据模型 / localStorage Key / UI / 页面功能**零变化**；不接网络，不迁移数据。
+
+### 新增
+
+- `src/repositories/`：`base/`（`SyncStatus` 枚举、`SaveResult`/`RepositoryResult`、`DataSourceAdapter` 契约、`createCollectionRepository` 工厂）+ `adapters/`（**LocalStorageAdapter** 唯一实现，纯委托 services/storage + syncPersisted；**CloudAdapter** 占位——connect/pull/push/sync 全部 TODO 且故意抛错防误接）+ 十个模块仓储（student/seat/seatConstraint/leave/duty/weekend/schedule/task/dashboard/userProfile）。
+- 复活（normalize/revive）、播种守卫、旧课表迁移等数据塑形逻辑自 stores 原样迁入对应仓储；`withSettings` 上移为 `utils/duty.ts` 公共件。
+- `docs/ARCHITECTURE.md`：一页架构总览（分层图 + 数据流 + 分层规则表），后续 CloudBase / Widget 的共同蓝图。
+
+### 内部
+
+- 9 个 Store 的存储读写全部改走仓储；`services/sync.ts` 注册表行为不变（跨标签页广播 / 云同步挂接 / 播种基线原样）。
+
+---
+
 ## v2.1.1-beta —— Phase Polish-1 · 全站巡检与体验收官（产品级 Beta 基线）（2026-09-14，tag `v2.1.1-beta`）
 
 > 不新增业务功能，不改数据结构。全站 Design / UX / Component / Responsive / Accessibility 五类巡检 + 修复。详见开发手册 **§9.49**。

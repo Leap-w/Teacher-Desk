@@ -80,6 +80,18 @@ export function normalizeStudentIds(value: unknown): string[] {
  * 与六个既有 store 同口径：字段类型不对就回退到安全值，**不因为一条脏数据丢掉整块**；
  * 只有「完全认不出是什么记录」才返回 null（调用方丢弃该条并保留缓存原文）。
  */
+/**
+ * 保证数组里有设置记录（缺失时补一条默认的，可带起点）——轮换口径始终只有一处。
+ * Phase Cloud-1 自 stores/duty.ts 上移为公共件：仓储复活与 store 的编排动作共用。
+ */
+export function withSettings(
+  records: DutyRecord[],
+  fallback?: Partial<DutySettings>,
+): DutyRecord[] {
+  if (records.some(isDutySettings)) return records
+  return [...records, { ...DEFAULT_DUTY_SETTINGS, ...fallback }]
+}
+
 export function normalizeDutyRecord(raw: unknown): DutyRecord | null {
   if (!isPlainObject(raw)) return null
   if (raw.kind === 'settings') {

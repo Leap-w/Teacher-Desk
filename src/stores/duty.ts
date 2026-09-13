@@ -1,11 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
-import { createSeedDuty } from '@/services/mock'
-import { readList, writeSeedJSON } from '@/services/storage'
-import { syncPersisted } from '@/services/sync'
+import { dutyRepository } from '@/repositories/duty/dutyRepository'
 import { useStudentStore } from '@/stores/student'
 import { formatDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
@@ -18,14 +15,10 @@ import {
   isDutyDateKey,
   isDutyGroup,
   isDutySettings,
-  normalizeDutyRecord,
   normalizeStudentIds,
 } from '@/utils/duty'
 import type { DutyGroup, DutyMember, DutyRecord, DutySettings } from '@/types/duty'
 import type { DutyArrangeImportPlan, DutyGroupImportPlan } from '@/services/dutyImport'
-import type { Student } from '@/types'
-
-const STORAGE_KEY = `${appConfig.storageKeyPrefix}:duty`
 
 /** 分组导入落库结果（失败时数据一个字节都不改） */
 export type DutyGroupImportOutcome =
@@ -34,69 +27,6 @@ export type DutyGroupImportOutcome =
 /** 安排导入落库结果（失败时数据一个字节都不改） */
 export type DutyArrangeImportOutcome =
   { ok: true; startDate: string; days: number } | { ok: false; reason: string }
-
-/**
- * 把盘上的原始列表规范成内存里的值日记录（**首屏加载与跨标签页同步共用**，§11.1）。
- * 两重唯一性：同一 id 只保留首条（重复 id 会让列表的 v-for key 冲突）；设置记录也只认第一条
- * （settings 是单例，重复会让轮换口径分叉）。丢弃条目时告警，但缓存原文保留。
- *
- * 末尾保证数组里有设置记录（不写盘，只在内存里补）：少了它，后面所有读取路径
- * （settings 计算属性 / removeGroup / updateGroup）都以为「设置不在数组里」，
- * 写完一轮才把设置补进去，中间那一步是两套状态（§11.3）。
- */
-function reviveDutyRecords(raw: unknown[]): DutyRecord[] {
-  const seen = new Set<string>()
-  const records = raw
-    .map((item) => normalizeDutyRecord(item))
-    .filter((item): item is DutyRecord => item !== null)
-    .filter((record) => {
-      if (seen.has(record.id)) return false
-      seen.add(record.id)
-      return true
-    })
-  let settingsSeen = false
-  const unique = records.filter((record) => {
-    if (!isDutySettings(record)) return true
-    if (settingsSeen) return false
-    settingsSeen = true
-    return true
-  })
-  if (unique.length < raw.length) {
-    console.warn(`[duty] 丢弃 ${raw.length - unique.length} 条不合法的值日记录（缓存原文保留）`)
-  }
-  return withSettings(unique)
-}
-
-/**
- * 从 localStorage 读取值与设置；首次启动（无缓存）时写入示例值日安排。
- *
- * 播种条件比学生 / 课表严一档（同请假）：值日组引用学生主键，
- * 只在示例学生**都还在读**时才播种——否则从 v0.9.0 升级上来的教师
- * 会凭空多出三个自己班上没有的学生的值日组（§11.3）。不播种时不写盘。
- *
- * 缓存损坏（非 JSON / 非数组）时降级为空、**不重播示例**：编排可编辑后
- * 示例数据不再是唯一来源，重播会盖掉教师自己排的值日表（§3.2）。
- */
-function loadRecords(students: Student[]): DutyRecord[] {
-  const stored = readList(STORAGE_KEY)
-  if (stored === null) {
-    const seed = createSeedDuty()
-    // 「档案里还在」= **在读**：软删除的学生仍留在 `students` 数组里（同 §9.17 周末管理的修复）
-    const inSchoolIds = new Set(students.filter((item) => !item.deletedAt).map((item) => item.id))
-    const referenced = seed.flatMap((record) => (isDutyGroup(record) ? record.studentIds : []))
-    if (!referenced.every((id) => inSchoolIds.has(id))) return []
-    // 播种写盘并记下基线（Phase 9C），理由见 services/storage.ts 的 writeSeedJSON
-    writeSeedJSON(STORAGE_KEY, seed)
-    return seed
-  }
-  return reviveDutyRecords(stored)
-}
-
-/** 保证数组里有设置记录（缺失时补一条默认的，可带起点）——轮换口径始终只有一处 */
-function withSettings(records: DutyRecord[], fallback?: Partial<DutySettings>): DutyRecord[] {
-  if (records.some(isDutySettings)) return records
-  return [...records, { ...DEFAULT_DUTY_SETTINGS, ...fallback }]
-}
 
 /**
  * 值日安排（Phase 6）：值日组与轮换设置的唯一读写入口。
@@ -112,10 +42,10 @@ export const useDutyStore = defineStore('duty', () => {
   const studentStore = useStudentStore()
   const now = useNow()
 
-  const records = ref<DutyRecord[]>(loadRecords(studentStore.students))
+  const records = ref<DutyRecord[]>(dutyRepository.load(studentStore.students))
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
-  syncPersisted(STORAGE_KEY, records, reviveDutyRecords)
+  dutyRepository.bind(records)
 
   /** 值日组（数组顺序即轮换顺序，也是页面展示顺序） */
   const groups = computed(() => records.value.filter(isDutyGroup))
@@ -179,7 +109,7 @@ export const useDutyStore = defineStore('duty', () => {
     }
     const isFirst = groups.value.length === 0
     const anchor: Partial<DutySettings> = { startDate: todayKey.value, startGroupId: group.id }
-    const appended = withSettings([...records.value, group], anchor)
+    const appended = dutyRepository.ensureSettings([...records.value, group], anchor)
     records.value = isFirst
       ? appended.map((record) => (isDutySettings(record) ? { ...record, ...anchor } : record))
       : appended
@@ -260,7 +190,7 @@ export const useDutyStore = defineStore('duty', () => {
     ) {
       return false
     }
-    records.value = withSettings(records.value).map((record) =>
+    records.value = dutyRepository.ensureSettings(records.value).map((record) =>
       isDutySettings(record)
         ? {
             ...record,
@@ -330,7 +260,9 @@ export const useDutyStore = defineStore('duty', () => {
       startDate: todayKey.value,
       startGroupId: plan.updates[0]?.id ?? '',
     }
-    next = isFirst ? withSettings(next, anchor) : withSettings(next)
+    next = isFirst
+      ? dutyRepository.ensureSettings(next, anchor)
+      : dutyRepository.ensureSettings(next)
     records.value = next
     return { ok: true, updated, created, members }
   }

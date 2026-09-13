@@ -1,9 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { appConfig } from '@/config'
-import { readList, writeSeedJSON } from '@/services/storage'
-import { syncPersisted } from '@/services/sync'
+import { seatRepository } from '@/repositories/seat/seatRepository'
 import { createId } from '@/utils/id'
 import {
   buildSeatGrid,
@@ -11,7 +9,6 @@ import {
   createSeatPlan,
   getSeatKey,
   isValidSeatPosition,
-  normalizeSeatPlan,
   normalizeSeatPlanConstraints,
   seatOrdinal,
   seatPositionShort,
@@ -25,8 +22,6 @@ import type { Seat, SeatChangeLog, SeatPlan, SeatPlanConstraints } from '@/types
 import type { SeatImportAssignment } from '@/services/seatImport'
 import type { SeatPlanConstraintReport } from '@/utils/seatPlanConstraint'
 import type { Student } from '@/types'
-
-const STORAGE_KEY = `${appConfig.storageKeyPrefix}:seatPlans`
 
 /** Excel 座位导入结果：失败时**当前方案完全不改变** */
 export interface SeatImportOutcome {
@@ -87,36 +82,9 @@ function studentProfiles() {
  * 「本机与云端都有座位方案，保留哪一份」。教师一旦动过这张表（拖拽 / 换方案），
  * 盘上原文就与基线不同，保护立即生效。
  */
-function seedPlans(): SeatPlan[] {
+function buildSeedPlans(): SeatPlan[] {
   const plan: SeatPlan = { ...createSeatPlan('开学初', studentProfiles()), isCurrent: true }
-  writeSeedJSON(STORAGE_KEY, [plan])
   return [plan]
-}
-
-/** 同屏至多一个当前方案：无 isCurrent 则首个补位，多个则仅保留第一个 */
-function ensureSingleCurrent(plans: SeatPlan[]): SeatPlan[] {
-  if (plans.length === 0) return plans
-  const firstCurrent = plans.findIndex((plan) => plan.isCurrent)
-  return plans.map((plan, index) => {
-    const shouldBeCurrent = firstCurrent === -1 ? index === 0 : index === firstCurrent
-    return plan.isCurrent === shouldBeCurrent ? plan : { ...plan, isCurrent: shouldBeCurrent }
-  })
-}
-
-/** 把盘上的原始列表规范成内存里的座位方案表（**首屏加载与跨标签页同步共用**，§11.1） */
-function reviveSeatPlans(raw: unknown[]): SeatPlan[] {
-  return ensureSingleCurrent(
-    raw
-      .filter((item): item is SeatPlan => Boolean(item) && typeof item === 'object')
-      .map((item) => normalizeSeatPlan(item as Partial<SeatPlan>)),
-  )
-}
-
-/** 从本地存储读取座位方案；守卫与升级策略同 student store（§3.2 数据安全保护） */
-function loadSeatPlans(): SeatPlan[] {
-  const stored = readList(STORAGE_KEY)
-  if (stored === null) return seedPlans()
-  return reviveSeatPlans(stored)
 }
 
 export const useSeatStore = defineStore('seat', () => {
@@ -129,11 +97,11 @@ export const useSeatStore = defineStore('seat', () => {
    */
   const studentStore = useStudentStore()
 
-  /** 全部座位方案（含历史方案；数组顺序即创建顺序） */
-  const plans = ref<SeatPlan[]>(loadSeatPlans())
+  /** 全部座位方案（含历史方案；数组顺序即创建顺序）；首次启动播种「开学初」并写基线 */
+  const plans = ref<SeatPlan[]>(seatRepository.load() ?? seatRepository.writeSeed(buildSeedPlans()))
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
-  syncPersisted(STORAGE_KEY, plans, reviveSeatPlans)
+  seatRepository.bind(plans)
 
   // 同步路径**不重新清扫悬空座位**（`sweepDanglingSeats` 只在启动时与删除学生时跑）：
   // 清扫的输入是**学生**（另一个键），而这里收到的是座位方案的变更。实测这个缺口进不来——

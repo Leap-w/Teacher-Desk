@@ -1,16 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { appConfig } from '@/config'
 import { useNow } from '@/composables/useToday'
-import { readRaw } from '@/services/storage'
-import { syncPersisted } from '@/services/sync'
+import { taskRepository } from '@/repositories'
 import { createId } from '@/utils/id'
 import {
-  isValidIsoDate,
-  isValidWorkCategory,
-  isValidWorkPriority,
-  isValidWorkStatus,
   isoDateOf,
   isSameWork,
   isWorkOverdue,
@@ -22,75 +16,6 @@ import {
 } from '@/utils/work'
 import type { WorkInput, WorkItem } from '@/types/work'
 
-const STORAGE_KEY = `${appConfig.storageKeyPrefix}:works`
-
-/**
- * 单条工作的健壮化（load 时逐条调用）：名称或日期非法即丢弃该条——一条没有日期的工作
- * 在「今日 / 本周」里无处安放，留着只会让教师以为它丢了（与课表 / 座位同一口径：不臆造）。
- * 状态 / 优先级 / 分类是**枚举字段**，认不出时回默认值并保留这条工作（不是在编造事实）。
- */
-function normalizeWork(raw: Partial<WorkItem>): WorkItem | null {
-  const title = typeof raw.title === 'string' ? raw.title.trim() : ''
-  if (!title) return null
-  if (!isValidIsoDate(raw.date)) return null
-  const deadline = typeof raw.deadline === 'string' ? raw.deadline.trim() : ''
-  const description = typeof raw.description === 'string' ? raw.description.trim() : ''
-  return {
-    id: typeof raw.id === 'string' && raw.id ? raw.id : createId(),
-    title,
-    description: description || undefined,
-    date: raw.date,
-    // 只接受 HH:mm：历史数据里若混进「18:00:00」这类写法，宁可丢掉截止时间也不猜
-    deadline: /^([01]\d|2[0-3]):[0-5]\d$/.test(deadline) ? deadline : undefined,
-    status: isValidWorkStatus(raw.status) ? raw.status : 'todo',
-    priority: isValidWorkPriority(raw.priority) ? raw.priority : 'normal',
-    category: isValidWorkCategory(raw.category) ? raw.category : '其他',
-    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '',
-    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : '',
-  }
-}
-
-/**
- * 把盘上的原始列表规范成内存里的工作清单（**首屏加载与跨标签页同步共用**，§11.1）。
- * 同一 id 只保留首条：外部篡改可能造出重复 id，会让列表的 v-for key 冲突。
- */
-function reviveWorks(raw: string | null): WorkItem[] {
-  if (raw === null) return []
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return []
-  }
-  if (!Array.isArray(parsed)) return []
-  const seen = new Set<string>()
-  return (parsed as unknown[])
-    .filter((item): item is Partial<WorkItem> => Boolean(item) && typeof item === 'object')
-    .map((item) => normalizeWork(item))
-    .filter((item): item is WorkItem => item !== null)
-    .filter((work) => {
-      if (seen.has(work.id)) return false
-      seen.add(work.id)
-      return true
-    })
-}
-
-/** syncPersisted 需要的统一形状（`(raw: unknown[]) => WorkItem[]`） */
-function reviveWorksFromList(raw: unknown[]): WorkItem[] {
-  return reviveWorks(JSON.stringify(raw))
-}
-
-/**
- * 读工作清单。**首次启动不播种示例数据**（与课表 / 座位不同）：
- * 工作清单是教师自己的事，凭空出现「批改数学作业」会被当成真任务去做。
- * 键不存在 → 空数组，且**不写盘**（不制造一个空键）。
- */
-function loadWorks(): WorkItem[] {
-  const stored = readRaw(STORAGE_KEY)
-  if (stored === null) return []
-  return reviveWorks(stored)
-}
-
 /** 新增 / 编辑结果：失败时给出可读原因（页面直接 toast 出来） */
 export type WorkMutation = { ok: true; work: WorkItem } | { ok: false; reason: string }
 
@@ -100,14 +25,15 @@ export type WorkImportOutcome =
 
 /**
  * 工作清单状态（V1.1.3「工作管理」的第二个板块）：读写唯一入口。
- * 数据源 `teacherdesk:works`；「今天」由共享时钟 `useNow()` 解析（跨零点自动翻页）。
+ * 数据访问经 `taskRepository`（Phase Cloud-1 起，Repository First）——复活 / 不播种
+ * 的口径都在仓储里；「今天」由共享时钟 `useNow()` 解析（跨零点自动翻页）。
  */
 export const useWorkStore = defineStore('work', () => {
-  const works = ref<WorkItem[]>(loadWorks())
+  const works = ref<WorkItem[]>(taskRepository.load())
   const now = useNow()
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化
-  syncPersisted(STORAGE_KEY, works, reviveWorksFromList)
+  taskRepository.bind(works)
 
   /** 今天（本地日历日 YYYY-MM-DD） */
   const today = computed(() => isoDateOf(now.value))
