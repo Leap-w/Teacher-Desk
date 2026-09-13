@@ -107,6 +107,13 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Toolbox/index.vue'),
     meta: { title: '工具箱', hidden: true },
   },
+  {
+    // 课堂工具（Phase Classroom-1）：从「我的 → 工具箱」进入，也可直接开链接
+    path: '/my/classroom',
+    name: 'my-classroom',
+    component: () => import('@/views/Classroom/ClassroomView.vue'),
+    meta: { title: '课堂工具', hidden: true },
+  },
   /* ---- 旧路径兼容（V1.1.6）：工具箱并入「我的」，旧链接自动跟过去 ---- */
   { path: '/toolbox', redirect: '/my/tools' },
   { path: '/:pathMatch(.*)*', redirect: '/' },

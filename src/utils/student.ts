@@ -217,3 +217,41 @@ export function seatAccentOf(student: Student): SeatAccent | undefined {
   if (student.tags?.length) return 'tag'
   return undefined
 }
+
+/* ---------- 重名消歧（Student Hub 与课堂工具共用，Phase Classroom-1 上收） ---------- */
+
+/** 姓名 → 同名人数（含软删除记录吗？调用方传什么就数什么：档案页传全体，课堂工具传在读） */
+export function buildNameCounts(students: Student[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const student of students) {
+    counts.set(student.name, (counts.get(student.name) ?? 0) + 1)
+  }
+  return counts
+}
+
+/** 学生 id → 值日组名（同一学生在多个组时取**第一个**，与档案页展示口径一致） */
+export function buildDutyGroupNameById(
+  groups: { name: string; studentIds: string[] }[],
+): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const group of groups) {
+    for (const id of group.studentIds) {
+      if (!map.has(id)) map.set(id, group.name)
+    }
+  }
+  return map
+}
+
+/**
+ * 重名消歧后缀：值日组优先（「旦增卓玛（第3组）」），无组回落学号后四位。
+ * **只有重名时才返回**（`nameCounts` 里该姓名 > 1）；单名一律 undefined。
+ * 唯一实现：学生档案卡片 / 详情头 / 课堂工具随机点名都调这一份（§11.1）。
+ */
+export function disambiguatorOf(
+  student: Student,
+  nameCounts: Map<string, number>,
+  dutyGroupNameById: Map<string, string>,
+): string | undefined {
+  if ((nameCounts.get(student.name) ?? 1) <= 1) return undefined
+  return (dutyGroupNameById.get(student.id) ?? student.studentNo.slice(-4)) || undefined
+}

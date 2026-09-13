@@ -25,7 +25,12 @@ import type { PinyinKey } from '@/services/pinyinSort'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { useStudentStore } from '@/stores/student'
-import { formatStudentShortName } from '@/utils/student'
+import {
+  buildNameCounts,
+  buildDutyGroupNameById,
+  disambiguatorOf as disambiguatorOfShared,
+  formatStudentShortName,
+} from '@/utils/student'
 import { buildRandomRanks } from '@/utils/studentQuery'
 import type { StudentSortMode } from '@/utils/studentQuery'
 import { loadStudentViewPrefs, saveStudentViewPrefs } from '@/utils/studentViewPrefs'
@@ -87,25 +92,11 @@ const onLeaveIds = computed(() => {
   return ids
 })
 
-/** 同名计数：姓名 → 出现次数（重名徽章与消歧用） */
-const nameCounts = computed(() => {
-  const counts = new Map<string, number>()
-  for (const student of activeStudents.value) {
-    counts.set(student.name, (counts.get(student.name) ?? 0) + 1)
-  }
-  return counts
-})
+/** 同名计数：姓名 → 出现次数（重名徽章与消歧用）——公共件（`utils/student.ts`） */
+const nameCounts = computed(() => buildNameCounts(activeStudents.value))
 
 /** 学生 id → 值日组名（值日 Store 只读派生；一名学生只归一组，取首个命中） */
-const dutyGroupNameById = computed(() => {
-  const map = new Map<string, string>()
-  for (const group of dutyStore.groups) {
-    for (const id of group.studentIds) {
-      if (!map.has(id)) map.set(id, group.name)
-    }
-  }
-  return map
-})
+const dutyGroupNameById = computed(() => buildDutyGroupNameById(dutyStore.groups))
 
 function regionOf(student: Student): string | undefined {
   const location = student.familyLocation
@@ -113,10 +104,9 @@ function regionOf(student: Student): string | undefined {
   return location.county || location.prefecture || undefined
 }
 
-/** 重名消歧：值日组优先（「旦增卓玛（第3组）」），无组回落学号后四位 */
+/** 重名消歧：公共件（`utils/student.ts`）——课堂工具随机点名共用同一份规则 */
 function disambiguatorOf(student: Student): string | undefined {
-  if ((nameCounts.value.get(student.name) ?? 1) <= 1) return undefined
-  return (dutyGroupNameById.value.get(student.id) ?? student.studentNo.slice(-4)) || undefined
+  return disambiguatorOfShared(student, nameCounts.value, dutyGroupNameById.value)
 }
 
 const chipOptions = computed(() => [
