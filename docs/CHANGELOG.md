@@ -6,6 +6,33 @@
 
 ---
 
+## v2.0.3-alpha —— Phase UI-4A · Student Hub 学生中心（2026-09-13，tag `v2.0.3-alpha`）
+
+> 只重构学生档案 UI；Student Store / localStorage Key / CloudBase / 学生字段 / 班委数据 / 重名逻辑 / 家庭地址统计零改动（新增筛选均为只读派生）。详见开发手册 **§9.41**。
+
+### 新增组件（`views/Students/components/`，值日 / 请假 / 周末可复用）
+
+- **StudentHubSidebar**：左侧栏（桌面 280px sticky / 小屏毛玻璃抽屉）——搜索置顶 → 快速筛选 Chips → 排序（默认/首字母/随机，逻辑原样保留）→ 班级概览统计。
+- **StudentFilterChips**：iOS 风 Chips（全部/男生/女生/班委/**已请假**/**有备注**——后两者由「预留」转正，真实数据：请假 Store 今日在假、备注非空），切换 200ms。
+- **StudentSummary + StudentSummaryItem**：班级概览（全班/男/女/班委，真实统计）。
+- **StudentCard**（重写）：Apple Contacts 风——姓名 22px 第一优先级（**两行截断保护，绝不把姓名截成「旦…」**）→ 身份徽章区（性别/同名 N 人/班委/标签，UI-1 Badge）→ 辅助信息（值日组/家庭地区/宿舍/电话，空值整块隐藏）→ 底部「查看档案」操作暗示；Hover 2px 微抬升。
+- **StudentCardMeta**：卡片元信息行（组/地区/宿舍/电话）。
+- **StudentProfileHeader**：详情头部（首字头像占位 + 姓名 + 徽章）。
+
+### 变化
+
+- **布局**：桌面 280px 侧栏 + 卡片流两栏；<1024px 侧栏变抽屉（汉堡式「筛选与排序」按钮 + 毛玻璃遮罩 + 完成按钮），卡片单列流，无横向滚动。
+- **重名体验强化**：同名卡片显示「同名 N 人」Badge + 姓名后缀消歧（值日组优先，如「旦增卓玛（第 1 组）」，无组回落学号后四位）；详情弹窗同步。`formatStudentShortName` 原逻辑不动。
+- **详情弹窗**：StudentProfileHeader + 三组 Card Section（基本信息/家庭信息/班级信息——备注移入班级信息组），字段与功能不变。
+- **信息优先级规范落地**：学生姓名 > 身份标签 > 辅助信息 > 操作按钮——作为班级管理后续页面（座位/请假/值日/值周）的统一层级标准。
+
+### 验收
+
+- prettier → vue-tsc → eslint → 336 测试 → build 全绿。
+- Chrome 三尺寸：1440（侧栏 sticky + 6 卡片流 + 概览 6/3/3/2）、768、390（抽屉断言：开启后含 6 Chips + 概览卡；卡片单列；三尺寸均无横向滚动）；重名「旦增卓玛（第 1 组）」完整显示 + 截图复核。
+
+---
+
 ## v2.0.2-alpha —— Phase UI-3 · Dashboard 今日工作中心（2026-09-13，tag `v2.0.2-alpha`）
 
 > 只重构首页；路由 / Store / 数据结构 / localStorage Key / CloudBase / 业务逻辑零改动。数据全部来自既有 Store（课程表 / 待办 / 值日 / 请假 / 周末返校），无数据走 EmptyState，不伪造业务数据。详见开发手册 **§9.40**。

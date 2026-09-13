@@ -16,33 +16,32 @@ let sessionRandomRanks: ReadonlyMap<string, number> = new Map()
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { GraduationCap, Search, SlidersHorizontal } from 'lucide-vue-next'
 
-import { AppButton, AppCard, AppInput, AppModal, EmptyState } from '@/components/ui'
+import { AppButton, AppCard, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { loadPinyinKey } from '@/services/pinyinSort'
 import type { PinyinKey } from '@/services/pinyinSort'
+import { useDutyStore } from '@/stores/duty'
+import { useLeaveStore } from '@/stores/leave'
 import { useStudentStore } from '@/stores/student'
 import { formatStudentShortName } from '@/utils/student'
 import { buildRandomRanks } from '@/utils/studentQuery'
 import type { StudentSortMode } from '@/utils/studentQuery'
 import { loadStudentViewPrefs, saveStudentViewPrefs } from '@/utils/studentViewPrefs'
-import type { Gender, Student, StudentInput } from '@/types'
+import { isLeaveToday } from '@/utils/leave'
+import type { Student, StudentInput } from '@/types'
 import StudentBatchEditModal from './components/StudentBatchEditModal.vue'
 import StudentCard from './components/StudentCard.vue'
 import StudentDetailModal from './components/StudentDetailModal.vue'
 import StudentFormModal from './components/StudentFormModal.vue'
+import StudentHubSidebar from './components/StudentHubSidebar.vue'
+import type { StudentFilterKey } from './components/StudentFilterChips.vue'
 import StudentImportModal from './components/StudentImportModal.vue'
-import { Search, GraduationCap } from 'lucide-vue-next'
-
-type StudentFilter = 'all' | Gender | 'cadre'
-
-const SORT_OPTIONS: { value: StudentSortMode; label: string }[] = [
-  { value: 'default', label: '默认' },
-  { value: 'pinyin', label: '首字母' },
-  { value: 'random', label: '随机' },
-]
 
 const studentStore = useStudentStore()
+const dutyStore = useDutyStore()
+const leaveStore = useLeaveStore()
 const toast = useToast()
 
 /** 搜索词与排序方式刷新后恢复（Phase 5B）；随机的次序不落盘，见 `sessionSort` 的说明 */
@@ -53,7 +52,8 @@ const sortMode = ref<StudentSortMode>(sessionSort ?? viewPrefs.sort)
 const pinyinKey = ref<PinyinKey | null>(null)
 const randomRanks = ref<ReadonlyMap<string, number>>(sessionRandomRanks)
 
-const filter = ref<StudentFilter>('all')
+const filter = ref<StudentFilterKey>('all')
+const sidebarOpen = ref(false)
 
 const formOpen = ref(false)
 const importOpen = ref(false)
@@ -76,30 +76,87 @@ const selectedIds = ref<Set<string>>(new Set())
 
 const activeStudents = computed(() => studentStore.activeStudents)
 
-const filterOptions = computed(() => [
-  { value: 'all' as const, label: '全部', count: activeStudents.value.length },
+/* ---- 真实数据派生：今日在假 / 重名 / 值日组 / 家庭地区 ---- */
+
+/** 今日在假的学生 id（请假 Store，只读） */
+const onLeaveIds = computed(() => {
+  const ids = new Set<string>()
+  for (const record of leaveStore.leaves) {
+    if (isLeaveToday(record, dutyStore.todayKey)) ids.add(record.studentId)
+  }
+  return ids
+})
+
+/** 同名计数：姓名 → 出现次数（重名徽章与消歧用） */
+const nameCounts = computed(() => {
+  const counts = new Map<string, number>()
+  for (const student of activeStudents.value) {
+    counts.set(student.name, (counts.get(student.name) ?? 0) + 1)
+  }
+  return counts
+})
+
+/** 学生 id → 值日组名（值日 Store 只读派生；一名学生只归一组，取首个命中） */
+const dutyGroupNameById = computed(() => {
+  const map = new Map<string, string>()
+  for (const group of dutyStore.groups) {
+    for (const id of group.studentIds) {
+      if (!map.has(id)) map.set(id, group.name)
+    }
+  }
+  return map
+})
+
+function regionOf(student: Student): string | undefined {
+  const location = student.familyLocation
+  if (!location) return undefined
+  return location.county || location.prefecture || undefined
+}
+
+/** 重名消歧：值日组优先（「旦增卓玛（第3组）」），无组回落学号后四位 */
+function disambiguatorOf(student: Student): string | undefined {
+  if ((nameCounts.value.get(student.name) ?? 1) <= 1) return undefined
+  return (dutyGroupNameById.value.get(student.id) ?? student.studentNo.slice(-4)) || undefined
+}
+
+const chipOptions = computed(() => [
+  { key: 'all' as const, label: '全部', count: activeStudents.value.length },
   {
-    value: 'male' as const,
+    key: 'male' as const,
     label: '男生',
     count: activeStudents.value.filter((item) => item.gender === 'male').length,
   },
   {
-    value: 'female' as const,
+    key: 'female' as const,
     label: '女生',
     count: activeStudents.value.filter((item) => item.gender === 'female').length,
   },
   {
-    value: 'cadre' as const,
+    key: 'cadre' as const,
     label: '班委',
     count: activeStudents.value.filter((item) => Boolean(item.cadreRole)).length,
   },
+  { key: 'onleave' as const, label: '已请假', count: onLeaveIds.value.size },
+  {
+    key: 'remarked' as const,
+    label: '有备注',
+    count: activeStudents.value.filter((item) => Boolean(item.remark?.trim())).length,
+  },
 ])
+
+const summary = computed(() => ({
+  total: activeStudents.value.length,
+  male: activeStudents.value.filter((item) => item.gender === 'male').length,
+  female: activeStudents.value.filter((item) => item.gender === 'female').length,
+  cadre: activeStudents.value.filter((item) => Boolean(item.cadreRole)).length,
+}))
 
 /**
  * 列表的**唯一检索出口**（Phase 5B）：students → filter → sort → render 全在这一条 computed 上。
- * 过滤与排序的规则本身在 store → 纯函数 `queryStudents()` 里，这里只负责喂搜索词、筛选项与排序参数。
+ * 过滤与排序的规则本身在 store → 纯函数 `queryStudents()` 里；「已请假 / 有备注」是
+ * UI-4A 新增的真实数据筛选，在检索出口后做只读二次过滤——不改 store 检索逻辑。
  */
-const visibleStudents = computed(() =>
+const searchedStudents = computed(() =>
   studentStore.searchStudents(keyword.value, {
     gender: filter.value === 'male' || filter.value === 'female' ? filter.value : undefined,
     cadreOnly: filter.value === 'cadre' ? true : undefined,
@@ -109,6 +166,16 @@ const visibleStudents = computed(() =>
   }),
 )
 
+const visibleStudents = computed(() => {
+  if (filter.value === 'onleave') {
+    return searchedStudents.value.filter((item) => onLeaveIds.value.has(item.id))
+  }
+  if (filter.value === 'remarked') {
+    return searchedStudents.value.filter((item) => Boolean(item.remark?.trim()))
+  }
+  return searchedStudents.value
+})
+
 const selectedStudents = computed(() =>
   activeStudents.value.filter((item) => selectedIds.value.has(item.id)),
 )
@@ -116,6 +183,8 @@ const selectedStudents = computed(() =>
 const detailStudent = computed(() =>
   activeStudents.value.find((item) => item.id === detailId.value),
 )
+
+const activeFilterCount = computed(() => (filter.value === 'all' ? 0 : 1) + (keyword.value ? 1 : 0))
 
 watch([keyword, sortMode], () => {
   sessionSort = sortMode.value
@@ -268,75 +337,75 @@ function clearFilters() {
       </div>
     </header>
 
-    <div class="toolbar-row">
-      <AppInput
-        v-model="keyword"
-        class="search-input"
-        placeholder="搜索姓名、班委、宿舍或标签…"
-        clearable
-      />
-      <div class="toolbar-filters">
-        <div class="segmented" role="group" aria-label="学生筛选">
-          <button
-            v-for="option in filterOptions"
-            :key="option.value"
-            type="button"
-            class="segmented-item"
-            :class="{ 'is-active': filter === option.value }"
-            @click="filter = option.value"
-          >
-            {{ option.label }}
-            <span class="segmented-count">{{ option.count }}</span>
-          </button>
-        </div>
-        <div class="segmented" role="group" aria-label="排序方式">
-          <button
-            v-for="option in SORT_OPTIONS"
-            :key="option.value"
-            type="button"
-            class="segmented-item"
-            :class="{ 'is-active': sortMode === option.value }"
-            @click="selectSort(option.value)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-      </div>
+    <!-- 小屏：筛选入口按钮（桌面隐藏） -->
+    <div class="mobile-filter-row">
+      <AppButton variant="secondary" size="sm" @click="sidebarOpen = true">
+        <SlidersHorizontal :size="16" :stroke-width="2" aria-hidden="true" />
+        筛选与排序
+        <span v-if="activeFilterCount" class="filter-badge">{{ activeFilterCount }}</span>
+      </AppButton>
     </div>
 
-    <section v-if="visibleStudents.length" class="card-grid">
-      <StudentCard
-        v-for="student in visibleStudents"
-        :key="student.id"
-        :student="student"
-        :selectable="batchMode"
-        :selected="selectedIds.has(student.id)"
-        @open="openDetail"
-        @toggle="toggleSelect"
-      />
-    </section>
-
-    <AppCard v-else padding="none" class="empty-card">
-      <EmptyState
-        v-if="activeStudents.length"
-        :icon="Search"
-        title="未找到匹配的学生"
-        description="换个关键词，或清除筛选条件再试试。"
+    <div class="hub-layout">
+      <StudentHubSidebar
+        v-model:keyword="keyword"
+        v-model:filter="filter"
+        :sort-mode="sortMode"
+        :chip-options="chipOptions"
+        :summary="summary"
+        :open="sidebarOpen"
+        :show-empty-guide="activeStudents.length === 0"
+        @update:sort-mode="selectSort($event)"
+        @close="sidebarOpen = false"
       >
-        <AppButton size="sm" variant="secondary" @click="clearFilters">清除筛选</AppButton>
-      </EmptyState>
-      <EmptyState
-        v-else
-        :icon="GraduationCap"
-        title="暂无学生"
-        description="已有 Excel 名单的话，用「批量导入」一次建档；也可以逐个新增。"
-      >
-        <div class="empty-actions">
+        <template v-if="activeStudents.length === 0" #guideActions>
           <AppButton size="sm" variant="secondary" @click="importOpen = true">批量导入</AppButton>
           <AppButton size="sm" @click="openCreate">新增学生</AppButton>
-        </div>
-      </EmptyState>
-    </AppCard>
+        </template>
+      </StudentHubSidebar>
+
+      <div class="hub-main">
+        <section v-if="visibleStudents.length" class="card-grid">
+          <StudentCard
+            v-for="student in visibleStudents"
+            :key="student.id"
+            :student="student"
+            :selectable="batchMode"
+            :selected="selectedIds.has(student.id)"
+            :duplicate-count="nameCounts.get(student.name)"
+            :disambiguator="disambiguatorOf(student)"
+            :region="regionOf(student)"
+            :duty-group="dutyGroupNameById.get(student.id)"
+            @open="openDetail"
+            @toggle="toggleSelect"
+          />
+        </section>
+
+        <AppCard v-else padding="none" class="empty-card">
+          <EmptyState
+            v-if="activeStudents.length"
+            :icon="Search"
+            title="未找到匹配的学生"
+            description="换个关键词，或清除筛选条件再试试。"
+          >
+            <AppButton size="sm" variant="secondary" @click="clearFilters">清除筛选</AppButton>
+          </EmptyState>
+          <EmptyState
+            v-else
+            :icon="GraduationCap"
+            title="暂无学生"
+            description="已有 Excel 名单的话，用「批量导入」一次建档；也可以逐个新增。"
+          >
+            <div class="empty-actions">
+              <AppButton size="sm" variant="secondary" @click="importOpen = true">
+                批量导入
+              </AppButton>
+              <AppButton size="sm" @click="openCreate">新增学生</AppButton>
+            </div>
+          </EmptyState>
+        </AppCard>
+      </div>
+    </div>
 
     <StudentFormModal v-model="formOpen" :student="editingStudent" @submit="handleFormSubmit" />
 
@@ -351,6 +420,8 @@ function clearFilters() {
     <StudentDetailModal
       v-model="detailOpen"
       :student="detailStudent"
+      :duplicate-count="detailStudent ? nameCounts.get(detailStudent.name) : undefined"
+      :disambiguator="detailStudent ? disambiguatorOf(detailStudent) : undefined"
       @edit="openEdit"
       @remove="askRemove"
     />
@@ -384,10 +455,10 @@ function clearFilters() {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* CDL 页面头：32px 特粗标题 + 底部细线（同 Profile / Home） */
+/* CDL 页面头：语义层级令牌（UI-1） */
 .page-title {
-  font-size: var(--font-page-title, 32px);
-  font-weight: var(--font-weight-extrabold);
+  font-size: var(--font-h1);
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.01em;
   line-height: 1.2;
   color: var(--color-text-primary);
@@ -408,7 +479,7 @@ function clearFilters() {
 
 .batch-count {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-primary-strong);
 }
 
@@ -421,63 +492,48 @@ function clearFilters() {
   flex-wrap: wrap;
 }
 
-.toolbar-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-5);
+/* 小屏筛选入口（桌面隐藏） */
+.mobile-filter-row {
+  margin-bottom: var(--space-4);
 }
 
-/* 筛选与排序两组分段控件：间距比组内的 2px 明显大一档，读起来才是两组而不是一组 */
-.toolbar-filters {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.search-input {
-  width: 280px;
-  max-width: 100%;
-}
-
-.segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--color-fill-disabled);
-  border-radius: var(--radius-md);
-}
-
-.segmented-item {
+.mobile-filter-row :deep(.app-button) {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  padding: 6px 14px;
-  border-radius: 9px;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    box-shadow var(--transition-fast);
+  gap: 6px;
 }
 
-.segmented-item.is-active {
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 600;
-  box-shadow: var(--shadow-sm);
+.filter-badge {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #ffffff;
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-semibold);
 }
 
-.segmented-count {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
+/* Hub 骨架：桌面 280px 侧栏 + 卡片流；<1024px 单列（侧栏变抽屉） */
+.hub-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-lg);
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .hub-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: var(--spacing-xl);
+  }
+
+  .mobile-filter-row {
+    display: none;
+  }
 }
 
 .card-grid {

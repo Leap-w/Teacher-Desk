@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { AppBadge, AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal } from '@/components/ui'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
-import StudentAvatar from './StudentAvatar.vue'
+import StudentProfileHeader from './StudentProfileHeader.vue'
 
 interface Props {
   modelValue: boolean
   student?: Student
+  /** 同名学生数（重名徽章） */
+  duplicateCount?: number
+  /** 重名消歧文案（值日组优先，回落学号后四位） */
+  disambiguator?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   student: undefined,
+  duplicateCount: undefined,
+  disambiguator: undefined,
 })
 
 /** 所在地文案：地区 · 县区；信息缺失显示 — */
@@ -48,22 +54,15 @@ function onRemove() {
 <template>
   <AppModal :model-value="modelValue" title="学生详情" :width="520" @update:model-value="close">
     <div v-if="student" class="detail">
-      <header class="detail-head">
-        <StudentAvatar :name="student.name" size="lg" />
-        <div class="detail-intro">
-          <!-- 档案模块用短名（姓名 + 学号后四位）：座位号已退出本模块的界面（Phase 5A） -->
-          <h3 class="detail-name">{{ formatStudentShortName(student) }}</h3>
-          <div class="detail-badges">
-            <AppBadge v-if="student.cadreRole" variant="primary">{{ student.cadreRole }}</AppBadge>
-            <AppBadge variant="neutral">{{ student.gender === 'male' ? '男' : '女' }}</AppBadge>
-            <AppBadge v-for="tag in student.tags ?? []" :key="tag" variant="neutral">
-              {{ tag }}
-            </AppBadge>
-          </div>
-        </div>
-      </header>
+      <!-- Profile 头：姓名 + 性别 / 班委 / 重名 / 标签 -->
+      <StudentProfileHeader
+        :student="student"
+        :duplicate-count="duplicateCount"
+        :disambiguator="disambiguator"
+      />
+      <p class="detail-formal">档案名 · {{ formatStudentShortName(student) }}</p>
 
-      <!-- CDL Section Card：弹窗内每个信息组一张浅底圆角卡（同 Profile 时间胶囊内卡） -->
+      <!-- 信息分组：每组独立 Card Section（Apple Settings 风） -->
       <section class="detail-card">
         <h4 class="detail-card__title">基本信息</h4>
         <dl class="detail-list">
@@ -78,10 +77,6 @@ function onRemove() {
           <div class="detail-item">
             <dt>联系电话</dt>
             <dd>{{ student.phone || '—' }}</dd>
-          </div>
-          <div class="detail-item detail-item--full">
-            <dt>备注</dt>
-            <dd>{{ student.remark || '—' }}</dd>
           </div>
         </dl>
       </section>
@@ -103,6 +98,24 @@ function onRemove() {
           </div>
         </dl>
       </section>
+
+      <section class="detail-card">
+        <h4 class="detail-card__title">班级信息</h4>
+        <dl class="detail-list">
+          <div class="detail-item">
+            <dt>班委职务</dt>
+            <dd>{{ student.cadreRole || '—' }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>标签</dt>
+            <dd>{{ student.tags?.length ? student.tags.join(' · ') : '—' }}</dd>
+          </div>
+          <div class="detail-item detail-item--full">
+            <dt>备注</dt>
+            <dd>{{ student.remark || '—' }}</dd>
+          </div>
+        </dl>
+      </section>
     </div>
 
     <template #footer>
@@ -113,27 +126,13 @@ function onRemove() {
 </template>
 
 <style scoped>
-.detail-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.detail-name {
-  font-size: var(--font-card-title, 18px);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: -0.2px;
-  color: var(--color-text-primary);
-}
-
-.detail-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
+.detail-formal {
   margin-top: var(--space-2);
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 
-/* CDL Section Card：弹窗内信息组浅底圆角卡（同 Profile time-capsule__stat 内卡做法） */
+/* 信息分组卡：浅底圆角（同 Profile 卡做法），与头部留一行呼吸 */
 .detail-card {
   margin-top: var(--spacing-card);
   padding: var(--spacing-card);

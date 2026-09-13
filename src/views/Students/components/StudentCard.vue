@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { ChevronRight, Ellipsis } from 'lucide-vue-next'
+
 import { AppBadge, AppCard } from '@/components/ui'
 import type { Student } from '@/types'
 import StudentAvatar from './StudentAvatar.vue'
+import StudentCardMeta from './StudentCardMeta.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -9,10 +13,22 @@ const props = withDefaults(
     /** 批量管理模式下卡片可勾选（Phase 5B）：点卡片 = 勾选，而不是打开详情 */
     selectable?: boolean
     selected?: boolean
+    /** 同名学生总数；>1 时显示重名徽章并在姓名后带消歧 */
+    duplicateCount?: number
+    /** 重名消歧文案（值日组优先，回落学号后四位） */
+    disambiguator?: string
+    /** 家庭地区短文案（县区优先） */
+    region?: string
+    /** 值日组名（来自值日 Store，只读展示） */
+    dutyGroup?: string
   }>(),
   {
     selectable: false,
     selected: false,
+    duplicateCount: undefined,
+    disambiguator: undefined,
+    region: undefined,
+    dutyGroup: undefined,
   },
 )
 
@@ -32,23 +48,24 @@ function activate() {
   }
   emit('open', props.student)
 }
+
+/**
+ * 信息优先级（UI-4A 产品规范）：姓名最醒目 → 身份标签 → 辅助信息 → 操作。
+ * 重名徽章只在真正重名时出现，不给大多数卡片添噪。
+ */
+const isDuplicate = computed(() => (props.duplicateCount ?? 1) > 1)
 </script>
 
 <template>
   <AppCard
     class="student-card"
     :class="{ 'is-selectable': selectable, 'is-selected': selected }"
-    :hoverable="!selectable"
+    :hoverable="false"
     :role="selectable ? undefined : 'button'"
     :tabindex="selectable ? undefined : 0"
     @click="activate"
     @keydown.enter="activate"
   >
-    <!--
-      勾选控件放在右上角：左上角是头像，挤在一起会让人分不清点的是哪一个。
-      `@click.stop` 不能省——卡片根元素本身带 `@click`，不拦的话点一下会
-      既勾选（或取消）又触发一次 activate，等于白点。
-    -->
     <label v-if="selectable" class="picker" @click.stop>
       <input
         type="checkbox"
@@ -59,56 +76,83 @@ function activate() {
       />
     </label>
 
+    <!-- 顶部：头像 + 姓名（22px，第一优先级，独占整行） -->
     <div class="card-top">
       <StudentAvatar :name="student.name" />
       <div class="who">
-        <h3 class="name">{{ student.name }}</h3>
+        <h3 class="name">
+          {{ student.name
+          }}<span v-if="isDuplicate && disambiguator" class="name-disamb"
+            >（{{ disambiguator }}）</span
+          >
+        </h3>
         <!-- 学号自 Phase 5A 起可选，空值按 §2.3 显示占位符 -->
-        <p class="meta">{{ student.studentNo || '—' }}</p>
+        <p class="student-no">{{ student.studentNo || '—' }}</p>
       </div>
     </div>
 
-    <!--
-      顺序按「班主任日常要看的先后」排（Phase 5A）：班委先于标签，宿舍与电话垫底。
-      返家范围从卡片上撤下——它是周末统计口径，日常不看，占的是最显眼的位置。
-      不再显示座位号：档案已不维护它，摆在这里的是一个只读不写的值（§2.3）。
-
-      空值规则（Phase 5B 固化）：**身份区用占位符，补充区整块隐藏**——
-      姓名下方的学号是身份的一部分，空着也要说明「这里本该有学号」；
-      而班委 / 标签 / 宿舍 / 电话是补充信息，没有就不占位置。两者混用会让卡片
-      出现大片破折号，信息密度反而下降。
-    -->
-    <div v-if="student.cadreRole || student.tags?.length" class="badges">
-      <AppBadge v-if="student.cadreRole" variant="primary">{{ student.cadreRole }}</AppBadge>
+    <!-- 身份徽章：性别 / 重名 / 班委 / 标签（不与姓名争宽度） -->
+    <div class="badges">
+      <AppBadge :variant="student.gender === 'male' ? 'primary' : 'neutral'">
+        {{ student.gender === 'male' ? '男' : '女' }}
+      </AppBadge>
+      <AppBadge v-if="isDuplicate" variant="warning"> 同名 {{ duplicateCount }} 人 </AppBadge>
+      <AppBadge v-if="student.cadreRole" variant="success">{{ student.cadreRole }}</AppBadge>
       <AppBadge v-for="tag in student.tags ?? []" :key="tag" variant="neutral">{{ tag }}</AppBadge>
     </div>
 
-    <p v-if="student.dormitory" class="line">宿舍 · {{ student.dormitory }}</p>
-    <p v-if="student.phone" class="line">电话 · {{ student.phone }}</p>
+    <!-- 辅助信息：值日组 / 家庭地区 / 宿舍 / 电话（空值整块隐藏） -->
+    <StudentCardMeta
+      :duty-group="dutyGroup"
+      :region="region"
+      :dormitory="student.dormitory"
+      :phone="student.phone"
+    />
+
+    <!-- 底部：查看档案（操作最后）；更多操作预留 -->
+    <div v-if="!selectable" class="card-foot" aria-hidden="true">
+      <span class="foot-label">查看档案</span>
+      <span class="foot-icons">
+        <Ellipsis :size="16" :stroke-width="2" />
+        <ChevronRight :size="16" :stroke-width="2" />
+      </span>
+    </div>
   </AppCard>
 </template>
 
 <style scoped>
-/* 样式一律写在卡片自己这里，不动 AppCard 本体——那是全站共用组件，
-   改它会波及首页、座位图等所有卡片（Phase 5B 的「保持现有布局，不重构组件结构」） */
 .student-card {
   cursor: pointer;
+}
+
+/* Contacts 风 Hover：2px 微抬升 + 克制阴影（UI-1 Motion） */
+@media (hover: hover) {
+  .student-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.student-card {
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    background var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
 }
 
 .student-card.is-selectable {
   position: relative;
 }
 
-/* 选中态。`.is-selected:hover` 这一档不能省：`.app-card:hover` 也在改 box-shadow，
-   同分情况下由样式注入顺序决定胜负，而那是模块图的副产物，不该拿来赌 */
 .student-card.is-selected,
 .student-card.is-selected:hover {
   background: var(--color-primary-soft);
   border-color: var(--color-primary);
   box-shadow: var(--ring-focus);
+  transform: none;
 }
 
-/* 按下时轻微下沉：AppCard 的 transition 早就为 transform 留了位置，一直没人用 */
 .student-card:active {
   transform: translateY(1px);
 }
@@ -137,22 +181,42 @@ function activate() {
 
 .card-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
 }
 
+.who {
+  flex: 1;
+  min-width: 0;
+}
+
 .name {
-  font-size: var(--text-md);
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: var(--leading-tight);
+  color: var(--color-text-primary);
+  /* 姓名是第一信息优先级：放不下时换行（最多两行），绝不把姓名截成「旦…」 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-.meta {
-  margin-top: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+.name-disamb {
+  font-size: var(--font-secondary);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-tertiary);
 }
 
-/* 标签多了会自动换行：`.badges` 已是 flex + wrap，无需为「多标签」单独写规则 */
+.student-no {
+  margin-top: 2px;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
 .badges {
   display: flex;
   flex-wrap: wrap;
@@ -161,19 +225,28 @@ function activate() {
   margin-top: var(--space-3);
 }
 
-/* 单个标签过长时不撑破卡片。AppBadge 自带的 `white-space: nowrap` 在这里要放开，
-   否则长标签不会换行、只会溢出卡片边界 */
 .badges :deep(.app-badge) {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
 }
 
-/* 统一走 --space-3。原先这里靠 `.badges + .line` 兜第一个 .line 的上边距，
-   那条相邻兄弟选择器只在「宿舍非空」时成立，宿舍空而电话有时就会少一档间距 */
-.line {
+/* 底部操作暗示：轻到不与信息争层级 */
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-top: var(--space-3);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  padding-top: var(--space-3);
+  border-top: var(--border-hairline-width) solid var(--color-border-divider);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-caption);
+}
+
+.foot-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  opacity: 0.7;
 }
 </style>
