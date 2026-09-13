@@ -223,7 +223,7 @@ function onBlur() {
   gap: var(--space-2);
   width: 100%;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   background: transparent;
   padding: 6px 8px;
   font-size: var(--text-sm);

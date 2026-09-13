@@ -67,8 +67,9 @@
   --color-text: #101820; /* TeacherDesk 兼容别名 → 主文字 */
   --color-text-primary: #101820;
   --color-text-secondary: #5f6f71;
-  --color-text-faint: #8c9a9b; /* TeacherDesk 兼容别名 → 辅助文字 */
-  --color-text-tertiary: #8c9a9b;
+  /* Polish-1 对比度修正：tertiary/faint 在 #F8FAFB 上分别 ≥4.5:1 / ≥3.8:1 */
+  --color-text-faint: #7d8d8f;
+  --color-text-tertiary: #67767a;
   --color-text-disabled: #b3bdc0; /* 禁用态文字（UI-1 新增） */
   --color-text-inverse: #ffffff;
 
@@ -123,6 +124,12 @@
   --font-h2: var(--font-section-title); /* 分区标题 */
   --font-h3: var(--font-card-title); /* 卡片标题 */
   --font-body: var(--font-content); /* 正文 */
+  /* Polish-1：展示级数字刻度（统计卡/课程大字/Hero 数字）——页面禁止再手写 22–34px */
+  --font-num-sm: 26px;
+  --font-num-md: 28px;
+  --font-num-lg: 30px;
+  --font-num-xl: 32px;
+  --font-num-2xl: 34px;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
@@ -182,6 +189,7 @@
   /* ========== 13. 焦点 / 遮罩 / 层级 ========== */
   --ring-focus: 0 0 0 3px rgba(75, 143, 140, 0.2);
   --ring-danger: 0 0 0 3px rgba(194, 103, 106, 0.16);
+  --ring-warning-soft: 0 0 0 2px var(--color-warning-soft); /* Polish-1：卡片警示描边环 */
   --overlay-scrim: rgba(16, 24, 32, 0.3);
   --z-content: 1;
   --z-dropdown: 100;

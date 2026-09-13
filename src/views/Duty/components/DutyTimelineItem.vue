@@ -90,7 +90,7 @@ defineProps<{
   padding: 1px 8px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   font-size: var(--font-caption);
   font-weight: var(--font-weight-semibold);
 }

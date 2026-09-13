@@ -6,6 +6,26 @@
 
 ---
 
+## v2.1.1-beta —— Phase Polish-1 · 全站巡检与体验收官（产品级 Beta 基线）（2026-09-14，tag `v2.1.1-beta`）
+
+> 不新增业务功能，不改数据结构。全站 Design / UX / Component / Responsive / Accessibility 五类巡检 + 修复。详见开发手册 **§9.49**。
+
+### 巡检修复（47 文件）
+
+- **Color**：`.vue` 内 23 处 `#ffffff`、`#1f343a`、`rgba(255,159,10,.55)` 全部 Token 化（`--color-text-inverse` / `--bg-card` / `color-mix`）——页面层硬编码颜色归零（theme.css 令牌定义除外）。
+- **Radius**：19 处 `999px` → `--radius-full`；8 处离刻度值（7/8/9/16px）对齐五值刻度。
+- **Typography**：新增展示级数字刻度 `--font-num-sm/md/lg/xl/2xl`（26–34px），统计卡/课程大字/Hero 共 15 处手写字号收编；卡片标题 22px 统一 `--text-xl`；字重 700/800 → 600 令牌（12 文件）。
+- **Contrast（A11y）**：辅助文字 `--color-text-tertiary` `#8c9a9b`（2.8:1）加深到 `#67767a`（4.5:1），faint 相应调至 `#7d8d8f`。
+- **A11y**：4 处裸露装饰图标补 `aria-hidden`（GitHub/搜索/展开箭头/完成勾）。
+- **PWA**：manifest `background_color` 与 `--bg-page` 对齐（#F8FAFB）。
+- **Bug 修复**：首页班级动态「今日值日」组员渲染 `[object Object]` → 正确显示成员姓名。
+
+### 回归
+
+9 路由 × 3 尺寸（1440/768/390）= **27/27 零横向滚动** + 关键元素在位；336 测试全绿。
+
+---
+
 ## v2.1.0-beta —— Phase UI-5C · Profile Hub 控制中心（Work Hub 收官 · 首个 Beta）（2026-09-13，tag `v2.1.0-beta`）
 
 > 只升级 UI 与信息架构；用户 Store / 头像上传 / 资料编辑 / 设置表单 / 工具箱 / 同步与备份逻辑 **零改动**。详见开发手册 **§9.48**。

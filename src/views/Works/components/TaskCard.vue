@@ -41,7 +41,12 @@ function priorityVariant(priority: WorkItem['priority']): 'neutral' | 'warning' 
       :aria-label="props.work.status === 'done' ? '取消完成' : '标记完成'"
       @click="emit('toggle', props.work)"
     >
-      <Check v-if="props.work.status === 'done'" class="task-check-icon" :stroke-width="2.4" />
+      <Check
+        v-if="props.work.status === 'done'"
+        class="task-check-icon"
+        :stroke-width="2.4"
+        aria-hidden="true"
+      />
     </button>
 
     <div class="task-main">
@@ -115,7 +120,7 @@ function priorityVariant(priority: WorkItem['priority']): 'neutral' | 'warning' 
   border: 1.5px solid var(--color-border-strong);
   border-radius: 50%;
   background: transparent;
-  color: #ffffff;
+  color: var(--color-text-inverse);
   cursor: pointer;
   transition:
     background var(--duration-base) var(--ease-out),

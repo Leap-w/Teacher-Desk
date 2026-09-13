@@ -219,7 +219,7 @@ function close() {
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   cursor: pointer;

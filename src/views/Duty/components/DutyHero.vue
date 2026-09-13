@@ -125,7 +125,7 @@ const hasGroup = () => Boolean(props.group)
 
 .hero-group {
   margin-top: var(--space-2);
-  font-size: 30px;
+  font-size: var(--font-num-lg);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
   line-height: var(--leading-tight);

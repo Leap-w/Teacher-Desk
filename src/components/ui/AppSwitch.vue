@@ -63,7 +63,7 @@ const emit = defineEmits<{
   flex-shrink: 0;
   width: 34px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-border-strong);
   transition: background var(--transition-fast);
 }
@@ -79,7 +79,7 @@ const emit = defineEmits<{
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--bg-card);
   transition: transform var(--transition-fast);
 }
 

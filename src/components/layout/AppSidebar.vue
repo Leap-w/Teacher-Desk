@@ -141,7 +141,12 @@ function onPrimaryClick(item: PrimaryItem): void {
             >
               <component :is="item.icon" class="side-item__icon" :size="18" :stroke-width="2" />
               <span class="side-item__label">{{ item.label }}</span>
-              <ChevronDown class="side-item__chevron" :size="16" :stroke-width="2" />
+              <ChevronDown
+                class="side-item__chevron"
+                :size="16"
+                :stroke-width="2"
+                aria-hidden="true"
+              />
             </button>
 
             <div class="side-sub" :class="{ 'is-expanded': expanded[item.path] }">

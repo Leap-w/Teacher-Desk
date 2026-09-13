@@ -370,7 +370,7 @@ function close(): void {
 .report-badge {
   flex-shrink: 0;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-weight: 600;
 }
 
@@ -414,7 +414,7 @@ function close(): void {
   border: none;
   background: transparent;
   padding: 6px 14px;
-  border-radius: 9px;
+  border-radius: var(--radius-xs);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -560,7 +560,7 @@ function close(): void {
 .mark {
   flex-shrink: 0;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-weight: 600;
 }
 

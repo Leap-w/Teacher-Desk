@@ -104,7 +104,7 @@ withDefaults(
 /* 对比变化高亮 = 琥珀描边（先于选中态声明，选中环仍可覆盖） */
 .seat.is-changed {
   border-color: var(--color-warning-strong);
-  box-shadow: 0 0 0 2px var(--color-warning-soft);
+  box-shadow: var(--ring-warning-soft);
 }
 
 /* 定位闪烁（3 次约 1.5s，父级定时清类以支持重放） */
@@ -121,7 +121,7 @@ withDefaults(
 
   45% {
     border-color: var(--color-warning-strong);
-    box-shadow: 0 0 0 3px rgba(255, 159, 10, 0.55);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-warning) 55%, transparent);
   }
 }
 

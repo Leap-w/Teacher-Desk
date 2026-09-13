@@ -49,7 +49,7 @@ defineProps<{
 }
 
 .profile-name {
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.01em;
   line-height: var(--leading-tight);

@@ -23,7 +23,7 @@ withDefaults(defineProps<Props>(), {
   border-radius: 50%;
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
 }
 
 .is-md {

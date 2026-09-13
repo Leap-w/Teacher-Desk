@@ -23,7 +23,7 @@ withDefaults(defineProps<Props>(), {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;

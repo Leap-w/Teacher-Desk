@@ -589,7 +589,7 @@ function checkUpdate(): void {
   width: 88px;
   height: 52px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   display: block;
 }
 

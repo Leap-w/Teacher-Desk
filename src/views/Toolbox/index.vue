@@ -755,7 +755,7 @@ onMounted(() => {
 
 .page-title {
   font-size: var(--text-xl);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.3px;
 }
 

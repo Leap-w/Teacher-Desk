@@ -382,7 +382,7 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
   border: none;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   font-size: var(--font-secondary);
   font-weight: var(--font-weight-semibold);
   box-shadow: var(--shadow-lg);

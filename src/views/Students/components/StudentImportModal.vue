@@ -377,7 +377,7 @@ function close(): void {
 
 .stat-value {
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 
@@ -472,7 +472,7 @@ function close(): void {
 .status {
   display: inline-block;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-weight: 600;
 }
 

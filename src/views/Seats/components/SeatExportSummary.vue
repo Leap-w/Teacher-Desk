@@ -46,7 +46,7 @@ defineProps<Props>()
 .ex-summary {
   width: 620px;
   padding: 14px 18px 16px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--color-text);
 }
 
@@ -59,7 +59,7 @@ defineProps<Props>()
 .ex-title {
   margin: 0;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 2px;
 }
 
@@ -79,7 +79,7 @@ defineProps<Props>()
 
 .ex-entry {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   background: var(--color-fill-disabled);
 }
 

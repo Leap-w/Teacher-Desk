@@ -9,7 +9,7 @@ import pkg from './package.json' with { type: 'json' }
 export default defineConfig({
   // 页脚/关于页显示的应用版本：随 package.json 单一来源走，不再手工同步
   define: {
-    __APP_VERSION__: JSON.stringify(`v${pkg.version}`),
+    'import.meta.env.APP_VERSION': JSON.stringify(`v${pkg.version}`),
   },
   plugins: [
     vue(),
@@ -26,7 +26,7 @@ export default defineConfig({
         start_url: '/',
         display: 'standalone',
         theme_color: '#2F8F83',
-        background_color: '#F6F8F9',
+        background_color: '#F8FAFB', /* 与 --bg-page 一致（Polish-1 对齐） */
         // 官方图标（docs/图标.png）等比导出，见 public/icons/；maskable 版带 80% 安全区留白
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

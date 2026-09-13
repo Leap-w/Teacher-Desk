@@ -177,7 +177,7 @@ function swapAt(weekday: Weekday, periodId: CoursePeriodId): CourseExchange | un
 
 .grid-today-tag {
   padding: 1px var(--space-1);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   font-size: 10px;
   font-weight: 600;

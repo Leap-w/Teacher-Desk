@@ -108,7 +108,7 @@ defineProps<{
 
 .next-course__subject {
   margin-top: var(--space-2);
-  font-size: 34px;
+  font-size: var(--font-num-2xl);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
   line-height: var(--leading-tight);
@@ -116,7 +116,7 @@ defineProps<{
 }
 
 .next-course__subject--soft {
-  font-size: 26px;
+  font-size: var(--font-num-sm);
   color: var(--color-text-secondary);
 }
 

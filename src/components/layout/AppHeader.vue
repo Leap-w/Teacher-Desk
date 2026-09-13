@@ -91,7 +91,7 @@ async function onSync(): Promise<void> {
 
       <div class="app-header__right">
         <button type="button" class="icon-btn" aria-label="搜索（即将上线）" @click="onSearch">
-          <Search :size="18" :stroke-width="2" />
+          <Search :size="18" :stroke-width="2" aria-hidden="true" />
         </button>
 
         <button
@@ -291,8 +291,8 @@ async function onSync(): Promise<void> {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, var(--color-primary), var(--color-sky));
-  color: #ffffff;
-  font-size: 15px;
+  color: var(--color-text-inverse);
+  font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
 }
 

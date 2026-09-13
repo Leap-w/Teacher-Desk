@@ -59,7 +59,7 @@ const emit = defineEmits<{
 
 .group-name {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
 }
 

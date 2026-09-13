@@ -57,7 +57,7 @@ defineProps<{
 }
 
 .stat-value {
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;

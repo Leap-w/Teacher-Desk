@@ -119,7 +119,10 @@ const classEvents = computed(() => {
       icon: Paintbrush,
       tone: 'primary',
       title: `今日值日 · ${dutyStore.todayGroup.name}`,
-      desc: members.length > 0 ? members.join(' · ') : '组员待安排',
+      desc:
+        members.length > 0
+          ? members.map((member) => member.name).join(' · ')
+          : '组员待安排',
     })
   } else if (dutyNeedsSetup.value) {
     events.push({

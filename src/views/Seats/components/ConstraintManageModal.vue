@@ -157,7 +157,7 @@ function close() {
   font-weight: 600;
   color: var(--color-primary-strong);
   background: var(--color-primary-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 2px 8px;
 }
 
@@ -195,7 +195,7 @@ function close() {
   width: 34px;
   height: 20px;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-border-strong);
   cursor: pointer;
   padding: 0;
@@ -213,7 +213,7 @@ function close() {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--bg-card);
   transition: transform var(--transition-fast);
 }
 

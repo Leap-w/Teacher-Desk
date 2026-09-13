@@ -132,10 +132,14 @@ const subjectLine = computed(() => `${props.profile.subject} · 教师`)
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(145deg, #1f343a, var(--color-primary-dark));
-  font-size: 32px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--color-primary-dark) 82%, var(--color-text-primary)),
+    var(--color-primary-dark)
+  );
+  font-size: var(--font-num-xl);
   font-weight: var(--font-weight-semibold);
-  color: #ffffff;
+  color: var(--color-text-inverse);
 }
 
 .avatar-remove {
@@ -150,7 +154,7 @@ const subjectLine = computed(() => `${props.profile.subject} · 教师`)
   border: none;
   border-radius: 50%;
   background: var(--color-danger);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
 }

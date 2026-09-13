@@ -68,7 +68,7 @@ const appVersion = import.meta.env.APP_VERSION
 .about-card__logo {
   width: 48px;
   height: 48px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   display: block;
   object-fit: cover;
   box-shadow: var(--shadow-sm);

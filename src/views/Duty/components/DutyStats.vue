@@ -132,7 +132,7 @@ const CARDS = [
 }
 
 .stat-card__value {
-  font-size: 28px;
+  font-size: var(--font-num-md);
   font-weight: var(--font-weight-semibold);
   line-height: 1.1;
   letter-spacing: -0.02em;

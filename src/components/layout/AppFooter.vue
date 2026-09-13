@@ -38,7 +38,7 @@ const syncText = computed(() => (enabled.value ? statusView.value.text : '本地
           rel="noopener noreferrer"
           aria-label="GitHub 仓库"
         >
-          <Github :size="14" :stroke-width="2" />
+          <Github :size="14" :stroke-width="2" aria-hidden="true" />
         </a>
       </div>
     </div>

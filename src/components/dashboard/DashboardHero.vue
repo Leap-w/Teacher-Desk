@@ -65,7 +65,7 @@ onMounted(() => {
 }
 
 .dash-hero__greeting {
-  font-size: 32px;
+  font-size: var(--font-num-xl);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
   line-height: var(--leading-tight);

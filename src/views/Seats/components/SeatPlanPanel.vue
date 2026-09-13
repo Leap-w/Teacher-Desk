@@ -248,7 +248,7 @@ function submitRename(planId: string, event?: KeyboardEvent) {
 /* 行内轻量操作按钮（惯例同 segmented 自定义按钮） */
 .plan-link {
   border: none;
-  border-radius: 7px;
+  border-radius: var(--radius-xs);
   background: transparent;
   padding: 4px 8px;
   font-size: var(--text-sm);

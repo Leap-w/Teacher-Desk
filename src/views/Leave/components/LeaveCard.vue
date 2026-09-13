@@ -110,7 +110,7 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
 /* 校外中：强调描边（信息优先级最高，不是按钮感） */
 .leave-card.is-emphasized {
   border-color: var(--color-warning);
-  box-shadow: 0 0 0 2px var(--color-warning-soft);
+  box-shadow: var(--ring-warning-soft);
 }
 
 @media (hover: hover) {
@@ -138,7 +138,7 @@ const canRegisterBack = computed(() => Boolean(props.record.leftSchool))
 }
 
 .student-name {
-  font-size: 22px;
+  font-size: var(--text-xl);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.01em;
   line-height: var(--leading-tight);

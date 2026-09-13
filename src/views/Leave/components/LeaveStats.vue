@@ -25,10 +25,28 @@ defineProps<{
 }>()
 
 const CARDS = [
-  { key: 'todayCount', label: '今日请假', icon: UsersRound, hint: '时段与今天相交', tone: 'default' },
+  {
+    key: 'todayCount',
+    label: '今日请假',
+    icon: UsersRound,
+    hint: '时段与今天相交',
+    tone: 'default',
+  },
   { key: 'outCount', label: '校外未返校', icon: UserMinus, hint: '需要登记返校', tone: 'alert' },
-  { key: 'backTodayCount', label: '今日返校', icon: UserPlus, hint: '今天登记返校', tone: 'default' },
-  { key: 'weekCount', label: '本周累计', icon: CalendarDays, hint: '本周请假人次', tone: 'default' },
+  {
+    key: 'backTodayCount',
+    label: '今日返校',
+    icon: UserPlus,
+    hint: '今天登记返校',
+    tone: 'default',
+  },
+  {
+    key: 'weekCount',
+    label: '本周累计',
+    icon: CalendarDays,
+    hint: '本周请假人次',
+    tone: 'default',
+  },
 ] as const
 </script>
 
@@ -108,7 +126,7 @@ const CARDS = [
 }
 
 .stat-card__value {
-  font-size: 28px;
+  font-size: var(--font-num-md);
   font-weight: var(--font-weight-semibold);
   line-height: 1.1;
   letter-spacing: -0.02em;

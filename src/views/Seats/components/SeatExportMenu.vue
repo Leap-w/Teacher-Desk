@@ -99,7 +99,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: none;
   border-radius: var(--radius-button);
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -131,7 +131,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   width: 14px;
   height: 14px;
   border: 2px solid rgba(255, 255, 255, 0.35);
-  border-top-color: #ffffff;
+  border-top-color: var(--color-text-inverse);
   border-radius: 50%;
   animation: export-spin 0.7s linear infinite;
 }

@@ -179,7 +179,7 @@ onBeforeUnmount(() => {
 
 .drawer-title {
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: -0.2px;
 }
 

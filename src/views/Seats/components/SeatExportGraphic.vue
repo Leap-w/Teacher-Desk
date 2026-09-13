@@ -131,7 +131,7 @@ function rowUnits(row: number): RowUnit[] {
 .ex-graphic {
   width: fit-content;
   padding: 0 0 12px;
-  background: #fff;
+  background: var(--bg-card);
   color: var(--color-text);
 }
 
@@ -145,7 +145,7 @@ function rowUnits(row: number): RowUnit[] {
 .ex-title {
   margin: 0;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   letter-spacing: 2px;
   color: var(--color-text);
 }
@@ -182,7 +182,7 @@ function rowUnits(row: number): RowUnit[] {
   display: inline-block;
   width: 16px;
   height: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
 .ex-swatch.is-cadre {
@@ -230,7 +230,7 @@ function rowUnits(row: number): RowUnit[] {
   content: '';
   flex: 1;
   width: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-border-strong);
 }
 
@@ -266,7 +266,7 @@ function rowUnits(row: number): RowUnit[] {
   top: 1px;
   padding: 1px 8px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-surface);
   font-size: 10px;
   color: var(--color-text-secondary);
@@ -314,7 +314,7 @@ function rowUnits(row: number): RowUnit[] {
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: var(--color-fill-disabled);
 }
 
@@ -334,7 +334,7 @@ function rowUnits(row: number): RowUnit[] {
   width: 50px;
   height: 52px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: var(--color-surface);
   overflow: hidden;
 }
@@ -408,6 +408,6 @@ function rowUnits(row: number): RowUnit[] {
 
 .ex-seat.is-cadre .ex-avatar {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-text-inverse);
 }
 </style>

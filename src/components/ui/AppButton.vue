@@ -85,7 +85,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .is-primary {
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   box-shadow: var(--shadow-primary-glow);
 }
 
@@ -118,7 +118,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 
 .is-danger {
   background: var(--color-danger);
-  color: #ffffff;
+  color: var(--color-text-inverse);
   box-shadow: var(--shadow-danger-glow);
 }
 
@@ -138,7 +138,7 @@ const isDisabled = computed(() => props.disabled || props.loading)
 .is-primary .spinner,
 .is-danger .spinner {
   border-color: rgba(255, 255, 255, 0.35);
-  border-top-color: #ffffff;
+  border-top-color: var(--color-text-inverse);
 }
 
 @keyframes spin {

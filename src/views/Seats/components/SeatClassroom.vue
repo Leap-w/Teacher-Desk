@@ -465,7 +465,7 @@ defineExpose({ revealSeat, openQuickCard })
 .windows-bar {
   flex: 1;
   width: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-border-strong);
 }
 
@@ -508,7 +508,7 @@ defineExpose({ revealSeat, openQuickCard })
 
 .podium-name {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-primary-strong);
 }
 
@@ -530,7 +530,7 @@ defineExpose({ revealSeat, openQuickCard })
   top: 0;
   padding: 2px 10px;
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
   font-size: var(--text-xs);
@@ -590,7 +590,7 @@ defineExpose({ revealSeat, openQuickCard })
   gap: 6px;
   padding: 4px 10px 4px 4px;
   border: 1px solid var(--color-primary);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: var(--color-surface);
   box-shadow: var(--shadow-md);
   pointer-events: none;
@@ -609,7 +609,7 @@ defineExpose({ revealSeat, openQuickCard })
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
 }
 
 .drag-ghost-name {

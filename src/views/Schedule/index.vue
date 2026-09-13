@@ -510,7 +510,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
 .weekday-tab.is-active {
   background: var(--color-primary);
   border-color: transparent;
-  color: #ffffff;
+  color: var(--color-text-inverse);
 }
 
 .weekday-tab:focus-visible {
@@ -529,7 +529,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
 }
 
 .weekday-tab.is-active .tab-dot {
-  background: #ffffff;
+  background: var(--bg-card);
 }
 
 .confirm-text {

@@ -169,7 +169,7 @@ onBeforeUnmount(() => {
 
 .quick-name {
   font-size: var(--text-md);
-  font-weight: 700;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
   font-size: var(--text-xs);
   color: var(--color-primary-strong);
   background: var(--color-primary-soft);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 2px 8px;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -113,7 +113,7 @@ const fmtDate = (iso: string) => {
 }
 
 .wt-num__value {
-  font-size: 30px;
+  font-size: var(--font-num-lg);
   font-weight: var(--font-weight-semibold);
   line-height: 1.1;
   color: var(--color-primary-strong);

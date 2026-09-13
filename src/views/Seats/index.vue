@@ -1186,7 +1186,7 @@ async function runCompareExport() {
 .swatch {
   width: 18px;
   height: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
 }
 
 .swatch.is-dot {
