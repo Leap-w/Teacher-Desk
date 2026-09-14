@@ -29,28 +29,35 @@ describe('cellText：单元格 → 文本', () => {
     expect(cellText(Number.POSITIVE_INFINITY)).toBe('')
   })
 
-  it('4. 日期取**本地日历日**，不是 UTC 那一天（东八区本地零点不许退回前一天）', () => {
-    // 本地零点（东八区 = UTC 前一天 16:00）：若用 toISOString().slice(0,10) 会得到 09-13
+  it('4. 日期取**本地日历日**（不是 UTC 那一天）——用本地字段断言，与测机时区无关', () => {
+    // 本地零点（测试时区固定 Asia/Shanghai，见 vitest.config.ts；UTC 口径会算成 09-13）
     const localMidnight = new Date(2026, 8, 14, 0, 0, 0)
     expect(cellText(localMidnight)).toBe('2026-09-14')
-    expect(cellText(localMidnight)).not.toBe(localMidnight.toISOString().slice(0, 10))
-
-    // 本地 23:59 同理不能变成第二天
+    // 本地当日 23:59 也不能顺延成第二天
     expect(cellText(new Date(2026, 8, 14, 23, 59, 59))).toBe('2026-09-14')
     // 跨月 / 补零
     expect(cellText(new Date(2026, 0, 5))).toBe('2026-01-05')
   })
+
+  it('5. 实现必须走本地日历日（源码级守约：不许再退回 toISOString 的 UTC 口径）', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('src/services/sheetCell.ts', 'utf8')
+    // 注释里会提到 toISOString（说明为什么不用它），所以只检查**代码**
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).toContain('formatDateKey')
+    expect(code).not.toContain('toISOString')
+  })
 })
 
 describe('normalizeHeader：表头归一', () => {
-  it('5. 去掉「（必填）」这类后缀说明与全部空白（含全角括号、方括号）', () => {
+  it('6. 去掉「（必填）」这类后缀说明与全部空白（含全角括号、方括号）', () => {
     expect(normalizeHeader('学号（必填）')).toBe('学号')
     expect(normalizeHeader('姓名 (选填)')).toBe('姓名')
     expect(normalizeHeader('【行】')).toBe('行')
     expect(normalizeHeader(' 姓 名 ')).toBe('姓名')
   })
 
-  it('6. 没有后缀时保持原样（归一不该改变普通表头）', () => {
+  it('7. 没有后缀时保持原样（归一不该改变普通表头）', () => {
     expect(normalizeHeader('座位行')).toBe('座位行')
     expect(normalizeHeader('')).toBe('')
   })
@@ -59,18 +66,18 @@ describe('normalizeHeader：表头归一', () => {
 describe('isBlankRow：全空行判定', () => {
   const map = { name: 0, gender: 1, note: -1 }
 
-  it('7. 本模块关心的列全空 → 空行（Excel 到处都留这种尾行）', () => {
+  it('8. 本模块关心的列全空 → 空行（Excel 到处都留这种尾行）', () => {
     expect(isBlankRow([], map)).toBe(true)
     expect(isBlankRow(['', '   '], map)).toBe(true)
     expect(isBlankRow([null, undefined], map)).toBe(true)
   })
 
-  it('8. 关心的列里有内容 → 不是空行', () => {
+  it('9. 关心的列里有内容 → 不是空行', () => {
     expect(isBlankRow(['李明', ''], map)).toBe(false)
     expect(isBlankRow(['', '男'], map)).toBe(false)
   })
 
-  it('9. 下标为 -1 的列（表里没有这一列）不参与判定', () => {
+  it('10. 下标为 -1 的列（表里没有这一列）不参与判定', () => {
     // note 那列不存在；只有第 3 列有内容 → 关心的两列都空 → 仍算空行
     expect(isBlankRow(['', '', '随便写的备注'], map)).toBe(true)
   })

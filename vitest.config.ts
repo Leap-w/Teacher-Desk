@@ -24,5 +24,14 @@ export default defineConfig({
   test: {
     // 只跑 `src/` 下的自检文件：`dist/`、工作树副本都不在范围内（与 eslint 的 ignores 同一口径）
     include: ['src/**/*.test.ts'],
+    /**
+     * **测试时区固定为 Asia/Shanghai**（V3.0.0 起）。
+     *
+     * 为什么必须固定：TeacherDesk 的「今天」是**本地日历日**（`utils/date.ts` 的 formatDateKey
+     * 就是为它存在，`toISOString` 的 UTC 口径会让东八区凌晨算成前一天）。测试跟着跑测机的时区
+     * 走，就会出现「本机（东八区）全绿、CI（UTC）红线」这种最难查的分歧——v3.0.0 交付时真的
+     * 撞上了一次。固定成使用地时区后，本机与 CI 的判定完全一致，跨时区的口径也有断言守着。
+     */
+    env: { TZ: 'Asia/Shanghai' },
   },
 })

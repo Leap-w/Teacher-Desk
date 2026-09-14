@@ -22,7 +22,8 @@ npm run build
 - [ ] `prettier --check` 无输出（有输出就 `npx prettier --write .` 后重跑）
 - [ ] `eslint` 零 error
 - [ ] `vue-tsc` 零 error（**注意**：`declare const` 在模板表达式里不可见，全局常量走 `import.meta.env`）
-- [ ] `npm run test` 全绿（当前 **553** 条）
+- [ ] `npm run test` 全绿（当前 **554** 条）
+- [ ] 测试时区已固定（`vitest.config.ts` 的 `env.TZ`）——不得依赖测机时区，否则本机绿、CI 红
 - [ ] `npm run build` 成功，且 `dist/` 里没有上次的旧产物（先 `rm -rf dist`）
 
 ## 1. 版本与文档一致性
@@ -185,7 +186,7 @@ node /tmp/td-runtime.cjs
 | 返回入口        | 「返回工作台」在位，点击回到工作台                                                                                                 |
 | Excel 座位导入  | 真喂一份 xlsx：3 行全部识别（含两名重名按学号匹配）→ 确认 → 提示「导入完成：3 个座位，3 名学生换位」→ 弹窗关闭 → 座位真的写入      |
 | 性能            | 路由标题可见 214–591ms；学生搜索 11ms（6→1 张卡）；点名 1 秒内刷新 **67 帧**；计时器每秒稳定 −1s                                   |
-| 自检            | **553 条**全绿（v3.0.0 新增 sheetCell 用例 9 条）；prettier / eslint / vue-tsc / build 全绿                                        |
+| 自检            | **554 条**全绿（v3.0.0 新增 sheetCell 用例 9 条）；prettier / eslint / vue-tsc / build 全绿                                        |
 | CI              | `.github/workflows/ci.yml` 在 push / PR / tag 上跑同一条链                                                                         |
 
 **未覆盖（如实说明）**：真实 CloudBase 环境下的端到端同步未在本次验证中跑（需要线上账号与网络），
