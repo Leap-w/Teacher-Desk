@@ -5,10 +5,8 @@ import { AppButton, AppCard, AppField, AppInput, AppModal } from '@/components/u
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
-import { signInAndSync, signOutAndStop } from '@/services/cloudSync'
-import type { ConflictChoice } from '@/services/cloudSync'
-import { localStoragePort } from '@/services/storage'
-import { broadcastReload } from '@/services/sync'
+import type { ConflictChoice } from '@/composables/useCloudSync'
+import { useBackup } from '@/composables/useBackup'
 import {
   LAST_BACKUP_KEY,
   LEGACY_CLEAR_MODULES,
@@ -47,7 +45,7 @@ const NOTICE_KEY = `${appConfig.storageKeyPrefix}:notice`
  * 的唯一出口），本页只借用——读不到（隐私模式等）不是错误，按「没有数据」处理；
  * 写失败必须让调用方知道，故它不吞异常——由 utils/backup.ts 整批回滚。
  */
-const storage = localStoragePort
+const storage = useBackup()
 
 function readAll() {
   return readModules((key) => storage.read(key))
@@ -123,6 +121,8 @@ const {
   lastSyncedText: cloudLastSyncedText,
   syncWithFeedback,
   resolveConflict,
+  signIn,
+  signOut,
 } = useCloudSync()
 
 /**
@@ -171,7 +171,7 @@ async function submitCloudLogin(): Promise<void> {
   if (!cloudReady.value) return
   cloudBusy.value = true
   try {
-    await signInAndSync(cloudUsername.value.trim(), cloudPassword.value)
+    await signIn(cloudUsername.value.trim(), cloudPassword.value)
     cloudPassword.value = ''
     // 「登录本身成了」与「数据对上了」是两件事，不能混成一句话报出去：集合没建、权限
     // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
@@ -198,7 +198,7 @@ async function submitCloudLogin(): Promise<void> {
 async function doCloudSignOut(): Promise<void> {
   cloudBusy.value = true
   try {
-    await signOutAndStop()
+    await signOut()
     cloudPassword.value = ''
     toast.info('已退出登录。本机数据还在，只是不再往云上同步。')
   } catch (error) {
@@ -219,7 +219,7 @@ async function doCloudSignOut(): Promise<void> {
  * ——那正是技术债 #2 的另一半。
  */
 function finish(notice: string): void {
-  broadcastReload()
+  storage.reloadPeers()
   setNotice(notice)
   try {
     window.location.reload()

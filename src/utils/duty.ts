@@ -7,7 +7,6 @@ import {
 } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { isPlainObject } from '@/utils/object'
-import { WEEKDAY_LABELS } from '@/utils/timetable'
 import type { DutyGroup, DutyRecord, DutySettings } from '@/types/duty'
 import type { Weekday } from '@/types/timetable'
 
@@ -227,26 +226,6 @@ export function dutyTodayState(
   if (options.weekendSkipped) return 'weekend-skipped'
   return 'no-groups'
 }
-
-/**
- * 「接下来谁值日」：`days` 里**今天之后**第一个有组的日子（今天由调用方自己说，不在这里重复）。
- * 今日值日卡片与班级概况卡片共用一处——各写一遍就会在「今天本身算不算下一次」
- * 「不值日的日子跳过没有」这些边界上分叉（§11.1）。
- */
-export function nextDutyDay(days: DutyDay[], todayKey: string): DutyDay | undefined {
-  return days.find((day) => day.dateKey !== todayKey && day.group)
-}
-
-/**
- * 某一天值日的说法，如「明天由「第 1 组」值日」；没有这一天（或那天不值日）时返回空串。
- * 紧挨着的 tomorrow 说「明天」、其余日子说星期几——教师看这两张卡片时最省事的说法。
- */
-export function describeDutyDay(day: DutyDay | undefined, todayKey: string): string {
-  if (!day || !day.group) return ''
-  const when = day.dateKey === addDaysToDateKey(todayKey, 1) ? '明天' : WEEKDAY_LABELS[day.weekday]
-  return `${when}由「${day.group.name}」值日`
-}
-
 /**
  * 轮换设置的展示文案（设置面板与工作台卡片共用一处，避免两处各写一句、口径分叉）。
  * 起点未设置或没有组时给出「还没排班」的说法，不编造日期。

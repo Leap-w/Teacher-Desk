@@ -100,12 +100,6 @@ export const LESSON_TYPE_LABELS: Record<LessonType, string> = {
   substitute: '代课',
   adjusted: '调课',
 }
-
-/** 课程类型的可展示标记（normal 不显示徽标，返回 undefined） */
-export function lessonTypeBadgeText(type: LessonType): string | undefined {
-  return type === 'normal' ? undefined : LESSON_TYPE_LABELS[type]
-}
-
 /* ========== 班级 / 日期 ========== */
 
 /**
@@ -172,21 +166,6 @@ export function weekendWeekdaysOf(lessons: Lesson[]): Weekday[] {
 export function eveningGroupIdOf(weekday: Weekday, classId: string, subject: string): string {
   return `evening-${weekday}-${classId}-${subject}`
 }
-
-/**
- * 判定一名学生的三节晚自习是否构成「同一组」：
- * 三节齐备且科目 / 班级一致（用于导入批量分配 groupId，以及界面上提示「同一组晚自习」）。
- */
-export function isSameEveningGroup(lessons: readonly Lesson[]): boolean {
-  if (lessons.length !== EVENING_PERIOD_IDS.length) return false
-  const ids = new Set(lessons.map((lesson) => lesson.periodId))
-  if (EVENING_PERIOD_IDS.some((id) => !ids.has(id))) return false
-  const [first] = lessons
-  return lessons.every(
-    (lesson) => lesson.subject === first!.subject && lesson.className === first!.className,
-  )
-}
-
 /** 从一组课程里取「同一晚自习组的其他节」（不含自己，按顺序升序） */
 export function sameEveningGroupSiblings(lessons: readonly Lesson[], lesson: Lesson): Lesson[] {
   if (!lesson.courseGroupId) return []

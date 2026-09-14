@@ -1,4 +1,4 @@
-# TeacherDesk 架构总览（V2.2）
+# TeacherDesk 架构总览（V3.0）
 
 > 一页看懂 TeacherDesk 的分层与数据流。Phase Cloud-1（v2.2.0-alpha）起，
 > 数据访问统一走 **Repository 层**——这是 Web（当前）、CloudBase（未来）、
@@ -186,18 +186,28 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 
 ## 分层规则（改代码前先看）
 
-| 层           | 允许                                                 | 禁止                                             |
-| ------------ | ---------------------------------------------------- | ------------------------------------------------ |
-| views        | 调 Store、组件、只读同步状态、`runLockedOperation()` | 碰 repositories / services / localStorage        |
-| stores       | 调 Repository、utils                                 | 碰 services/storage、services/sync、localStorage |
-| sync         | 调注入的 SyncTransport                               | 直接调 CloudAdapter / fetch / localStorage       |
-| repositories | 调 adapter、utils、（seed 可读 student store）       | 碰业务 Store 的其它成员、组件                    |
-| adapters     | 调 services/storage、services/sync                   | 业务判断（normalize / 播种守卫）                 |
-| services     | —                                                    | 不 import 上层（保持可独立测试）                 |
+| 层           | 允许                                           | 禁止                                             |
+| ------------ | ---------------------------------------------- | ------------------------------------------------ |
+| views        | 调 Store、组件、composables                    | 碰 repositories / services / localStorage        |
+| stores       | 调 Repository、utils                           | 碰 services/storage、services/sync、localStorage |
+| sync         | 调注入的 SyncTransport                         | 直接调 CloudAdapter / fetch / localStorage       |
+| repositories | 调 adapter、utils、（seed 可读 student store） | 碰业务 Store 的其它成员、组件                    |
+| adapters     | 调 services/storage、services/sync             | 业务判断（normalize / 播种守卫）                 |
+| services     | —                                              | 不 import 上层（保持可独立测试）                 |
 
-> `views` 对同步的唯一合法入口是 `composables/useOperationLock.ts`（长事务）与
-> `composables/useSyncEngine.ts`（只读状态）；页面**不许**直接 import `src/sync/autoSync.ts`
-> （那个文件 import 云模块，会把 SDK 拖进页面依赖）。
+> **页面（views / components）只认识 stores 与 composables**，四个例外口子全部是 composable：
+>
+> | composable         | 管什么                                          | 底下的东西                                     |
+> | ------------------ | ----------------------------------------------- | ---------------------------------------------- |
+> | `useOperationLock` | 长事务（导入 / 批量修改）期间暂停同步           | `src/sync/operationLock.ts` + SyncEngine       |
+> | `useSyncEngine`    | 同步状态的只读视图                              | SyncEngine 快照                                |
+> | `useCloudActions`  | 登录 / 登出 / 立即同步 / 首次初始化             | `src/sync/autoSync.ts`（**只有它会引云 SDK**） |
+> | `useCloudSync`     | 工具箱那张卡的既有云通道 + 冲突裁决             | `services/cloudSync.ts`                        |
+> | `useBackup`        | 导出 / 导入 / 清空 / 备份提醒（**整份数据集**） | `repositories/backup/backupRepository.ts`      |
+>
+> 页面**不许**直接 import `@/services/*`、`@/sync/autoSync`、`@/repositories`——
+> 前两者会把云 SDK 或底层实现拖进页面依赖图，后者会让「谁能碰数据源」变得说不清。
+> V3.0.0 起这条已经真实成立（views / components / stores 三层的越层引用为零）。
 
 ## 下一步
 

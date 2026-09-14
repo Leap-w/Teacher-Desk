@@ -1,5 +1,6 @@
 import { ALL_DORMITORIES, FAMILY_SCOPE_LABELS, isValidDormitory } from '@/utils/student'
 import type { FamilyLocation, FamilyScope, Gender, Student, StudentInput } from '@/types'
+import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
 /* ==========================================================================
  * Excel 批量导入（Phase 5A）
@@ -166,22 +167,6 @@ export async function readSheetRows(data: ArrayBuffer): Promise<ReadSheetResult>
 
 /* ------------------------------------------------------------------ 第 2 层 */
 
-/** 单元格 → 文本。数字、布尔、日期都可能来自 xlsx，统一收成字符串 */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value.trim()
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return ''
-}
-
-/** 表头归一：去掉「（必填）」这类后缀说明与全部空白，再做精确比对 */
-function normalizeHeader(value: unknown): string {
-  return cellText(value)
-    .replace(/[（(【[].*?[）)】\]]/g, '')
-    .replace(/\s+/g, '')
-}
-
 function mapColumns(headerRow: unknown[]): ColumnMap {
   const map: ColumnMap = {
     name: -1,
@@ -206,12 +191,6 @@ function mapColumns(headerRow: unknown[]): ColumnMap {
     }
   })
   return map
-}
-
-/** 标了「姓名」「性别」的行才叫数据行；全空的尾行直接跳过（Excel 到处都留这种行） */
-function isBlankRow(row: unknown[], map: ColumnMap): boolean {
-  const indexes = Object.values(map).filter((index) => index >= 0)
-  return indexes.every((index) => cellText(row[index]) === '')
 }
 
 export type ParseResult =

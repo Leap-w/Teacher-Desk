@@ -11,6 +11,7 @@
 import { WORK_CATEGORIES, WORK_PRIORITY_LABELS } from '@/types/work'
 import type { WorkCategory, WorkInput, WorkItem, WorkPriority } from '@/types/work'
 import { isoDateOf, isValidIsoDate, parseDateText, parseTimeText, isSameWork } from '@/utils/work'
+import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
 /** 模板表头（弹窗首屏与错误文案共用一份说法） */
 export const WORK_IMPORT_HEADERS = [
@@ -83,22 +84,6 @@ const PRIORITY_ALIASES: Record<string, WorkPriority> = {
   urgent: 'urgent',
 }
 
-/** 单元格 → 文本 */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value.trim()
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
-  if (value instanceof Date) return isoDateOf(value)
-  return ''
-}
-
-/** 表头归一：去掉「（必填）」这类后缀说明与全部空白 */
-function normalizeHeader(value: unknown): string {
-  return cellText(value)
-    .replace(/[（(【[].*?[）)】\]]/g, '')
-    .replace(/\s+/g, '')
-}
-
 function mapColumns(headerRow: unknown[]): ColumnMap {
   const map: ColumnMap = {
     title: -1,
@@ -119,11 +104,6 @@ function mapColumns(headerRow: unknown[]): ColumnMap {
     }
   })
   return map
-}
-
-function isBlankRow(row: unknown[], map: ColumnMap): boolean {
-  const indexes = Object.values(map).filter((index) => index >= 0)
-  return indexes.every((index) => cellText(row[index]) === '')
 }
 
 export type ParseWorkResult =

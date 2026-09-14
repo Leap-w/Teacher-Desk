@@ -5,9 +5,7 @@ import { Cloud, CloudOff, LogOut, RefreshCw, UserRound } from 'lucide-vue-next'
 import { AppButton, AppField, AppInput, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useSyncEngine } from '@/composables/useSyncEngine'
-import { isCloudConfigured } from '@/services/cloudbase'
-import { cloudSyncState } from '@/services/cloudSync'
-import { signInAndSync, signOutAndReset, syncNowManual, cloudTransport } from '@/sync/autoSync'
+import { useCloudActions } from '@/composables/useCloudActions'
 
 import SettingsCell from './SettingsCell.vue'
 import SettingsSection from './SettingsSection.vue'
@@ -25,7 +23,14 @@ import SettingsSection from './SettingsSection.vue'
 const toast = useToast()
 const { label, state, pending } = useSyncEngine()
 
-const configured = isCloudConfigured()
+const {
+  state: cloudSyncState,
+  configured,
+  syncNow,
+  signIn,
+  signOut,
+  channel: cloudTransport,
+} = useCloudActions()
 const signedIn = computed(() => cloudSyncState.value.account !== null)
 const account = computed(() => cloudSyncState.value.account)
 const lastSyncedAt = computed(() => cloudSyncState.value.lastSyncedAt)
@@ -71,7 +76,7 @@ async function onSyncNow(): Promise<void> {
   if (syncing.value) return
   syncing.value = true
   try {
-    await syncNowManual()
+    await syncNow()
     if (cloudSyncState.value.status === 'idle') toast.success('已与云端对齐')
     else toast.warning(error.value ?? '同步没成功，稍后会自动重试')
   } catch (issue) {
@@ -108,7 +113,7 @@ async function submitLogin(): Promise<void> {
   }
   loginBusy.value = true
   try {
-    await signInAndSync(email.value.trim(), password.value)
+    await signIn(email.value.trim(), password.value)
     loginOpen.value = false
     toast.success('登录成功，正在对齐数据')
     await offerInitialization()
@@ -157,7 +162,7 @@ async function confirmInitialize(): Promise<void> {
 
 async function onSignOut(): Promise<void> {
   if (!window.confirm('退出登录后本机数据保留，云端不动。确定退出吗？')) return
-  await signOutAndReset()
+  await signOut()
   toast.success('已退出登录，回到本地模式')
 }
 

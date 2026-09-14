@@ -21,24 +21,9 @@ import type { Student } from '@/types'
 import type { DutyGroup, DutySettings } from '@/types/duty'
 import type { Weekday } from '@/types/timetable'
 import { WEEKDAY_LABELS } from '@/utils/timetable'
+import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
 /* ========== 共用小工具 ========== */
-
-/** 单元格 → 文本（数字、布尔、日期都可能来自 xlsx，统一收成字符串） */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value.trim()
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return ''
-}
-
-/** 表头归一：去掉「（必填）」这类后缀说明与全部空白 */
-function normalizeHeader(value: unknown): string {
-  return cellText(value)
-    .replace(/[（(【[].*?[）)】\]]/g, '')
-    .replace(/\s+/g, '')
-}
 
 interface ParsedColumns {
   map: Record<string, number>
@@ -65,12 +50,6 @@ function mapColumns(
   })
   const missing = required.filter((key) => map[key] === -1)
   return { map, missing }
-}
-
-/** 标了任意一列的行才叫数据行；全空尾行直接跳过（Excel 到处都留这种行） */
-function isBlankRow(row: unknown[], map: Record<string, number>): boolean {
-  const indexes = Object.values(map).filter((index) => index >= 0)
-  return indexes.every((index) => cellText(row[index]) === '')
 }
 
 /**

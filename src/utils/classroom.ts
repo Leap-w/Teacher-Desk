@@ -240,5 +240,3 @@ export const CLASSROOM_TOOLS = [
   { key: 'timer', title: '课堂计时器', description: '1 / 3 / 5 / 10 分钟或自定义' },
   { key: 'lottery', title: '抽签', description: '从值日组里随机抽一组' },
 ] as const
-
-export type ClassroomToolKey = (typeof CLASSROOM_TOOLS)[number]['key']

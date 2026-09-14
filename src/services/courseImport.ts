@@ -12,9 +12,10 @@
  * 落库语义（与座位导入同一纪律）：**逐条应用**——导入涉及的「星期 + 时段」被替换成表里的安排，
  * 未涉及的时段保持原样；不整表覆盖，避免一份不完整的表把整周课表清空。
  */
-import { COURSE_PERIODS, EVENING_PERIOD_IDS, LEGACY_PERIOD_MIGRATION } from '@/types/timetable'
+import { COURSE_PERIODS, EVENING_PERIOD_IDS } from '@/types/timetable'
 import type { CoursePeriodId, Lesson, LessonInput, LessonType, Weekday } from '@/types/timetable'
 import { classIdOf, eveningGroupIdOf, periodLabelOf } from '@/utils/timetable'
+import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
 /** 模板表头（弹窗首屏与错误文案共用一份说法） */
 export const COURSE_IMPORT_HEADERS = ['星期', '节次', '班级', '科目', '类型', '原教师'] as const
@@ -91,22 +92,6 @@ const CN_NUMBERS: Record<string, number> = {
   十: 10,
 }
 
-/** 单元格 → 文本（数字、布尔、日期都可能来自 xlsx，统一收成字符串） */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value.trim()
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return ''
-}
-
-/** 表头归一：去掉「（必填）」这类后缀说明与全部空白，再做精确比对 */
-function normalizeHeader(value: unknown): string {
-  return cellText(value)
-    .replace(/[（(【[].*?[）)】\]]/g, '')
-    .replace(/\s+/g, '')
-}
-
 function mapColumns(headerRow: unknown[]): ColumnMap {
   const map: ColumnMap = {
     weekday: -1,
@@ -127,12 +112,6 @@ function mapColumns(headerRow: unknown[]): ColumnMap {
     }
   })
   return map
-}
-
-/** 标了任意一列的行才叫数据行；全空的尾行直接跳过（Excel 到处都留这种行） */
-function isBlankRow(row: unknown[], map: ColumnMap): boolean {
-  const indexes = Object.values(map).filter((index) => index >= 0)
-  return indexes.every((index) => cellText(row[index]) === '')
 }
 
 /** 「周一」「星期一」「周1」「1」都能读成 1；读不出返回 null */
@@ -456,8 +435,3 @@ export function planCourseImport(
     plan: { lessons },
   }
 }
-
-/** 旧课表的 1~8 节 → 新时段的说明（导入提示与文档共用一份说法） */
-export const LEGACY_PERIOD_NOTE = `旧课表的「第 1~8 节」按顺序对应新时段：第 1 节 → 早自习及第一节，第 8 节 → 晚自习1（${
-  Object.keys(LEGACY_PERIOD_MIGRATION).length
-} 条映射，确定性、不丢课程）`

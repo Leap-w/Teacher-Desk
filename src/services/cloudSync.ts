@@ -155,9 +155,6 @@ function clearMeta(): void {
   }
 }
 
-/** 记账本身不该参与同步：它不是教师的数据，是本机的对齐记录 */
-export const SYNC_META_KEY = META_KEY
-
 /** 本轮对某个键的判定 */
 type Decision =
   | { kind: 'skip'; reason: string }

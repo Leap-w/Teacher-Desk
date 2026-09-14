@@ -1,4 +1,4 @@
-import { WORK_CATEGORIES, WORK_PRIORITY_LABELS, WORK_STATUS_LABELS } from '@/types/work'
+import { WORK_CATEGORIES, WORK_PRIORITY_LABELS } from '@/types/work'
 import type {
   WorkCategory,
   WorkFilter,
@@ -7,14 +7,17 @@ import type {
   WorkPriority,
   WorkStatus,
 } from '@/types/work'
+import { formatDateKey } from '@/utils/date'
 
 /* ========== 日期 / 时间（本地日历日，不走 UTC） ========== */
 
-/** 某一时刻的「本地日历日」YYYY-MM-DD（`toISOString` 是 UTC，跨时区会差一天，不用它） */
+/**
+ * 某一时刻的「本地日历日」YYYY-MM-DD。
+ * 实现委托给 `utils/date.ts` 的 `formatDateKey`——「本地日历日」只该有一份实现
+ * （`toISOString` 是 UTC，跨时区会差一天，两边都不能用它）。
+ */
 export function isoDateOf(date: Date = new Date()): string {
-  const month = `${date.getMonth() + 1}`.padStart(2, '0')
-  const day = `${date.getDate()}`.padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
+  return formatDateKey(date)
 }
 
 /** YYYY-MM-DD 严格校验（月日范围、真实存在的日期——2 月 30 日不接受） */
@@ -95,11 +98,6 @@ export function workDateLabel(date: string, today: string = isoDateOf()): string
 }
 
 /* ========== 标签 / 判定 ========== */
-
-export function workStatusLabel(status: WorkStatus): string {
-  return WORK_STATUS_LABELS[status]
-}
-
 export function workPriorityLabel(priority: WorkPriority): string {
   return WORK_PRIORITY_LABELS[priority]
 }

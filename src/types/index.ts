@@ -80,23 +80,4 @@ export interface Student {
 
 /** 新增 / 更新学生时的可写字段 */
 export type StudentInput = Omit<Student, 'id' | 'deletedAt'>
-
-/** 班干部（预留：学生当前用 `cadreRole: string` 平铺，尚未使用该实体） */
-export interface ClassCadre {
-  id: string
-  studentId: string
-  /** 职务名称，如「班长」「学习委员」 */
-  role: string
-  /** 任期起始（ISO 日期） */
-  since: string
-}
-
-/** 宿舍（预留：宿舍当前为 `Student.dormitory` 文本，尚未使用该实体） */
-export interface Dormitory {
-  id: string
-  building: string
-  room: string
-  bedCount: number
-}
-
 /* 请假 / 离校模型见 `types/leave.ts`（Phase 5 起为独立领域文件，不再放在本文件） */

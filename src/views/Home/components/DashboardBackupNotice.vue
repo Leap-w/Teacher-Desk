@@ -5,7 +5,7 @@ import { Download } from 'lucide-vue-next'
 
 import { AppButton } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
-import { localStoragePort } from '@/services/storage'
+import { useBackup } from '@/composables/useBackup'
 import { LAST_BACKUP_KEY, backupReminder } from '@/utils/backup'
 
 /**
@@ -24,7 +24,7 @@ const now = useNow()
  * 只读一次：导出发生在工具箱页，回到工作台会重新挂载（读到的就是新值）；
  * 隐私模式下读不到按「从未导出」处理（与工具箱同一口径，见 services/storage.ts）。
  */
-const lastBackupAt = ref(localStoragePort.read(LAST_BACKUP_KEY) ?? '')
+const lastBackupAt = ref(useBackup().read(LAST_BACKUP_KEY) ?? '')
 const reminder = computed(() => backupReminder(lastBackupAt.value, now.value))
 </script>
 

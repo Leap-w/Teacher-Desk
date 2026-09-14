@@ -1,7 +1,13 @@
 import { computed, ref } from 'vue'
 
 import { useToast } from '@/composables/useToast'
-import { cloudSyncState, resolveConflicts, syncNow } from '@/services/cloudSync'
+import {
+  cloudSyncState,
+  resolveConflicts,
+  signInAndSync,
+  signOutAndStop,
+  syncNow,
+} from '@/services/cloudSync'
 import type { ConflictChoice } from '@/services/cloudSync'
 import { keyLabel } from '@/services/storage'
 import { BACKUP_MODULES } from '@/utils/backup'
@@ -149,6 +155,22 @@ export function useCloudSync() {
     }
   }
 
+  /**
+   * 用用户名 + 密码登录并立刻对齐一次（工具箱那张卡走这条）。
+   *
+   * **本函数不做提示、不吞异常**：登录的成败要结合「本地有几份数据、云端有没有」才有意义
+   * （首次同步的四种处境），那句判断与提示留在页面里——放在这里就会逼着页面去解析状态。
+   * 邮箱登录在控制中心的同步面板（`useCloudActions`），两条入口各自保留（双入口不迁移）。
+   */
+  async function signIn(username: string, password: string): Promise<void> {
+    await signInAndSync(username, password)
+  }
+
+  /** 登出并停止同步（清队列与对齐记账；云端数据不动） */
+  async function signOut(): Promise<void> {
+    await signOutAndStop()
+  }
+
   return {
     state,
     enabled,
@@ -160,8 +182,13 @@ export function useCloudSync() {
     lastSyncedClock,
     syncWithFeedback,
     resolveConflict,
+    signIn,
+    signOut,
   }
 }
+
+/** 冲突裁决的口径：页面从本 composable 取类型，不必认识 services 层 */
+export type { ConflictChoice } from '@/services/cloudSync'
 
 /** 存储键 → 教师看得懂的名字：八个数据块的中文名（备份模块那张表），不在册的退回键名尾段 */
 function labelOfKey(key: string): string {

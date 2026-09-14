@@ -12,7 +12,7 @@
 | V2.3       | 课堂与教学工具       | Classroom-1 课堂工具（点名 / 计时 / 抽签）→ RC-1 发布候选 → 后续工具    | 🚧 进行中（v2.3.0-alpha → **v2.3.1-rc**） |
 | ~~Widget~~ | ~~macOS 桌面小组件~~ | ~~今日课程 / 待办 / 值日（只读）~~                                      | ❌ **已废弃**（2026-09-14，见 §9.55）     |
 | V2.4       | 教学工具             | 成绩、评语、家长沟通等教学侧工具                                        | 规划中                                    |
-| V3.0       | 正式版               | 稳定版：本地 + 云同步双轨、完整教学闭环                                 | 愿景                                      |
+| **V3.0**   | **正式版**           | 全项目体检 + 死代码清理 + 分层收口（本地 + 云同步双轨已就位）           | ✅ **已交付（v3.0.0）**                   |
 
 **V2.2 分解**：Cloud-1 `v2.2.0-alpha` Repository 数据访问层（Repository First）✅ → Cloud-2 `v2.2.1-alpha` 同步引擎（Queue/State/Conflict/Events，本地模拟；Sync Engine First）✅ → Cloud-3 `v2.2.2-alpha` CloudBase 单用户云同步（CloudTransport 真实通道、邮箱登录、自动同步四触发点、首次初始化确认、Local First + LWW）✅ → Cloud-4 `v2.2.3-alpha` 多设备验证与可靠性（双设备八模块验证、冲突与 LWW 验证、队列持久化、Outbox、同步诊断、指数退避与超时、CI 启用）✅ —— **V2.2 Cloud Foundation 收官**。
 

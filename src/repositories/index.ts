@@ -5,15 +5,9 @@
  * localStorage 或未来云端。各模块仓储的职责与播种口径见各自文件。
  */
 export { SyncStatus } from './base/types'
-export type {
-  DataSourceAdapter,
-  CollectionRepository,
-  RepositoryResult,
-  SaveResult,
-} from './base/types'
+export type { DataSourceAdapter, CollectionRepository } from './base/types'
 export { createCollectionRepository } from './base/createCollectionRepository'
 export { localStorageAdapter } from './adapters/LocalStorageAdapter'
-export { cloudAdapter } from './adapters/CloudAdapter'
 export { studentRepository } from './student/studentRepository'
 export { seatRepository } from './seat/seatRepository'
 export { seatConstraintRepository } from './seat/seatConstraintRepository'
@@ -25,3 +19,4 @@ export { taskRepository } from './task/taskRepository'
 export { dashboardRepository } from './dashboard/dashboardRepository'
 export { userProfileRepository, DEFAULT_USER_PROFILE } from './user/userProfileRepository'
 export { syncQueueRepository, SYNC_QUEUE_STORAGE_KEY } from './sync/syncQueueRepository'
+export { backupRepository } from './backup/backupRepository'

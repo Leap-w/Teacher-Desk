@@ -22,13 +22,6 @@ import { seatIdOf } from '@/utils/seat'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatView } from '@/types/seat'
-
-/** 视角中文名（页面分段控件 / 导出副标题共用） */
-export const VIEW_LABELS: Record<SeatView, string> = {
-  teacher: '老师视角',
-  student: '学生视角',
-}
-
 /** 视角一句话说明（页面提示条用，讲清两个视角到底是什么关系） */
 export const VIEW_NOTES: Record<SeatView, string> = {
   teacher: '老师视角：讲台在上、第 1 排最靠近讲台，座位号从左到右递增',

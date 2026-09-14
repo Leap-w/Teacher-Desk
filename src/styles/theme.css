@@ -14,6 +14,13 @@
  * - 动效时长只用 150 / 200 / 300ms。
  */
 :root {
+  /*
+   * 本文件是设计系统的唯一来源（样式只从这里取值，组件里不要硬编码）。
+   * 部分刻度成员（浅色调 / 字号中间档 / 动效与层级备用档）当前没有直接引用，
+   * 那是**刻度完整性**而非死代码——新界面从这里取值。V3.0 清理的是随旧 UI 移除的别名：
+   * 组件级 --app-* 一组、底部导航的 --nav-radius / --bottom-nav-height。
+   */
+
   /* ========== 1. 主色 — 高原青（昌都记忆 V5.2） ========== */
   --color-primary: #4a8c94;
   --color-primary-hover: #3a7175; /* UI-1 规范命名 */
@@ -200,22 +207,11 @@
   --z-modal: 1000; /* TeacherDesk 既有层级，保持不变 */
   --z-toast: 1100; /* TeacherDesk 既有层级，保持不变 */
 
-  /* ========== 14. 组件级令牌（CDL） ========== */
-  --app-card-padding: var(--spacing-page);
-  --app-card-gap: var(--spacing-md);
-  --app-button-height: 44px;
-  --app-button-padding: 10px 24px;
-  --app-icon-size-sm: 16px;
-  --app-icon-size-md: 20px;
-  --app-icon-size-lg: 24px;
-
   /* ========== 15. 导航 / 壳层令牌（UI-2 App Shell：72px 毛玻璃工具栏 + 侧栏） ========== */
   --nav-height: 72px;
-  --nav-radius: 32px;
   --nav-blur: 20px;
   --sidebar-width: 232px;
   --glass-bg-scrolled: rgba(255, 255, 255, 0.88); /* Header 滚动后透明度略增 */
-  --bottom-nav-height: 64px;
   --page-max-width: 1440px;
   --page-pad-x: 40px; /* 页面左右留白 */
   --page-top-gap: 32px; /* 页面标题距导航的统一间距（UI-2） */

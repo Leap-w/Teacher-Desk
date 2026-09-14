@@ -42,8 +42,3 @@ export async function runLockedOperation<T>(
     void flushAfterOperation()
   }
 }
-
-/** 当前是否有长事务在进行（只读；界面不需要它，诊断与测试用） */
-export function isOperationLocked(): boolean {
-  return operationLock.locked
-}

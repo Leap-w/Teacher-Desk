@@ -18,6 +18,7 @@ import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import { isValidSeatPosition, seatPositionShort } from '@/utils/seat'
 import { formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
+import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
 /** 导入计划里的一条指派（store 只认这个形状；组件不得自行拼座位数组） */
 export interface SeatImportAssignment {
@@ -63,22 +64,6 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
 /** 模板提示（弹窗首屏与错误文案共用一份说法） */
 export const SEAT_IMPORT_HEADERS = ['行', '列', '学号', '姓名'] as const
 
-/** 单元格 → 文本（数字、布尔、日期都可能来自 xlsx，统一收成字符串） */
-function cellText(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value.trim()
-  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''
-  if (value instanceof Date) return value.toISOString().slice(0, 10)
-  return ''
-}
-
-/** 表头归一：去掉「（必填）」这类后缀说明与全部空白，再做精确比对 */
-function normalizeHeader(value: unknown): string {
-  return cellText(value)
-    .replace(/[（(【[].*?[）)】\]]/g, '')
-    .replace(/\s+/g, '')
-}
-
 function mapColumns(headerRow: unknown[]): ColumnMap {
   const map: ColumnMap = { row: -1, col: -1, studentNo: -1, name: -1 }
   headerRow.forEach((cell, index) => {
@@ -92,12 +77,6 @@ function mapColumns(headerRow: unknown[]): ColumnMap {
     }
   })
   return map
-}
-
-/** 标了行列 / 学号 / 姓名的行才叫数据行；全空的尾行直接跳过（Excel 到处都留这种行） */
-function isBlankRow(row: unknown[], map: ColumnMap): boolean {
-  const indexes = Object.values(map).filter((index) => index >= 0)
-  return indexes.every((index) => cellText(row[index]) === '')
 }
 
 /** 「第3排」「3」「3 列」都能读成 3；读不出整数返回 null */

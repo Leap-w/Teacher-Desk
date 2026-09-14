@@ -6,8 +6,9 @@
  * Web（当前）、CloudBase（未来）、PostgreSQL（未来）
  * 共享同一套数据访问规范，而不是四套逻辑。
  *
- * 本层只定义契约；localStorage 实现在 `adapters/LocalStorageAdapter.ts`，
- * 云端占位在 `adapters/CloudAdapter.ts`（Phase Cloud-2 接入）。
+ * 本层只定义契约；当前唯一实现在 `adapters/LocalStorageAdapter.ts`。
+ * 云同步不走这一层——它经 `src/sync/SyncEngine` + 注入的 `SyncTransport`（见
+ * `docs/ARCHITECTURE.md` 的同步层），Repository 因此始终只面对本地存储。
  */
 import type { Ref } from 'vue'
 
@@ -25,12 +26,6 @@ export enum SyncStatus {
   /** 同步出错（冲突 / 断网 / 凭据失效） */
   Error = 'error',
 }
-
-/** 写入结果：失败时给出可读原因（页面可直接 toast） */
-export type SaveResult = { ok: true } | { ok: false; reason: string }
-
-/** 读取结果：失败时给出可读原因 */
-export type RepositoryResult<T> = { ok: true; data: T } | { ok: false; reason: string }
 
 /**
  * 数据源适配器：Repository 眼中的「存储长什么样」。

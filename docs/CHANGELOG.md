@@ -6,6 +6,76 @@
 
 ---
 
+## v3.0.0 —— 正式版（全项目体检 · 死代码清理 · 分层收口）（2026-09-14，tag `v3.0.0`）
+
+> **第一个正式版**。不改业务功能、不动数据结构、不动同步策略——这一版做的是把「能跑」
+> 变成「干净、可长期维护」：删掉没人用的代码与资产，把重复实现收成一份，把最后几处
+> 越层访问收口到 Repository / composable。发布前做了全项目静态审计 + 运行时体检。
+
+### 死代码清理
+
+- 删除 **`src/utils/lunar.ts`**（338 行农历转换，全项目零引用——含动态 import 也无人调）。
+- 删除 **`src/repositories/adapters/CloudAdapter.ts`**（占位适配器：注释写着「Phase Cloud-2 填充」，
+  而真实的云通道早已是 `src/sync/CloudTransport.ts`——留着只会让后来者以为有个 CloudAdapter 待实现）。
+- 删除无人使用的导出：`repositories/base/types.ts` 的 `SaveResult` / `RepositoryResult`、
+  `services/cloudSync.ts` 的 `SYNC_META_KEY`、`services/courseImport.ts` 的 `LEGACY_PERIOD_NOTE`、
+  `types/index.ts` 的 `ClassCadre` / `Dormitory`（注释自认「预留、尚未使用」）、
+  `utils/classroom.ts` 的 `ClassroomToolKey`、`utils/duty.ts` 的 `nextDutyDay` / `describeDutyDay`、
+  `utils/seatView.ts` 的 `VIEW_LABELS`、`utils/timetable.ts` 的 `lessonTypeBadgeText` / `isSameEveningGroup`、
+  `utils/work.ts` 的 `workStatusLabel`、`composables/useOperationLock.ts` 的 `isOperationLocked`。
+- 删除 **7 个未被引用的 PWA 图标**（64/72/96/128/144/152/180）：manifest 只用 192/256/384/512/maskable-512。
+  service worker 的预缓存项因此从 14 项降到 7 项——离线首装的缓存体积跟着变小。
+- `theme.css`：清掉随旧 UI 移除的别名（组件级 `--app-*` 一组 7 个、底部导航的 `--nav-radius` /
+  `--bottom-nav-height`），并在文件头写明**刻度成员 ≠ 死代码**（调色板浅色调、字号中间档、
+  动效备用档保留，避免下一轮审计再把它们当死代码删一遍）。
+
+### 重复实现收口（同一规则只留一份）
+
+- 新增 **`services/sheetCell.ts`**：`cellText` / `normalizeHeader` / `isBlankRow` 此前在学生、座位、
+  课表、值日、工作清单**五个导入服务里各抄一份**，现收敛为唯一实现。
+- **顺带修掉一个跨时区的隐性 bug**：那份抄写里日期分支分过叉——四份用 `toISOString()`（UTC）、
+  只有工作清单那份用本地日历日。东八区本地零点会被 UTC 算成**前一天**，教师填的「9 月 14 日」
+  会变成「9 月 13 日」：不报错、只在某些时刻错一格。现在统一取本地日历日（`utils/date.ts` 的
+  `formatDateKey`）。
+- **表头归一补边界**：整格就是一个括号说明（如「【行】」）时，原实现会把内容一起去掉、
+  导致该列被当成「没有表头」而整列失效；现在结果为空会退回「只去括号、留内容」。
+- `utils/work.ts` 的 `isoDateOf` 改为委托 `utils/date.ts` 的 `formatDateKey`——
+  「Date → 本地日历日」只保留一份实现。
+
+### 分层收口（Repository First 真正落地）
+
+此前有三处**页面直连底层**，V3.0 全部收口，**views 对 `services/` 与 `src/sync/autoSync` 的直接引用归零**：
+
+- 新增 **`repositories/backup/backupRepository.ts`**：工具箱的导出 / 合并导入 / 两档清空与首页的
+  备份提醒处理的是「整份数据集」（含本应用不认识的历史键），为此开一个只做命名转发的窄口子。
+- 新增 **`composables/useCloudActions.ts`**：控制中心的同步面板不再直接 import `sync/autoSync`
+  （那个文件引云 SDK，页面直接引它会把 SDK 拖进页面依赖图）。
+- `composables/useCloudSync.ts` 增补 `signIn` / `signOut`，并转发 `ConflictChoice` 类型：
+  工具箱不再直接 import `services/cloudSync`。
+
+### 体检结论（这些项确认为「无问题」）
+
+无未使用依赖；无 `console.log` 残留；无 `@ts-ignore` / `as any`；无临时文件入库；
+所有 `v-for` 都有 `:key`；所有 `<img>` 都有 `alt`；所有 `JSON.parse` 都在 `try` 里；
+无孤儿源文件（除下面两处**有决策记录**的保留项）。
+
+**有意保留（不删，有决策记录）**：`services/index.ts` 的空壳 `api`（§9.8 拍板保留）、
+`services/cloudbase.ts` 的 `signUpWithEmail`（函数自带说明：「不是待用的死代码，是保留的能力」，
+将来重新开放注册只差一个界面）。
+
+### 验证
+
+- prettier / vue-tsc / eslint / **553 测试** / build 全绿；CI 六步全过。
+- **运行时体检**：11 条路由全部零 console 报错 / 零未捕获异常 / 零 404。
+- **可访问性抽查**（首页 / 座位 / 工作清单 / 课堂）：无名按钮 0、无标签输入 0、重复 id 0。
+- **PWA**：manifest 五个图标全部存在；service worker 预缓存列表与实际文件一致。
+- **功能冒烟**：工具箱「导出备份」真实落盘（17KB、含全部已写入模块），验证 backupRepository 接线有效。
+
+### 测试
+
+- 新增 `src/__tests__/sheetCell.test.ts` **9 条**（单元格文本 / 表头归一 / 空行判定，
+  含「本地零点不能退回前一天」的跨时区断言）；常驻 **544 → 553**。
+
 ## v2.3.1-rc —— Phase RC-1 · 发布候选（Release Candidate）（2026-09-14，tag `v2.3.1-rc`）
 
 > **Stability Before Release**：本阶段不新增业务功能，只做真实工作流的最后一轮验证与必要修复。
