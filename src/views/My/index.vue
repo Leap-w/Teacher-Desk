@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Database } from 'lucide-vue-next'
+import { Database, Monitor, Moon, Sun } from 'lucide-vue-next'
 
-import { AppButton, AppDrawer, AppField, AppInput, AppSwitch } from '@/components/ui'
+import { AppButton, AppDrawer, AppField, AppInput, AppSwitch, AppSegmented } from '@/components/ui'
 import { useCountdownSettings, HERO_BACKGROUNDS } from '@/composables/useCountdownSettings'
 import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
+import { useTheme } from '@/composables/useTheme'
 import { useTimetableStore } from '@/stores/timetable'
 import { useUserStore } from '@/stores/user'
 import { COURSE_PERIODS } from '@/types/timetable'
@@ -34,6 +35,13 @@ const userStore = useUserStore()
 const studentStore = useStudentStore()
 const timetableStore = useTimetableStore()
 const countdown = useCountdownSettings()
+const { theme, effective, setTheme } = useTheme()
+
+const THEME_OPTIONS = [
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+  { value: 'system', label: '跟随系统' },
+] as const
 
 const profile = computed(() => userStore.profile)
 
@@ -47,7 +55,7 @@ const weekLessons = computed(() => timetableStore.weekLessonCount)
 /* ---------- 顶部次级 Tab（功能设置：各模块设置第一入口，保留） ---------- */
 
 type TopTab = 'profile' | 'settings'
-type SettingGroup = 'work' | 'seats' | 'leave' | 'duty' | 'weekend' | 'time'
+type SettingGroup = 'work' | 'seats' | 'leave' | 'duty' | 'weekend' | 'time' | 'appearance'
 
 const topTab = ref<TopTab>('profile')
 const activeGroup = ref<SettingGroup>('work')
@@ -59,6 +67,7 @@ const GROUP_TABS: { id: SettingGroup; label: string }[] = [
   { id: 'duty', label: '值日' },
   { id: 'weekend', label: '周末' },
   { id: 'time', label: '时间' },
+  { id: 'appearance', label: '外观' },
 ]
 
 /** 旧入口兼容：/my/settings?module=xxx → 功能设置 Tab 对应分组（各功能页 ⚙ 与旧书签都走这里） */
@@ -171,7 +180,7 @@ const seatLayoutValue = computed(
     `${DEFAULT_CLASSROOM_CONFIG.rows} 排 × ${DEFAULT_CLASSROOM_CONFIG.cols} 列 · ${DEFAULT_CLASSROOM_CONFIG.blocks.length} 区 · ${DEFAULT_CLASSROOM_CONFIG.blocks.length - 1} 条过道`,
 )
 
-const GROUP_ROWS: Record<Exclude<SettingGroup, 'time'>, Row[]> = {
+const GROUP_ROWS: Record<Exclude<SettingGroup, 'time' | 'appearance'>, Row[]> = {
   work: [
     { key: 'periods', label: '课程时间', value: courseTimeValue.value },
     { key: 'view', label: '默认视图', soon: true },
@@ -378,6 +387,37 @@ function checkUpdate(): void {
               已过去 {{ countdown.daysPassed.value }} 天 · 剩余
               {{ countdown.daysRemaining.value }} 天 · 完成
               {{ countdown.progress.value }}%（自动计算，无需手动修改）
+            </p>
+          </div>
+        </template>
+
+        <!-- 外观组：深色模式（浅色 | 深色 | 跟随系统；实时切换无刷新） -->
+        <template v-else-if="activeGroup === 'appearance'">
+          <div class="appearance-pane">
+            <!-- 不用 v-model：v-model 只会改 ref，绕过 setTheme 的「落盘 + 应用」；显式走 setTheme -->
+            <AppSegmented
+              :model-value="theme"
+              :options="[...THEME_OPTIONS]"
+              label="深色模式偏好"
+              @update:model-value="setTheme($event)"
+            />
+            <p class="appearance-pane__hint">
+              <component
+                :is="theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor"
+                :size="14"
+                :stroke-width="2"
+                aria-hidden="true"
+              />
+              <span v-if="theme === 'system'"
+                >跟随系统：系统切换深浅时应用实时跟随（当前{{
+                  effective === 'dark' ? '深色' : '浅色'
+                }}）</span
+              >
+              <span v-else
+                >已固定为{{
+                  theme === 'dark' ? '深色' : '浅色'
+                }}主题，各页面即时切换、无需刷新</span
+              >
             </p>
           </div>
         </template>
@@ -630,5 +670,25 @@ function checkUpdate(): void {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-card);
+}
+
+/* ---- 外观（深色模式） ---- */
+.appearance-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.appearance-pane__hint {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.appearance-pane__hint svg {
+  flex-shrink: 0;
 }
 </style>

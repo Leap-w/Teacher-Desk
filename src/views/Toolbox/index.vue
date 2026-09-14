@@ -26,8 +26,11 @@ import {
   type MergeStat,
 } from '@/utils/backup'
 import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
+import { Download, Eraser, RefreshCw, Trash2, Upload } from 'lucide-vue-next'
 import SyncDiagnosticsCard from './components/SyncDiagnosticsCard.vue'
 import ClassroomEntryCard from './components/ClassroomEntryCard.vue'
+import SettingsCell from '@/views/My/components/SettingsCell.vue'
+import SettingsSection from '@/views/My/components/SettingsSection.vue'
 
 /**
  * 工具箱（近期增量「数据管理」，见 docs/开发计划.md §六）。
@@ -472,11 +475,62 @@ onMounted(() => {
         }}」读取异常，暂无法统计。为避免覆盖还能人工找回的原文，导入与「清空示例数据」都会跳过它。
       </p>
 
-      <div class="action-row">
-        <AppButton @click="exportBackup">导出备份（JSON）</AppButton>
-        <AppButton variant="secondary" @click="pickFile">导入备份</AppButton>
-        <p class="last-backup">{{ lastBackupText }}</p>
-      </div>
+      <!-- 操作区：Apple Settings Cell（与「我的」页同一套设置行规范） -->
+      <SettingsSection title="备份与恢复">
+        <SettingsCell
+          :icon="Download"
+          icon-tone="neutral"
+          title="导出数据"
+          :subtitle="lastBackupText"
+          @click="exportBackup"
+        />
+        <SettingsCell
+          :icon="Upload"
+          icon-tone="neutral"
+          title="导入数据"
+          subtitle="从备份文件恢复（JSON）"
+          @click="pickFile"
+        />
+        <SettingsCell
+          :icon="RefreshCw"
+          icon-tone="neutral"
+          title="立即同步"
+          :subtitle="cloudLastSyncedText"
+          @click="syncWithFeedback"
+        />
+      </SettingsSection>
+
+      <SettingsSection title="危险操作">
+        <SettingsCell
+          :icon="Eraser"
+          icon-tone="danger"
+          title="清空示例数据"
+          :subtitle="
+            sampleTotal > 0
+              ? `删除 ${sampleTotal} 条示例记录，你自己新增的不受影响`
+              : '当前没有可清理的示例数据'
+          "
+          @click="openClearSamples"
+        />
+        <SettingsCell
+          :icon="Trash2"
+          icon-tone="danger"
+          title="清空本机数据"
+          subtitle="删除本机全部数据，恢复到首次打开的状态"
+          @click="openClearAll"
+        />
+      </SettingsSection>
+
+      <p class="footnote">
+        清空示例数据：删除首次打开时自动生成的示例记录（示例学生 / 课程 / 待办 / 请假 / 值日组 /
+        周末返家），以及这些学生产生的座位约束。你自己新增的记录不受影响；但若你把某条示例记录改成了自己的内容，它同样会被删掉——确认前请先核对名单。座位方案保留，示例学生占用的座位会在下次打开「座位表」时自动释放。轮换设置会保留：剩下的值日组若接不上起点，值日管理页会提示重设。
+      </p>
+      <p class="footnote">
+        清空本机数据：删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。
+        <template v-if="cloud.account">
+          云端同步已登录：这里只清本机，不删云端。下次同步时，云端那份数据可能重新出现在本机。
+        </template>
+      </p>
       <input
         ref="fileInput"
         class="file-input"
@@ -486,36 +540,6 @@ onMounted(() => {
         aria-hidden="true"
         @change="onFilePicked"
       />
-
-      <section class="danger-zone">
-        <h3 class="zone-title">危险操作</h3>
-        <dl class="zone-item">
-          <dt>清空示例数据</dt>
-          <dd>
-            删除首次打开时自动生成的示例记录（示例学生 / 课程 / 待办 / 请假 / 值日组 /
-            周末返家），以及这些学生产生的座位约束。你自己新增的记录不受影响；但若你把某条示例记录改成了自己的内容，它同样会被删掉——确认前请先核对名单。座位方案保留，示例学生占用的座位会在下次打开「座位表」时自动释放。轮换设置会保留：剩下的值日组若接不上起点，值日管理页会提示重设。
-          </dd>
-          <dt>清空本机数据</dt>
-          <dd>
-            删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。
-            <template v-if="cloud.account">
-              云端同步已登录：这里只清本机，不删云端。下次同步时，云端那份数据可能重新出现在本机。
-            </template>
-          </dd>
-        </dl>
-        <div class="action-row">
-          <AppButton
-            variant="secondary"
-            :disabled="sampleTotal === 0"
-            :title="sampleTotal === 0 ? '当前没有可清理的示例数据' : undefined"
-            @click="openClearSamples"
-          >
-            清空示例数据{{ sampleTotal > 0 ? `（${sampleTotal} 条）` : '' }}
-          </AppButton>
-          <AppButton variant="danger" @click="openClearAll">清空本机数据</AppButton>
-        </div>
-        <p v-if="sampleTotal === 0" class="footnote">当前没有可清理的示例数据。</p>
-      </section>
     </AppCard>
 
     <!-- 没配环境 ID 的构建里整块不显示：与其摆一个按不动的开关，不如不出现 -->
@@ -825,26 +849,8 @@ onMounted(() => {
   margin-top: var(--space-3);
 }
 
-.last-backup {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-}
-
 .file-input {
   display: none;
-}
-
-.danger-zone {
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
-}
-
-.zone-title {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-danger);
-  margin-bottom: var(--space-2);
 }
 
 .zone-item dt {

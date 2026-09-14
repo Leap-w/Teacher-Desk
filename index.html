@@ -1,6 +1,22 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
+    <script>
+      // 防白闪：应用挂载前按盘上偏好置 data-theme（与 useTheme/themeRepository 同一口径）
+      ;(function () {
+        try {
+          var raw = localStorage.getItem('teacherdesk:theme')
+          var pref = raw ? JSON.parse(raw) : 'system'
+          if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system'
+          var dark =
+            pref === 'dark' ||
+            (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          /* 隐私模式等读不到就交给 useTheme 兜底 */
+        }
+      })()
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48.png" />

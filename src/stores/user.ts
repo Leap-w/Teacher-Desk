@@ -43,10 +43,18 @@ export const useUserStore = defineStore('user', () => {
     profileList.value = [next]
   }
 
-  /** 昵称（头部与编辑抽屉标题用） */
+  /** 昵称（头部与编辑抽屉标题用）；空 = 尚未设置（UI 显示引导，不臆造称呼） */
   const displayName = computed(() => profile.value.nickname)
-  /** 昵称首字（未设头像时的占位） */
-  const initial = computed(() => profile.value.nickname.charAt(0) || '师')
+  /** 昵称首字（未设头像时的占位）；空昵称返回空串——组件改用用户图标，不放假字母 */
+  const initial = computed(() => profile.value.nickname.charAt(0))
+  /** 资料是否已经设置过（任一身份字段非空即视为已设置） */
+  const isProfileSet = computed(
+    () =>
+      profile.value.nickname.trim() !== '' ||
+      profile.value.school.trim() !== '' ||
+      profile.value.className.trim() !== '' ||
+      profile.value.subject.trim() !== '',
+  )
 
   /**
    * 保存资料字段；昵称为空时拒绝（返回原因）。
@@ -91,6 +99,7 @@ export const useUserStore = defineStore('user', () => {
     revision,
     displayName,
     initial,
+    isProfileSet,
     updateProfile,
     setAvatar,
     removeAvatar,

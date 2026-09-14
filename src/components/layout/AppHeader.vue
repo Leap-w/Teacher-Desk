@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Menu, RefreshCw, Search, X } from 'lucide-vue-next'
+import { Menu, RefreshCw, Search, User, X } from 'lucide-vue-next'
 
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useToast } from '@/composables/useToast'
@@ -16,7 +16,7 @@ import { useUserStore } from '@/stores/user'
 const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
-const { state, enabled, syncing, syncWithFeedback } = useCloudSync()
+const { state, signedIn, syncing, syncWithFeedback } = useCloudSync()
 
 defineProps<{
   /** 小屏抽屉侧栏是否展开（仅移动端生效） */
@@ -40,7 +40,9 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 
 const profile = computed(() => userStore.profile)
 const initial = computed(() => userStore.initial)
-const showSync = computed(() => enabled)
+// 未配置环境 / 未登录都算本地模式：同步按钮只在登录后出现，
+// 否则教师点进去只会看到「未登录」三个字（入口在控制中心的云端同步面板）
+const showSync = computed(() => signedIn.value)
 
 function onSearch(): void {
   // UI-2 预留位：全局搜索未实现，先给轻提示
@@ -112,7 +114,8 @@ async function onSync(): Promise<void> {
 
         <RouterLink to="/my" class="avatar" aria-label="进入我的">
           <img v-if="profile.avatar" :src="profile.avatar" alt="" class="avatar__img" />
-          <span v-else class="avatar__fallback" aria-hidden="true">{{ initial }}</span>
+          <span v-else-if="initial" class="avatar__fallback" aria-hidden="true">{{ initial }}</span>
+          <User v-else class="avatar__guest" :size="20" :stroke-width="2" aria-hidden="true" />
         </RouterLink>
       </div>
     </div>
@@ -294,6 +297,17 @@ async function onSync(): Promise<void> {
   color: var(--color-text-inverse);
   font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
+}
+
+/* 未设置资料时的占位：中性用户图标（不放假字母/假名字） */
+.avatar__guest {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card-soft, var(--color-sky-light));
+  color: var(--color-text-tertiary);
 }
 
 @media (max-width: 1023px) {

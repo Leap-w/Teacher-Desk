@@ -190,6 +190,17 @@ export class FakeBrowser {
       removeEventListener: (type: string, listener: Listener) => {
         this.documentListeners.get(type)?.delete(listener)
       },
+      // vue/runtime-dom 在**模块加载时**就 `document.createElement('div')` 探测样式能力
+      //（凡是 import 到 vue 的用例都会触发）。给最小替身：够它初始化，够 useTheme 写 dataset。
+      createElement: () => ({
+        style: {} as Record<string, unknown>,
+        setAttribute: () => {},
+        removeAttribute: () => {},
+      }),
+      documentElement: {
+        dataset: {} as Record<string, string | undefined>,
+        style: {} as Record<string, unknown>,
+      },
     }
     // 用取值器而不是写死的快照：改 `visibilityState` 后派发 `visibilitychange`，
     // 被测代码读到的必须是**改过之后**的值（否则「回到前台」这条路径永远测不到）

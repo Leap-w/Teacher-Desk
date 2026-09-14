@@ -45,6 +45,13 @@ export function useCloudSync() {
   /** 没配环境 ID 时整块不出现：顶栏的按钮、工具箱的卡片都据此隐藏 */
   const enabled = computed(() => state.value.status !== 'disabled')
 
+  /**
+   * 当前**已登录**云端（查过会话且账号在场）。顶栏的同步按钮据此显隐：
+   * 未配置环境 / 未登录都算「本地模式」——同步是登录之后才有意义的动作，
+   * 未登录时挂一个同步按钮只会让教师点进去看「未登录」三个字。
+   */
+  const signedIn = computed(() => state.value.checked && state.value.account !== null)
+
   /** 这一轮同步正在跑（引擎给的事实，不是界面的猜测——谁触发的都对） */
   const syncing = computed(() => state.value.status === 'syncing')
 
@@ -174,6 +181,7 @@ export function useCloudSync() {
   return {
     state,
     enabled,
+    signedIn,
     syncing,
     busy,
     conflictLabels,

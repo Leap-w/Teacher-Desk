@@ -22,7 +22,7 @@ defineProps<Props>()
 </script>
 
 <template>
-  <div class="ex-summary">
+  <div class="ex-summary theme-force-light">
     <header class="ex-header">
       <h3 class="ex-title">{{ title }}</h3>
       <p class="ex-meta">{{ subtitle }}</p>

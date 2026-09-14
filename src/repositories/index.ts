@@ -19,4 +19,10 @@ export { taskRepository } from './task/taskRepository'
 export { dashboardRepository } from './dashboard/dashboardRepository'
 export { userProfileRepository, DEFAULT_USER_PROFILE } from './user/userProfileRepository'
 export { syncQueueRepository, SYNC_QUEUE_STORAGE_KEY } from './sync/syncQueueRepository'
+export {
+  themeRepository,
+  THEME_PREFERENCES,
+  normalizeThemePreference,
+} from './theme/themeRepository'
+export type { ThemePreference } from './theme/themeRepository'
 export { backupRepository } from './backup/backupRepository'

@@ -141,7 +141,7 @@ describe('双设备同步 · 八个模块「A 新增 → B 看到」', () => {
     { name: '周末管理', key: KEYS.weekend, a: [{ id: 'w-1', studentId: 's-1' }], b: [] },
     { name: '课程表', key: KEYS.schedule, a: [{ id: 'c-1', subject: '数学' }], b: [] },
     { name: '工作清单', key: KEYS.tasks, a: [{ id: 't-1', title: '批改作业' }], b: [] },
-    { name: '我的（资料）', key: KEYS.profile, a: [{ nickname: 'Gile' }], b: [] },
+    { name: '我的（资料）', key: KEYS.profile, a: [{ nickname: '测试教师' }], b: [] },
   ]
 
   moduleFixtures.forEach((fixture, index) => {

@@ -218,3 +218,120 @@
   --card-gap: 24px; /* 卡片间距 */
   --section-gap: 32px; /* 区块间距 */
 }
+
+/* ========== 16. 深色模式（v3.0.1-rc） ==========
+   生效方式：`useTheme` 按「手动选择 / 跟随系统」把解析结果写到 <html data-theme>。
+   只覆盖**颜色类**令牌——间距 / 字号 / 圆角 / 动效是结构性刻度，两主题共用。
+   取值口径与昌都记忆暗色板一致：bg #111315 · surface #1B1E20 · surface2 #24282B ·
+   text #F4F6F7 · secondary #A3ADB7 · border #31363A · primary #5AA7AF · accent #D37A7D。 */
+[data-theme='dark'] {
+  /* 主色：暗底上整体提亮一档（对比度），hover/active 从「加深」改为「再提亮」 */
+  --color-primary: #5aa7af;
+  --color-primary-hover: #6fb9c0;
+  --color-primary-active: #82c6cc;
+  --color-primary-dark: #6fb9c0;
+  --color-primary-strong: #6fb9c0;
+  --color-primary-light: rgba(90, 167, 175, 0.16);
+  --color-primary-soft: rgba(90, 167, 175, 0.16);
+  --color-primary-soft-strong: rgba(90, 167, 175, 0.24);
+  --color-primary-bg: rgba(90, 167, 175, 0.08);
+  --color-primary-bg-hover: rgba(90, 167, 175, 0.14);
+  --color-primary-bg-active: rgba(90, 167, 175, 0.2);
+
+  /* 辅助色：同幅提亮，soft 类从实底改为低透明度覆盖暗底 */
+  --color-secondary: #7fb497;
+  --color-secondary-light: #93c2ab;
+  --color-secondary-dark: #6ba286;
+  --color-sky: #7db5e2;
+  --color-sky-light: rgba(125, 181, 226, 0.14);
+  --color-gold: #e0b862;
+  --color-gold-light: rgba(224, 184, 98, 0.14);
+  --color-accent: #d37a7d;
+  --color-accent-soft: #dd8f77;
+
+  /* 语义色 */
+  --color-success: #7fb497;
+  --color-success-strong: #93c2ab;
+  --color-success-soft: rgba(127, 180, 151, 0.16);
+  --color-warning: #e8b04c;
+  --color-warning-strong: #edc06b;
+  --color-warning-soft: rgba(232, 176, 76, 0.16);
+  --color-warning-soft-strong: rgba(232, 176, 76, 0.26);
+  --color-danger: #d37a7d;
+  --color-danger-strong: #dd9294;
+  --color-danger-soft: rgba(211, 122, 125, 0.16);
+  --color-info: #5aa7af;
+
+  /* 背景系统：page → surface → surface2 三层 */
+  --bg-page: #111315;
+  --color-bg: #111315;
+  --bg-main: #111315;
+  --bg-card: #1b1e20;
+  --bg-hover: rgba(244, 246, 247, 0.06);
+  --color-bg-white: #1b1e20;
+  --color-surface: #1b1e20;
+  --color-bg-card: #1b1e20;
+  --color-bg-warm: #262321;
+  --color-bg-subtle: #212527;
+
+  /* 文字 */
+  --color-text: #f4f6f7;
+  --color-text-primary: #f4f6f7;
+  --color-text-secondary: #a3adb7;
+  --color-text-faint: #8a959e;
+  --color-text-tertiary: #9aa5ad;
+  --color-text-disabled: #5c666d;
+  --color-text-inverse: #111315;
+
+  /* 边框：基色从黑系换白系 rgba */
+  --color-border: rgba(244, 246, 247, 0.1);
+  --color-border-light: rgba(244, 246, 247, 0.06);
+  --color-border-divider: rgba(244, 246, 247, 0.07);
+  --color-border-medium: rgba(244, 246, 247, 0.14);
+  --color-border-strong: rgba(244, 246, 247, 0.18);
+  --color-border-emphasis: rgba(244, 246, 247, 0.26);
+  --color-fill-disabled: rgba(244, 246, 247, 0.06);
+
+  /* 阴影：浅色阴影在暗底不可见，整体加深 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 10px 30px -8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 36px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-hover: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  --shadow-primary-glow: 0 4px 12px rgba(90, 167, 175, 0.3);
+  --shadow-danger-glow: 0 4px 12px rgba(211, 122, 125, 0.3);
+
+  /* 毛玻璃 */
+  --glass-bg: rgba(27, 30, 32, 0.75);
+  --glass-bg-card: rgba(27, 30, 32, 0.85);
+  --glass-border: rgba(244, 246, 247, 0.08);
+  --glass-bg-scrolled: rgba(27, 30, 32, 0.88);
+
+  /* 焦点 / 遮罩 */
+  --ring-focus: 0 0 0 3px rgba(90, 167, 175, 0.32);
+  --ring-danger: 0 0 0 3px rgba(211, 122, 125, 0.28);
+  --overlay-scrim: rgba(0, 0, 0, 0.55);
+}
+
+/* ========== 17. 强制浅色作用域（打印 / 导出件） ==========
+   座位导出图 / 导出摘要是**发给别人的 PNG**，永远按浅色纸张渲染——
+   在组件根元素挂 .theme-force-light，局部把深色里被翻转的颜色类令牌还原。
+   只重声明这两个组件实际引用的令牌（见组件源码），不复制整套。 */
+.theme-force-light {
+  --bg-card: #ffffff;
+  --color-surface: #ffffff;
+  --color-text: #101820;
+  --color-text-secondary: #5f6f71;
+  --color-text-faint: #7d8d8f;
+  --color-text-inverse: #ffffff;
+  --color-border: rgba(15, 23, 42, 0.08);
+  --color-border-strong: rgba(15, 23, 42, 0.12);
+  --color-fill-disabled: rgba(15, 23, 42, 0.04);
+  --color-primary: #4a8c94;
+  --color-primary-strong: #3a7175;
+  --color-primary-soft: rgba(74, 140, 148, 0.12);
+  --color-warning: #e8b04c;
+  --color-warning-strong: #a6781f;
+}

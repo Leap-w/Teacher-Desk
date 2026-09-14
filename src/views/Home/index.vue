@@ -20,7 +20,6 @@ import QuickActionGrid, { type QuickAction } from '@/components/dashboard/QuickA
 import { EmptyState } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
 import { greetingByHour, formatDateLabel } from '@/utils/date'
-import { scheduleNowOf } from '@/utils/scheduleNow'
 import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
@@ -29,7 +28,7 @@ import { useUserStore } from '@/stores/user'
 import { useWeekendStore } from '@/stores/weekend'
 import { isLeaveToday } from '@/utils/leave'
 import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
-import NextCourseCard from './components/NextCourseCard.vue'
+import TodayScheduleCard from './components/TodayScheduleCard.vue'
 import SyncHintBar from './components/SyncHintBar.vue'
 
 /**
@@ -50,39 +49,22 @@ const now = useNow()
 const profile = computed(() => userStore.profile)
 const className = computed(() => profile.value.className)
 
-/* ---- Layer 1：Hero ---- */
-const greeting = computed(() => `${greetingByHour(now.value)}，${profile.value.nickname}`)
+/* ---- Layer 1：Hero（资料未设置时不臆造称呼与身份） ---- */
+const greeting = computed(() =>
+  profile.value.nickname
+    ? `${greetingByHour(now.value)}，${profile.value.nickname}`
+    : greetingByHour(now.value),
+)
 
 const dateLine = computed(
   () => `今天是 ${formatDateLabel(now.value).replace(/(星期[日一二三四五六])$/, ' · $1')}`,
 )
 
-const heroBadges = computed(() => [`${className.value} · 班主任`, `${profile.value.subject} 教师`])
-
-/* ---- Layer 2a：下一节课（状态机与课程表共用：utils/scheduleNow.ts） ---- */
-const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
-
-const nextCourse = computed(() => {
-  const lessons = timetableStore.todayLessons
-  if (lessons.length === 0) {
-    return {
-      state: 'empty' as const,
-      emptyHint: isWeekend.value ? '周末不排课，好好休息。' : '课程表里还没有今天的安排。',
-    }
-  }
-  const now2 = scheduleNowOf(lessons, now.value)
-  if (now2.state === 'empty' || now2.state === 'done' || !now2.lesson || !now2.period) {
-    return { state: 'done' as const }
-  }
-  const period = now2.period
-  return {
-    state: now2.state,
-    subject: now2.lesson.subject,
-    className: now2.lesson.className,
-    timeLabel: `${period.shortLabel} · ${period.startTime}-${period.endTime}`,
-    minutesLeft: now2.minutesLeft,
-  }
-})
+const heroBadges = computed(() =>
+  [className.value, profile.value.subject]
+    .filter((part) => part.trim() !== '')
+    .map((part) => (part === className.value ? `${part} · 班主任` : `${part} 教师`)),
+)
 
 /* ---- Layer 2b：今日待办统计 ---- */
 const todoTotal = computed(() => dashboardStore.todos.length)
@@ -90,6 +72,7 @@ const todoDone = computed(() => dashboardStore.todos.filter((t) => t.done).lengt
 const todoUndone = computed(() => todoTotal.value - todoDone.value)
 
 /* ---- Layer 2c：班级动态（全部真实数据） ---- */
+const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
 const todayLeaveCount = computed(
   () => leaveStore.leaves.filter((r) => isLeaveToday(r, dutyStore.todayKey)).length,
 )
@@ -165,11 +148,11 @@ const quickActions: QuickAction[] = [
     <!-- ===== Layer 2：今日工作（桌面两列：左大卡 + 右统计/动态） ===== -->
     <div class="today-grid">
       <DashboardSection
-        title="下一节课"
-        subtitle="来自课程表 · 实时状态"
+        title="今日课程"
+        subtitle="全天安排 · 当前课实时状态"
         class="today-grid__course"
       >
-        <NextCourseCard v-bind="nextCourse" />
+        <TodayScheduleCard />
       </DashboardSection>
 
       <div class="today-grid__side">

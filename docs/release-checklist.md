@@ -27,6 +27,8 @@ npm run build
       （`scripts/hosting-routes.cjs`；`src/__tests__/hostingRoutes.test.ts` 守护路由表一致性）；
       部署后抽查两个子路由：直接刷新不 404、返回的 HTML 指向**本次**构建的 chunk
       （占位指向旧 chunk = 上一版事故，见 CHANGELOG 2026-09-14 部署修复）
+- [ ] **深色模式**：三档（浅色/深色/跟随系统）各抽查首页与「我的」；深色下零硬编码白底/黑字
+      （全走 `[data-theme='dark']` 令牌覆盖）；座位导出 PNG 仍为浅色纸张（.theme-force-light）
 - [ ] 测试时区已固定（`vitest.config.ts` 的 `env.TZ`）——不得依赖测机时区，否则本机绿、CI 红
 - [ ] `npm run build` 成功，且 `dist/` 里没有上次的旧产物（先 `rm -rf dist`）
 

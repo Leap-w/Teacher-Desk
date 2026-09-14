@@ -74,16 +74,22 @@ describe('useUserStore：个人资料（与业务数据独立）', () => {
     window.localStorage.clear()
   })
 
-  it('默认资料：示例口径（高一9班 · 数学 · 昌都三高）', () => {
+  it('默认资料全空（不臆造身份）；首启不写盘；UI 据此显示引导', () => {
     const store = useUserStore()
+    // 默认值不再携带任何假身份（旧默认昵称是需求文档示例值「Gile Thomas」）
     expect(store.profile).toMatchObject({
-      nickname: DEFAULT_USER_PROFILE.nickname,
-      className: '高一9班',
-      subject: '数学',
-      school: '昌都市第三高级中学',
+      nickname: '',
+      className: '',
+      subject: '',
+      school: '',
     })
     expect(store.profile.avatar).toBeUndefined()
-    expect(identityLineOf(store.profile)).toBe('高一9班 班主任 · 数学教师')
+    // 首次启动不写盘：键不存在 → 内存空资料，教师改过资料才落盘
+    expect(window.localStorage.getItem(PROFILE_KEY)).toBeNull()
+    // 空资料状态（组件据此显示「尚未设置资料」+ 用户图标，而不是假名字/假字母）
+    expect(store.isProfileSet).toBe(false)
+    expect(store.initial).toBe('')
+    expect(identityLineOf(store.profile)).toBe(' 班主任 · 教师')
   })
 
   it('编辑昵称 / 学校 / 班级 / 学科 → 落盘', async () => {

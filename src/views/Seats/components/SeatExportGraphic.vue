@@ -78,7 +78,7 @@ function rowUnits(row: number): RowUnit[] {
 </script>
 
 <template>
-  <div class="ex-graphic">
+  <div class="ex-graphic theme-force-light">
     <header class="ex-header">
       <h3 class="ex-title">{{ title }}</h3>
       <p class="ex-meta">{{ subtitle }}</p>

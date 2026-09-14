@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { PencilLine, X } from 'lucide-vue-next'
+import { PencilLine, User, X } from 'lucide-vue-next'
 
 import type { UserProfile } from '@/types/user'
 
@@ -27,8 +27,13 @@ onMounted(() => {
   })
 })
 
-const roleLine = computed(() => `${props.profile.className} · 班主任`)
-const subjectLine = computed(() => `${props.profile.subject} · 教师`)
+/** 身份行：字段为空就整行不显示——绝不渲染「 · 班主任」这种半截身份 */
+const roleLine = computed(() =>
+  props.profile.className.trim() ? `${props.profile.className} · 班主任` : '',
+)
+const subjectLine = computed(() =>
+  props.profile.subject.trim() ? `${props.profile.subject} · 教师` : '',
+)
 </script>
 
 <template>
@@ -41,7 +46,10 @@ const subjectLine = computed(() => `${props.profile.subject} · 教师`)
         @click="emit('pick-avatar')"
       >
         <img v-if="props.profile.avatar" :src="props.profile.avatar" alt="我的头像" />
-        <span v-else class="avatar-fallback" aria-hidden="true">{{ props.initial }}</span>
+        <span v-else-if="props.initial" class="avatar-fallback" aria-hidden="true">{{
+          props.initial
+        }}</span>
+        <User v-else class="avatar-guest" :size="34" :stroke-width="1.8" aria-hidden="true" />
       </button>
       <button
         v-if="props.profile.avatar"
@@ -56,12 +64,17 @@ const subjectLine = computed(() => `${props.profile.subject} · 教师`)
     </div>
 
     <div class="hero-main">
-      <h2 class="hero-name">{{ props.profile.nickname }}</h2>
-      <p class="hero-roles">
-        <span class="role-chip is-primary">{{ roleLine }}</span>
-        <span class="role-chip">{{ subjectLine }}</span>
+      <h2 class="hero-name">
+        {{ props.profile.nickname.trim() || '尚未设置资料' }}
+      </h2>
+      <p v-if="roleLine || subjectLine" class="hero-roles">
+        <span v-if="roleLine" class="role-chip is-primary">{{ roleLine }}</span>
+        <span v-if="subjectLine" class="role-chip">{{ subjectLine }}</span>
       </p>
       <p v-if="props.profile.school" class="hero-school">{{ props.profile.school }}</p>
+      <p v-if="!props.profile.nickname.trim()" class="hero-hint">
+        填写称呼、学校与任教学科，让各页面正确称呼你
+      </p>
     </div>
 
     <button type="button" class="hero-edit" @click="emit('edit')">
@@ -240,5 +253,22 @@ const subjectLine = computed(() => `${props.profile.subject} · 教师`)
   .hero-roles {
     justify-content: center;
   }
+}
+
+/* 未设置资料的引导行（浅色 tertiary，不抢「编辑资料」的注意力） */
+.hero-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+/* 无头像且无昵称首字时的用户图标占位 */
+.avatar-guest {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
 }
 </style>

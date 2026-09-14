@@ -15,14 +15,16 @@ import { createCollectionRepository } from '../base/createCollectionRepository'
 const PROFILE_KEY = `${appConfig.storageKeyPrefix}:profile`
 
 /**
- * 默认资料：示例口径取自本班事实（高一9班 · 数学 · 班主任），教师随时可改。
- * 昵称默认「Gile Thomas」是需求文档的示例值——改昵称是「我的」页第一件事，不设谜语。
+ * 默认资料：**全部为空**（v3.0.1-rc 修复）。此前默认昵称是需求文档的示例值
+ * 「Gile Thomas」——教师没改过资料时，Header 头像会显示字母 G、全站顶着这个假名字，
+ * 看起来像「硬编码的默认用户」。现在：字段为空 = 尚未设置，UI 显示引导（编辑资料），
+ * **不臆造任何身份**（昵称 / 学校 / 班级 / 科目都由教师自己填）。
  */
 export const DEFAULT_USER_PROFILE: UserProfile = {
-  nickname: 'Gile Thomas',
-  school: '昌都市第三高级中学',
-  className: '高一9班',
-  subject: '数学',
+  nickname: '',
+  school: '',
+  className: '',
+  subject: '',
 }
 
 /**
