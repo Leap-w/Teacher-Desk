@@ -1,34 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import { AppButton, AppCard, AppField, AppInput, AppModal } from '@/components/ui'
+import { AppButton, AppCard, AppModal } from '@/components/ui'
 import { useCloudSync } from '@/composables/useCloudSync'
+import { useLoginModal } from '@/composables/useLoginModal'
+import LoginModal from '@/components/layout/LoginModal.vue'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import type { ConflictChoice } from '@/composables/useCloudSync'
 import { useBackup } from '@/composables/useBackup'
 import {
   LAST_BACKUP_KEY,
-  LEGACY_CLEAR_MODULES,
   applyWrites,
-  clearAllKeys,
-  countModules,
   createBackup,
   downloadJson,
-  isLegacyClearItem,
   parseBackup,
-  planClearSamples,
   planMerge,
   readModules,
   type BackupFile,
-  type ClearPlan,
   type CommitOutcome,
   type MergeStat,
 } from '@/utils/backup'
 import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
-import { Download, Eraser, RefreshCw, Trash2, Upload } from 'lucide-vue-next'
+import { Download, Upload } from 'lucide-vue-next'
 import SyncDiagnosticsCard from './components/SyncDiagnosticsCard.vue'
-import ClassroomEntryCard from './components/ClassroomEntryCard.vue'
 import SettingsCell from '@/views/My/components/SettingsCell.vue'
 import SettingsSection from '@/views/My/components/SettingsSection.vue'
 
@@ -39,6 +34,7 @@ import SettingsSection from '@/views/My/components/SettingsSection.vue'
  */
 
 const toast = useToast()
+const loginModal = useLoginModal()
 
 /** 重载后的一次性提示（跨页面跳转会丢，所以放 sessionStorage，落回本页时弹一次） */
 const NOTICE_KEY = `${appConfig.storageKeyPrefix}:notice`
@@ -54,47 +50,15 @@ function readAll() {
   return readModules((key) => storage.read(key))
 }
 
-/** 旧键（历史遗留，见 LEGACY_CLEAR_MODULES）：不进概览，只在「清空示例数据」里一并清 */
-function readLegacy() {
-  return readModules((key) => storage.read(key), LEGACY_CLEAR_MODULES)
-}
-
 /** 本机数据快照：概览与各操作共用同一次读取，避免两个数字来自不同时刻 */
 const snapshot = ref(readAll())
-const legacySnapshot = ref(readLegacy())
 function refreshSnapshot(): void {
   snapshot.value = readAll()
-  legacySnapshot.value = readLegacy()
 }
 
-const overview = computed(() => countModules(snapshot.value.values))
 /** 读取异常、无法解析的数据块（绝不写盘，界面上必须说出来） */
 const broken = computed(() => snapshot.value.broken)
 const lastBackupAt = ref<string>(storage.read(LAST_BACKUP_KEY) ?? '')
-
-/** 当前可清理的示例数据（按钮禁用与确认弹窗共用同一份计算结果） */
-const samplePlan = ref<ClearPlan>(
-  planClearSamples(snapshot.value.values, legacySnapshot.value.values),
-)
-const sampleTotal = computed(() =>
-  samplePlan.value.removed.reduce((sum, item) => sum + item.count, 0),
-)
-/** 本次清空是否动到了旧课表存档（决定要不要多解释一句：它不是现行课表） */
-const clearsLegacy = computed(() =>
-  samplePlan.value.removed.some((item) => isLegacyClearItem(item.label)),
-)
-
-/**
- * 旧课表存档是否还在盘上（读得出原文或读不出都算——「清空本机数据」删的是键，
- * 连读不动的原文一起删，且它不在备份范围内，弹窗必须先说清楚）。
- */
-const hasLegacyArchive = computed(() =>
-  LEGACY_CLEAR_MODULES.some(
-    (module) =>
-      legacySnapshot.value.values[module.key] !== undefined ||
-      legacySnapshot.value.broken.includes(module.label),
-  ),
-)
 
 const lastBackupText = computed(() => {
   const iso = lastBackupAt.value
@@ -124,8 +88,6 @@ const {
   lastSyncedText: cloudLastSyncedText,
   syncWithFeedback,
   resolveConflict,
-  signIn,
-  signOut,
 } = useCloudSync()
 
 /**
@@ -142,73 +104,6 @@ async function doResolveConflict(choice: ConflictChoice): Promise<void> {
   conflictOpen.value = false
   await resolveConflict(choice)
   refreshSnapshot()
-}
-
-const cloudUsername = ref('')
-const cloudPassword = ref('')
-
-const cloudReady = computed(
-  () => cloudUsername.value.trim().length > 0 && cloudPassword.value.length > 0,
-)
-
-/**
- * 云端返回的原因原样显示（它才是事实），**不在代码里编**「某某错误码 = 某某中文」的
- * 对照表——那种表一旦猜错，教师就会照着一条假指引去操作。要做什么写在卡片说明里，
- * 和机器给的原因分开摆。
- */
-function cloudErrorText(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
-
-/**
- * 登录并同步。**应用只提供登录，不提供注册**（2026-09-12 需求方拍板：网站只有他一个人用，
- * 账号在云开发控制台自己建）。
- *
- * 去掉注册按钮不只是「少一个按钮」：在开了「邮箱验证」的环境里，应用内的注册**走不通**——
- * 账号建出来了、验证码也发了，但应用没有交回验证码的地方，账号会永远停在未验证、登录必被拒。
- * 留着它等于摆一条点了会把人绕进去的路（实测走过一遍：注册「成功」却登不上，很容易误判成
- * 程序坏了）。账号从控制台建、应用只负责登录，这条链路每一环都有明确的负责人。
- */
-async function submitCloudLogin(): Promise<void> {
-  if (!cloudReady.value) return
-  cloudBusy.value = true
-  try {
-    await signIn(cloudUsername.value.trim(), cloudPassword.value)
-    cloudPassword.value = ''
-    // 「登录本身成了」与「数据对上了」是两件事，不能混成一句话报出去：集合没建、权限
-    // 没配时登录是成功的、拉取却被拒——此时只报一句绿色的「登录成功」，教师会以为数据
-    // 已经在云上了，而云上什么都没有。`signInAndSync` 会等这一轮同步跑完才返回，
-    // 所以这里读到的状态就是这一轮的结果，不会是中途的「正在同步」。
-    if (cloud.value.conflicts.length > 0) {
-      // 登录成了、同步也跑完了，但有模块**卡在半路**等教师裁决（Phase 9C）。
-      // 这两句都不能用：报「数据已同步」是假话，报「没同步上」又会被当成故障。
-      toast.info('登录成功。有模块本机与云端都有数据，请在下方确认保留哪一份。')
-    } else if (cloud.value.status === 'idle') {
-      toast.success('登录成功，数据已同步')
-    } else {
-      toast.danger(`登录成功，但数据没同步上：${cloud.value.error ?? '原因见下方卡片'}`)
-    }
-  } catch (error) {
-    // 走到这里的是登录**本身**失败（用户名或密码不对、账号还没在控制台建、登录方式没开……）：
-    // 密码留在框里好重试
-    toast.danger(`登录失败：${cloudErrorText(error)}`)
-  } finally {
-    cloudBusy.value = false
-  }
-}
-
-async function doCloudSignOut(): Promise<void> {
-  cloudBusy.value = true
-  try {
-    await signOut()
-    cloudPassword.value = ''
-    toast.info('已退出登录。本机数据还在，只是不再往云上同步。')
-  } catch (error) {
-    toast.danger(`退出登录失败：${cloudErrorText(error)}`)
-  } finally {
-    cloudBusy.value = false
-  }
 }
 
 /* ---------- 写盘收尾（成功 / 失败两条路，绝不混说） ---------- */
@@ -354,69 +249,6 @@ function confirmImport(): void {
   finish(`导入完成：新增 ${added} 条，覆盖 ${replaced} 条`)
 }
 
-/* ---------- 清空 ---------- */
-
-const clearSampleOpen = ref(false)
-const clearAllOpen = ref(false)
-
-function openClearSamples(): void {
-  // 每次打开都重算，避免页面停留期间数据已变（例如另一个标签页删了记录）
-  refreshSnapshot()
-  samplePlan.value = planClearSamples(snapshot.value.values, legacySnapshot.value.values)
-  if (sampleTotal.value === 0) {
-    toast.info(
-      broken.value.length > 0
-        ? `当前没有可清理的示例数据（${broken.value.join('、')}读取异常，未纳入判断）`
-        : '当前没有可清理的示例数据',
-    )
-    return
-  }
-  clearSampleOpen.value = true
-}
-
-function confirmClearSamples(): void {
-  const outcome = applyWrites(samplePlan.value.writes, storage)
-  if (!outcome.ok) {
-    reportCommitFailure(outcome, '清空示例数据')
-    return
-  }
-  finish(`已清空 ${sampleTotal.value} 条示例数据`)
-}
-
-function openClearAll(): void {
-  refreshSnapshot()
-  clearAllOpen.value = true
-}
-
-/**
- * 清空全部会删掉本应用前缀下的**所有**键，故读取异常的块也要列出来。
- * 「还没打开过」（count === null）的块盘上没有键，没有东西可删，不列（与 0 条同处理）。
- */
-const clearAllItems = computed(() =>
-  overview.value.filter((item) => (item.count ?? 0) > 0 || broken.value.includes(item.label)),
-)
-
-function confirmClearAll(): void {
-  const outcome = clearAllKeys(storage)
-  if (!outcome.ok) {
-    reportCommitFailure(outcome, '清空本机数据')
-    return
-  }
-  if (outcome.count === 0) {
-    clearAllOpen.value = false
-    toast.info('本机暂无可清空的数据')
-    return
-  }
-  finish('已清空本机数据')
-}
-
-/** 待删示例记录的名单文案（超出上限时补一句） */
-function namesText(item: ClearPlan['removed'][number]): string {
-  const rest = item.count - item.names.length
-  const head = item.names.join('、')
-  return rest > 0 ? `${head}，另有 ${rest} ${item.unit}未列出` : head
-}
-
 function setNotice(text: string): void {
   try {
     window.sessionStorage.setItem(NOTICE_KEY, text)
@@ -441,42 +273,20 @@ onMounted(() => {
   <div class="toolbox-page">
     <header class="page-toolbar">
       <div>
-        <h1 class="page-title">工具箱</h1>
-        <p class="page-subtitle">数据备份与恢复；教学小工具规划中。</p>
+        <h1 class="page-title">数据与同步</h1>
+        <p class="page-subtitle">管理 TeacherDesk 本机与云端数据</p>
       </div>
     </header>
-
-    <!-- Classroom-1：课堂工具入口 -->
-    <ClassroomEntryCard />
 
     <!-- Cloud-4：同步诊断（Observable Sync：状态 / 队列 / 待同步键 / 最近错误 / 通道） -->
     <SyncDiagnosticsCard />
 
     <AppCard
-      title="数据管理"
+      title="导入导出"
       subtitle="本机数据保存在这台设备的浏览器里，清理浏览器缓存、换设备或换浏览器都会全部丢失，建议定期导出备份。"
     >
-      <ul class="count-list">
-        <li v-for="item in overview" :key="item.key" class="count-item">
-          <span class="count-label">{{ item.label }}</span>
-          <span v-if="broken.includes(item.label)" class="count-broken">读取异常</span>
-          <!-- 盘上没有这个键 = 模块从未打开过。写「还没打开过」而不是「未初始化」：显示 0 会让人
-               以为模块是空的（技术债 #9），而「未初始化」是开发者词，教师看不懂 -->
-          <span v-else-if="item.count === null" class="count-pending">还没打开过</span>
-          <span v-else class="count-value">{{ item.count }} {{ item.unit }}</span>
-        </li>
-      </ul>
-      <p class="footnote">
-        数字为保存在本机的全部记录（含已从列表移除、档案仍留档的学生），备份会原样保留。「还没打开过」表示这个模块的数据还没在本机生成——示例数据会在第一次打开它时写入。
-      </p>
-      <p v-if="broken.length > 0" class="warn-text">
-        本机「{{
-          broken.join('、')
-        }}」读取异常，暂无法统计。为避免覆盖还能人工找回的原文，导入与「清空示例数据」都会跳过它。
-      </p>
-
       <!-- 操作区：Apple Settings Cell（与「我的」页同一套设置行规范） -->
-      <SettingsSection title="备份与恢复">
+      <SettingsSection title="导入导出">
         <SettingsCell
           :icon="Download"
           icon-tone="neutral"
@@ -491,46 +301,8 @@ onMounted(() => {
           subtitle="从备份文件恢复（JSON）"
           @click="pickFile"
         />
-        <SettingsCell
-          :icon="RefreshCw"
-          icon-tone="neutral"
-          title="立即同步"
-          :subtitle="cloudLastSyncedText"
-          @click="syncWithFeedback"
-        />
       </SettingsSection>
 
-      <SettingsSection title="危险操作">
-        <SettingsCell
-          :icon="Eraser"
-          icon-tone="danger"
-          title="清空示例数据"
-          :subtitle="
-            sampleTotal > 0
-              ? `删除 ${sampleTotal} 条示例记录，你自己新增的不受影响`
-              : '当前没有可清理的示例数据'
-          "
-          @click="openClearSamples"
-        />
-        <SettingsCell
-          :icon="Trash2"
-          icon-tone="danger"
-          title="清空本机数据"
-          subtitle="删除本机全部数据，恢复到首次打开的状态"
-          @click="openClearAll"
-        />
-      </SettingsSection>
-
-      <p class="footnote">
-        清空示例数据：删除首次打开时自动生成的示例记录（示例学生 / 课程 / 待办 / 请假 / 值日组 /
-        周末返家），以及这些学生产生的座位约束。你自己新增的记录不受影响；但若你把某条示例记录改成了自己的内容，它同样会被删掉——确认前请先核对名单。座位方案保留，示例学生占用的座位会在下次打开「座位表」时自动释放。轮换设置会保留：剩下的值日组若接不上起点，值日管理页会提示重设。
-      </p>
-      <p class="footnote">
-        清空本机数据：删除本机全部数据，恢复到首次打开的状态（示例数据会重新出现）。
-        <template v-if="cloud.account">
-          云端同步已登录：这里只清本机，不删云端。下次同步时，云端那份数据可能重新出现在本机。
-        </template>
-      </p>
       <input
         ref="fileInput"
         class="file-input"
@@ -545,7 +317,7 @@ onMounted(() => {
     <!-- 没配环境 ID 的构建里整块不显示：与其摆一个按不动的开关，不如不出现 -->
     <AppCard
       v-if="cloud.status !== 'disabled'"
-      title="云端同步"
+      title="云同步"
       subtitle="把本机数据同步到你自己的云端账号，换设备或换浏览器时不用重新录一遍。不登录也能照常用——数据只留在本机，和以前一样。"
     >
       <div class="cloud-block">
@@ -574,49 +346,17 @@ onMounted(() => {
           </div>
         </div>
 
-        <p v-if="!cloud.checked" class="footnote">正在检查登录状态…</p>
-
-        <!-- 连不上云端时**不摆登录表单**：这种时候「查不出登录状态」与「确实没登录」在界面上
-             分不开，摆出密码框会让教师以为掉登录了，在没信号的地方反复输密码（输一次失败一次），
-             而真实原因只是没网 -->
-        <p v-else-if="!cloud.account && cloud.status === 'offline'" class="footnote">
-          连不上云端，暂时无法确认登录状态。恢复网络后会自动重试。
-        </p>
-
-        <form v-else-if="!cloud.account" class="cloud-form" @submit.prevent="submitCloudLogin">
-          <!-- type 必须是 text，**不能是 email**：账号是控制台建的「用户名」类型，用户名不
-               一定是邮箱格式，写成 email 会被浏览器自己的校验挡在提交之前（提示「请输入邮箱」），
-               表现是「点登录没反应」——请求根本没发出去，云端也就没有任何错误可查（实测踩过）。
-               想在用户名里填邮箱地址当然也可以，text 一样收得下。 -->
-          <AppField label="用户名">
-            <AppInput
-              v-model="cloudUsername"
-              type="text"
-              autocomplete="username"
-              placeholder="控制台里建的那个用户名"
-              :disabled="cloudBusy"
-            />
-          </AppField>
-          <AppField label="密码">
-            <AppInput
-              v-model="cloudPassword"
-              type="password"
-              autocomplete="current-password"
-              :disabled="cloudBusy"
-            />
-          </AppField>
-          <div class="action-row">
-            <AppButton type="submit" :loading="cloudBusy" :disabled="!cloudReady">
-              登录并同步
-            </AppButton>
-          </div>
-          <!-- 应用里**不提供注册**（需求方拍板）：账号在云开发控制台建。这里必须写清楚去哪儿建，
-               否则「没有注册入口」会被当成「还没做完」——摆一条路就得指明它通向哪 -->
-          <p class="footnote">
-            账号不在这里注册：到云开发控制台「身份认证 → 用户管理」新建，再回来登录。
-          </p>
-        </form>
-
+        <!-- 未登录：入口指向全局登录弹窗（不放表单——登录从点头像/点这里唤起） -->
+        <div v-if="!cloud.checked" class="action-row">
+          <p class="footnote">正在检查登录状态…</p>
+        </div>
+        <div v-else-if="!cloud.account && cloud.status === 'offline'" class="action-row">
+          <p class="footnote">连不上云端，暂时无法确认登录状态。恢复网络后会自动重试。</p>
+        </div>
+        <div v-else-if="!cloud.account" class="action-row">
+          <AppButton @click="loginModal.show()">立即登录同步</AppButton>
+          <p class="footnote">不注册：账号在云开发控制台「身份认证 → 用户管理」新建。</p>
+        </div>
         <div v-else class="action-row">
           <AppButton
             :loading="cloudBusy"
@@ -625,23 +365,16 @@ onMounted(() => {
           >
             立即同步
           </AppButton>
-          <AppButton variant="secondary" :disabled="cloudBusy" @click="doCloudSignOut">
-            退出登录
-          </AppButton>
         </div>
 
         <p class="footnote">
-          账号只在这个应用里代表你自己：云上的数据挂在你的账号下，别的老师看不到。首次在某台设备上登录时，若本机还没有你自己录的数据，就以云端为准——新设备一登录就能看到已有数据，而不是把示例数据推上去；若本机已经有你录的数据、云端也有，同步不会替你覆盖，会先请你确认保留哪一份。之后同一项两边都改过，以写得晚的一方为准。
+          同步规则：新设备登录以云端为准；两边都有数据不会自动覆盖，会先请你确认保留哪一份；之后同一项两边都改过，以写得晚的一方为准。
         </p>
         <p class="footnote">
-          同步需要云端先做好三件事：在云开发控制台开启用户名密码登录、在「身份认证 →
-          用户管理」里建好你的账号、并建好数据集合。若登录或同步一直失败，先查这三项。
+          同步需要云端先做好三件事：开启登录方式、在「身份认证 →
+          用户管理」建好账号、建好数据集合。若一直失败，先查这三项。
         </p>
       </div>
-    </AppCard>
-
-    <AppCard title="教学小工具" subtitle="随机点名、随机分组、课堂倒计时等，还在计划中。">
-      <p class="footnote">这些工具会在后续版本提供（点名与分组需要先有学生档案）。</p>
     </AppCard>
 
     <AppModal v-model="importOpen" title="导入备份（合并）" :width="560">
@@ -697,51 +430,6 @@ onMounted(() => {
       </template>
     </AppModal>
 
-    <AppModal v-model="clearSampleOpen" title="清空示例数据" :width="520">
-      <p>将从本机删除以下示例记录：</p>
-      <ul class="remove-list">
-        <li v-for="item in samplePlan.removed" :key="item.label">
-          {{ item.label }} {{ item.count }} {{ item.unit }}：{{ namesText(item) }}
-        </li>
-      </ul>
-      <p class="warn-text">
-        示例记录按首次生成时的编号识别，所以上面列出的记录都会被删除——包括你已经改成自己内容的那几条，请先核对名单。
-      </p>
-      <p v-if="clearsLegacy" class="note-text">
-        「旧课表数据」是课表升级时留下的旧存档（已经不再使用，只有当年有课程没能搬过去时才会保留），
-        这里同样只删其中的示例课程，其余原文保留。
-      </p>
-      <p class="note-text">删除后不可撤销，建议先导出备份。座位方案与换座日志保留。</p>
-      <template #footer>
-        <AppButton variant="ghost" @click="clearSampleOpen = false">取消</AppButton>
-        <AppButton variant="danger" @click="confirmClearSamples">确认清空</AppButton>
-      </template>
-    </AppModal>
-
-    <AppModal v-model="clearAllOpen" title="清空本机数据" :width="480">
-      <p>将删除本机全部数据，并恢复到首次打开的状态（示例数据会重新出现）：</p>
-      <ul v-if="clearAllItems.length > 0" class="remove-list">
-        <li v-for="item in clearAllItems" :key="item.key">
-          {{ item.label }}
-          {{ broken.includes(item.label) ? '（读取异常）' : `${item.count} ${item.unit}` }}
-        </li>
-      </ul>
-      <p v-else class="note-text">本机暂无数据。</p>
-      <p v-if="hasLegacyArchive" class="note-text">
-        课表升级时留下的「旧课表数据」存档也会一并删除——它不在备份范围内，删除后无法找回。
-      </p>
-      <p v-if="cloud.account" class="warn-text">
-        云端同步已登录（{{
-          cloud.account
-        }}）：这里清的是本机数据，不会删除云端数据。云端那份原样保留，下次同步时可能重新出现在本机。要连云端一起清，得去云开发控制台删除该集合里的文档。
-      </p>
-      <p v-else class="warn-text">此操作不可撤销。若还想保留，请先导出备份。</p>
-      <template #footer>
-        <AppButton variant="ghost" @click="clearAllOpen = false">取消</AppButton>
-        <AppButton variant="danger" @click="confirmClearAll">确认清空本机数据</AppButton>
-      </template>
-    </AppModal>
-
     <!-- 冲突处置（Phase 9C）。两个选项都会覆盖掉一边的数据，因此**不设默认动作**：
          弹窗只说明处境与后果，选哪一份由教师点。 -->
     <AppModal v-model="conflictOpen" title="本机与云端都有数据" :width="560">
@@ -766,6 +454,8 @@ onMounted(() => {
         </AppButton>
       </template>
     </AppModal>
+
+    <LoginModal />
   </div>
 </template>
 

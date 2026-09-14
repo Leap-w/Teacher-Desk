@@ -1,41 +1,47 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Database, Monitor, Moon, Sun } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { Monitor, Moon, Sun, UserRound } from 'lucide-vue-next'
 
-import { AppButton, AppDrawer, AppField, AppInput, AppSwitch, AppSegmented } from '@/components/ui'
+import {
+  AppButton,
+  AppDrawer,
+  AppField,
+  AppInput,
+  AppSection,
+  AppSwitch,
+  AppSegmented,
+} from '@/components/ui'
 import { useCountdownSettings, HERO_BACKGROUNDS } from '@/composables/useCountdownSettings'
+import { useLoginModal } from '@/composables/useLoginModal'
 import { useToast } from '@/composables/useToast'
-import { useStudentStore } from '@/stores/student'
 import { useTheme } from '@/composables/useTheme'
-import { useTimetableStore } from '@/stores/timetable'
-import { useUserStore } from '@/stores/user'
+import { useCloudSync } from '@/composables/useCloudSync'
 import { COURSE_PERIODS } from '@/types/timetable'
-import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
-import type { UserProfileInput } from '@/types/user'
+import { useUserStore } from '@/stores/user'
 import AboutCard from './components/AboutCard.vue'
-import ControlCenter from './components/ControlCenter.vue'
 import ProfileHero from './components/ProfileHero.vue'
-import ProfileStats from './components/ProfileStats.vue'
+import WorkTimeCard from './components/WorkTimeCard.vue'
 import SettingsCell from './components/SettingsCell.vue'
 import SettingsSection from './components/SettingsSection.vue'
-import WorkTimeCard from './components/WorkTimeCard.vue'
+import type { UserProfileInput } from '@/types/user'
 
 /**
- * 「我的」= Control Center 个人工作中心（V2.1.0-beta · Phase UI-5C）：
- * 五层结构：Profile Hero（身份）→ 工作时光 → 控制中心（同步/工具箱/偏好设置）
- * → 数据管理（Apple Settings Cell，操作在工具箱页保留）→ 关于（__APP_VERSION__）。
- * 顶部次级 Tab「功能设置」保留（各模块设置的第一入口，双入口不迁移）；
- * 头像上传 / 资料编辑抽屉 / 时间表单等业务逻辑与既有版本一致，不碰 Store 与数据结构。
+ * 我的（v3.0.2-rc 重做）——单页四区：
+ * ① 个人信息（登录态驱动：已登录 = Hero + 编辑；未登录 = 空状态 + 立即登录）
+ * ② 工作时光（一张大卡：支教天数 / 学期进度）
+ * ③ 偏好设置（只放个人偏好：深色模式 / 首页倒计时与 Hero 背景 / 课程时间 / 默认视图）
+ * ④ 关于
+ * 数据管理 / 云同步 / 工具箱入口全部迁出（数据与同步在工具箱页，课堂工具有独立页）。
  */
-const route = useRoute()
-const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
-const studentStore = useStudentStore()
-const timetableStore = useTimetableStore()
 const countdown = useCountdownSettings()
 const { theme, effective, setTheme } = useTheme()
+const { signedIn } = useCloudSync()
+const loginModal = useLoginModal()
+
+const profile = computed(() => userStore.profile)
+const appVersion = import.meta.env.APP_VERSION
 
 const THEME_OPTIONS = [
   { value: 'light', label: '浅色' },
@@ -43,54 +49,7 @@ const THEME_OPTIONS = [
   { value: 'system', label: '跟随系统' },
 ] as const
 
-const profile = computed(() => userStore.profile)
-
-const appVersion = import.meta.env.APP_VERSION
-
-/* ---------- Hero 工作信息（真实数据） ---------- */
-
-const studentCount = computed(() => studentStore.activeStudents.length)
-const weekLessons = computed(() => timetableStore.weekLessonCount)
-
-/* ---------- 顶部次级 Tab（功能设置：各模块设置第一入口，保留） ---------- */
-
-type TopTab = 'profile' | 'settings'
-type SettingGroup = 'work' | 'seats' | 'leave' | 'duty' | 'weekend' | 'time' | 'appearance'
-
-const topTab = ref<TopTab>('profile')
-const activeGroup = ref<SettingGroup>('work')
-
-const GROUP_TABS: { id: SettingGroup; label: string }[] = [
-  { id: 'work', label: '课程表' },
-  { id: 'seats', label: '座位' },
-  { id: 'leave', label: '请假' },
-  { id: 'duty', label: '值日' },
-  { id: 'weekend', label: '周末' },
-  { id: 'time', label: '时间' },
-  { id: 'appearance', label: '外观' },
-]
-
-/** 旧入口兼容：/my/settings?module=xxx → 功能设置 Tab 对应分组（各功能页 ⚙ 与旧书签都走这里） */
-function applyModuleQuery(module: unknown): void {
-  if (typeof module !== 'string') return
-  if (GROUP_TABS.some((g) => g.id === module)) {
-    topTab.value = 'settings'
-    activeGroup.value = module as SettingGroup
-  }
-}
-
-onMounted(() => applyModuleQuery(route.query.module))
-watch(
-  () => route.query.module,
-  (module) => applyModuleQuery(module),
-)
-
-function openSettings(group: SettingGroup): void {
-  topTab.value = 'settings'
-  activeGroup.value = group
-}
-
-/* ---------- 头像 ---------- */
+/* ---------- 头像（仅登录后可见入口） ---------- */
 
 const avatarInput = ref<HTMLInputElement>()
 const MAX_AVATAR_BYTES = 1024 * 1024 // 与 store 的 dataURL 上限同口径
@@ -114,8 +73,8 @@ function onAvatarPicked(event: Event): void {
   }
   const reader = new FileReader()
   reader.onload = () => {
-    const result = typeof reader.result === 'string' ? reader.result : ''
-    const outcome = userStore.setAvatar(result)
+    if (typeof reader.result !== 'string') return
+    const outcome = userStore.setAvatar(reader.result)
     if (!outcome.ok) {
       toast.danger(outcome.reason)
       return
@@ -131,7 +90,7 @@ function removeAvatar(): void {
   toast.success('已删除头像')
 }
 
-/* ---------- 编辑资料抽屉 ---------- */
+/* ---------- 编辑资料抽屉（登录后才有入口） ---------- */
 
 const drawerOpen = ref(false)
 const form = ref<UserProfileInput>({ nickname: '', school: '', className: '', subject: '' })
@@ -156,69 +115,31 @@ function submitProfile(): void {
   toast.success('资料已更新')
 }
 
-/* ---------- 数据管理（Layer 4：操作在工具箱页，这里统一入口） ---------- */
+/* ---------- 未登录 ---------- */
 
-function openTools(): void {
-  router.push('/my/tools')
+function openLogin(): void {
+  loginModal.show()
 }
 
-/* ---------- 功能设置（各分组行） ---------- */
-
-interface Row {
-  key: string
-  label: string
-  value?: string
-  to?: string
-  soon?: boolean
-}
+/* ---------- 偏好设置 ---------- */
 
 const courseTimeValue = computed(
   () => `${COURSE_PERIODS.length} 个时间段 · ${COURSE_PERIODS[0]!.startTime} 首课`,
 )
-const seatLayoutValue = computed(
-  () =>
-    `${DEFAULT_CLASSROOM_CONFIG.rows} 排 × ${DEFAULT_CLASSROOM_CONFIG.cols} 列 · ${DEFAULT_CLASSROOM_CONFIG.blocks.length} 区 · ${DEFAULT_CLASSROOM_CONFIG.blocks.length - 1} 条过道`,
-)
 
-const GROUP_ROWS: Record<Exclude<SettingGroup, 'time' | 'appearance'>, Row[]> = {
-  work: [
-    { key: 'periods', label: '课程时间', value: courseTimeValue.value },
-    { key: 'view', label: '默认视图', soon: true },
-  ],
-  seats: [
-    { key: 'layout', label: '教室布局', value: `${seatLayoutValue.value}（固定）` },
-    { key: 'export-view', label: '导出默认视角', soon: true },
-    { key: 'default-plan', label: '默认方案', soon: true },
-  ],
-  leave: [
-    { key: 'back-time', label: '默认返校时间', soon: true },
-    { key: 'display', label: '显示方式', soon: true },
-  ],
-  duty: [
-    {
-      key: 'rotation',
-      label: '轮换设置',
-      value: '起点日期 · 起点组 · 周末开关（在值日管理页内）',
-      to: '/class/duty',
-    },
-    { key: 'default-group', label: '默认分组', soon: true },
-  ],
-  weekend: [{ key: 'remind', label: '默认返校提醒', soon: true }],
+function soonRow(): void {
+  toast.info('这个设置还在开发中，敬请期待')
 }
 
-function openRow(row: Row): void {
-  if (row.soon || !row.to) {
-    toast.info('这个设置还在开发中，敬请期待')
-    return
-  }
-  router.push(row.to)
-}
-
-/* ---------- About ---------- */
+/* ---------- 关于 ---------- */
 
 function checkUpdate(): void {
   toast.info(`当前已是最新版本 ${appVersion}`)
 }
+
+onMounted(() => {
+  // 占位：保持 onMounted 生命周期显式（头像 input ref 由模板持有）
+})
 </script>
 
 <template>
@@ -228,216 +149,151 @@ function checkUpdate(): void {
       <p class="page-head__sub">班主任的个人工作中心与控制中心</p>
     </div>
 
-    <!-- 次级导航：我的 ｜ 功能设置（各模块设置第一入口，保留） -->
-    <nav class="my-tabs" aria-label="我的页次级导航">
-      <button
-        type="button"
-        class="my-tab"
-        :class="{ 'is-active': topTab === 'profile' }"
-        @click="topTab = 'profile'"
+    <!-- ===== 第一部分：个人信息（登录态驱动） ===== -->
+    <AppSection title="个人信息">
+      <ProfileHero
+        v-if="signedIn"
+        :profile="profile"
+        :initial="userStore.initial"
+        @edit="openProfileEditor"
+        @pick-avatar="pickAvatar"
+        @remove-avatar="removeAvatar"
       >
-        我的
-      </button>
-      <button
-        type="button"
-        class="my-tab"
-        :class="{ 'is-active': topTab === 'settings' }"
-        @click="topTab = 'settings'"
-      >
-        功能设置
-      </button>
-    </nav>
+        <template #avatar-input>
+          <input
+            ref="avatarInput"
+            type="file"
+            accept="image/*"
+            class="avatar-input"
+            @change="onAvatarPicked"
+          />
+        </template>
+      </ProfileHero>
 
-    <!-- ================= Tab 1：Control Center 五层 ================= -->
-    <div v-if="topTab === 'profile'" class="cc-layout">
-      <div class="cc-main">
-        <!-- Layer 1：Profile Hero -->
-        <ProfileHero
-          :profile="profile"
-          :initial="userStore.initial"
-          @edit="openProfileEditor"
-          @pick-avatar="pickAvatar"
-          @remove-avatar="removeAvatar"
-        >
-          <template #avatar-input>
-            <input
-              ref="avatarInput"
-              type="file"
-              accept="image/*"
-              class="avatar-input"
-              @change="onAvatarPicked"
-            />
-          </template>
-        </ProfileHero>
-        <ProfileStats
-          :student-count="studentCount"
-          :week-lessons="weekLessons"
-          :version="appVersion"
-        />
-
-        <!-- Layer 2：工作时光 -->
-        <WorkTimeCard />
-
-        <!-- Layer 3：控制中心 -->
-        <ControlCenter @open-settings="openSettings" @open-tools="openTools" />
+      <!-- 未登录：空状态（默认头像 + 立即登录；编辑入口全部隐藏） -->
+      <div v-else class="guest-card">
+        <span class="guest-card__avatar" aria-hidden="true">
+          <UserRound :size="30" :stroke-width="1.8" />
+        </span>
+        <div class="guest-card__main">
+          <p class="guest-card__title">尚未登录</p>
+          <p class="guest-card__hint">登录后同步 TeacherDesk 数据</p>
+        </div>
+        <AppButton type="button" @click="openLogin">立即登录</AppButton>
       </div>
+    </AppSection>
 
-      <div class="cc-side">
-        <!-- Layer 4：数据管理（统一入口；导出/导入/重置逻辑在工具箱页保留） -->
-        <SettingsSection title="数据管理">
-          <SettingsCell
-            :icon="Database"
-            icon-tone="neutral"
-            title="备份与恢复"
-            subtitle="导出 · 导入 · 合并（工具箱）"
-            @click="openTools"
-          />
-          <SettingsCell
-            :icon="Database"
-            icon-tone="danger"
-            title="重置数据"
-            subtitle="清空示例数据 · 清空全部（工具箱）"
-            @click="openTools"
-          />
-        </SettingsSection>
+    <!-- ===== 第二部分：工作时光（一张大卡） ===== -->
+    <AppSection title="工作时光">
+      <WorkTimeCard />
+    </AppSection>
 
-        <!-- Layer 5：关于 -->
+    <!-- ===== 第三部分：偏好设置（只放个人偏好） ===== -->
+    <AppSection title="偏好设置">
+      <SettingsSection title="外观">
+        <div class="pref-row">
+          <span class="pref-row__label">深色模式</span>
+          <!-- 不用 v-model：显式走 setTheme（落盘 + 应用一次完成） -->
+          <AppSegmented
+            :model-value="theme"
+            :options="[...THEME_OPTIONS]"
+            label="深色模式偏好"
+            @update:model-value="setTheme($event)"
+          />
+        </div>
+        <p class="pref-row__hint">
+          <component
+            :is="theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor"
+            :size="14"
+            :stroke-width="2"
+            aria-hidden="true"
+          />
+          <span v-if="theme === 'system'">
+            跟随系统：系统切换深浅时应用实时跟随（当前{{
+              effective === 'dark' ? '深色' : '浅色'
+            }}）</span
+          >
+          <span v-else>已固定为{{ theme === 'dark' ? '深色' : '浅色' }}主题，无需刷新</span>
+        </p>
+      </SettingsSection>
+
+      <SettingsSection title="首页">
+        <SettingsCell title="课程时间设置" :subtitle="courseTimeValue" />
+        <SettingsCell title="首页默认视图" badge-text="开发中" @click="soonRow" />
+        <SettingsCell title="座位图默认视角" badge-text="开发中" @click="soonRow" />
+        <div class="time-form">
+          <AppField label="倒计时标题">
+            <AppInput
+              :model-value="countdown.settings.value.title"
+              placeholder="如 距离期末考试"
+              @update:model-value="countdown.update({ title: $event })"
+            />
+          </AppField>
+          <div class="time-form__dates">
+            <AppField label="开始日期">
+              <AppInput
+                type="date"
+                :model-value="countdown.settings.value.startDate"
+                @update:model-value="countdown.update({ startDate: String($event) })"
+              />
+            </AppField>
+            <AppField label="目标日期">
+              <AppInput
+                type="date"
+                :model-value="countdown.settings.value.targetDate"
+                @update:model-value="countdown.update({ targetDate: String($event) })"
+              />
+            </AppField>
+          </div>
+
+          <AppField label="Hero 背景">
+            <div class="bg-presets">
+              <button
+                v-for="preset in HERO_BACKGROUNDS"
+                :key="preset.id"
+                type="button"
+                class="bg-presets__item"
+                :class="{ 'is-active': countdown.settings.value.background === preset.url }"
+                @click="countdown.update({ background: preset.url })"
+              >
+                <img class="bg-presets__thumb" :src="preset.url" alt="" />
+                <span class="bg-presets__label">{{ preset.label }}</span>
+              </button>
+            </div>
+            <AppInput
+              class="bg-custom"
+              :model-value="
+                HERO_BACKGROUNDS.some((p) => p.url === countdown.settings.value.background)
+                  ? ''
+                  : countdown.settings.value.background
+              "
+              placeholder="自定义背景图 URL（可选）"
+              @update:model-value="countdown.update({ background: String($event) })"
+            />
+          </AppField>
+
+          <div class="time-form__switch">
+            <span class="time-form__switch-label">显示进度与百分比</span>
+            <AppSwitch
+              :model-value="countdown.settings.value.showProgress"
+              label="显示进度"
+              @update:model-value="countdown.update({ showProgress: $event })"
+            />
+          </div>
+          <p class="time-form__hint">
+            已过去 {{ countdown.daysPassed.value }} 天 · 剩余 {{ countdown.daysRemaining.value }} 天
+            · 完成 {{ countdown.progress.value }}%（自动计算，无需手动修改）
+          </p>
+        </div>
+      </SettingsSection>
+
+      <!-- ===== 第四部分：关于 ===== -->
+      <div class="my-page__about">
         <AboutCard @check-update="checkUpdate" />
       </div>
-    </div>
+    </AppSection>
 
-    <!-- ================= Tab 2：功能设置（第一入口，保留） ================= -->
-    <div v-else class="settings-pane">
-      <nav class="my-tabs my-tabs--sub" aria-label="设置分组">
-        <button
-          v-for="group in GROUP_TABS"
-          :key="group.id"
-          type="button"
-          class="my-tab"
-          :class="{ 'is-active': activeGroup === group.id }"
-          @click="activeGroup = group.id"
-        >
-          {{ group.label }}
-        </button>
-      </nav>
-
-      <div class="settings-card">
-        <!-- 时间组：表单（与首页 Hero 共用数据，改动即自动保存） -->
-        <template v-if="activeGroup === 'time'">
-          <div class="time-form">
-            <AppField label="倒计时标题">
-              <AppInput
-                :model-value="countdown.settings.value.title"
-                placeholder="如 距离期末考试"
-                @update:model-value="countdown.update({ title: $event })"
-              />
-            </AppField>
-            <div class="time-form__dates">
-              <AppField label="开始日期">
-                <AppInput
-                  type="date"
-                  :model-value="countdown.settings.value.startDate"
-                  @update:model-value="countdown.update({ startDate: String($event) })"
-                />
-              </AppField>
-              <AppField label="目标日期">
-                <AppInput
-                  type="date"
-                  :model-value="countdown.settings.value.targetDate"
-                  @update:model-value="countdown.update({ targetDate: String($event) })"
-                />
-              </AppField>
-            </div>
-
-            <AppField label="Hero 背景">
-              <div class="bg-presets">
-                <button
-                  v-for="preset in HERO_BACKGROUNDS"
-                  :key="preset.id"
-                  type="button"
-                  class="bg-presets__item"
-                  :class="{ 'is-active': countdown.settings.value.background === preset.url }"
-                  @click="countdown.update({ background: preset.url })"
-                >
-                  <img class="bg-presets__thumb" :src="preset.url" alt="" />
-                  <span class="bg-presets__label">{{ preset.label }}</span>
-                </button>
-              </div>
-              <AppInput
-                class="bg-custom"
-                :model-value="
-                  HERO_BACKGROUNDS.some((p) => p.url === countdown.settings.value.background)
-                    ? ''
-                    : countdown.settings.value.background
-                "
-                placeholder="自定义背景图 URL（可选）"
-                @update:model-value="countdown.update({ background: String($event) })"
-              />
-            </AppField>
-
-            <div class="time-form__switch">
-              <span class="time-form__switch-label">显示进度与百分比</span>
-              <AppSwitch
-                :model-value="countdown.settings.value.showProgress"
-                label="显示进度"
-                @update:model-value="countdown.update({ showProgress: $event })"
-              />
-            </div>
-            <p class="time-form__hint">
-              已过去 {{ countdown.daysPassed.value }} 天 · 剩余
-              {{ countdown.daysRemaining.value }} 天 · 完成
-              {{ countdown.progress.value }}%（自动计算，无需手动修改）
-            </p>
-          </div>
-        </template>
-
-        <!-- 外观组：深色模式（浅色 | 深色 | 跟随系统；实时切换无刷新） -->
-        <template v-else-if="activeGroup === 'appearance'">
-          <div class="appearance-pane">
-            <!-- 不用 v-model：v-model 只会改 ref，绕过 setTheme 的「落盘 + 应用」；显式走 setTheme -->
-            <AppSegmented
-              :model-value="theme"
-              :options="[...THEME_OPTIONS]"
-              label="深色模式偏好"
-              @update:model-value="setTheme($event)"
-            />
-            <p class="appearance-pane__hint">
-              <component
-                :is="theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor"
-                :size="14"
-                :stroke-width="2"
-                aria-hidden="true"
-              />
-              <span v-if="theme === 'system'"
-                >跟随系统：系统切换深浅时应用实时跟随（当前{{
-                  effective === 'dark' ? '深色' : '浅色'
-                }}）</span
-              >
-              <span v-else
-                >已固定为{{
-                  theme === 'dark' ? '深色' : '浅色'
-                }}主题，各页面即时切换、无需刷新</span
-              >
-            </p>
-          </div>
-        </template>
-
-        <!-- 其余分组：Settings Cell 行 -->
-        <template v-else>
-          <SettingsCell
-            v-for="row in GROUP_ROWS[activeGroup]"
-            :key="row.key"
-            :title="row.label"
-            :subtitle="row.value"
-            :chevron="Boolean(row.to)"
-            :badge-text="row.soon ? '开发中' : undefined"
-            @click="openRow(row)"
-          />
-        </template>
-      </div>
-    </div>
-
-    <!-- 编辑资料抽屉 -->
+    <!-- 编辑资料抽屉（登录后） -->
     <AppDrawer v-model="drawerOpen" title="编辑资料" :width="420">
       <form id="profile-form" class="profile-form" @submit.prevent="submitProfile">
         <AppField label="昵称" required hint="页面上这样称呼你">
@@ -690,5 +546,73 @@ function checkUpdate(): void {
 
 .appearance-pane__hint svg {
   flex-shrink: 0;
+}
+
+/* ---- 未登录空状态卡（v3.0.2-rc） ---- */
+.guest-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+
+.guest-card__avatar {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--color-sky-light);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.guest-card__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.guest-card__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.guest-card__hint {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+/* ---- 偏好行 ---- */
+.pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.pref-row__label {
+  font-size: var(--text-md);
+  color: var(--color-text-primary);
+}
+
+.pref-row__hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.my-page__about {
+  margin-top: var(--spacing-md);
 }
 </style>

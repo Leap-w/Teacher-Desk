@@ -1,33 +1,39 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Menu, RefreshCw, Search, User, X } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
+import {
+  Database,
+  GraduationCap,
+  LogOut,
+  PencilLine,
+  RefreshCw,
+  Search,
+  User,
+} from 'lucide-vue-next'
 
+import LoginModal from '@/components/layout/LoginModal.vue'
 import { useCloudSync } from '@/composables/useCloudSync'
+import { useLoginModal } from '@/composables/useLoginModal'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
 
 /**
- * 顶部工具栏（V2.0.1-alpha · Phase UI-2 App Shell）：
- * 72px 全宽毛玻璃（接近 macOS 工具栏）——左：Logo + TeacherDesk + 班主任工作台副标题；
- * 中：留白（预留搜索）；右：搜索（预留）/ 云同步 / 头像。
- * 滚动后背景透明度略增（.is-scrolled）。小屏出现汉堡按钮唤起侧栏抽屉。
+ * 顶部工具栏（v3.0.2-rc · 顶部导航版）：
+ * 72px 全宽毛玻璃——左：Logo；中：一级导航（首页 / 学生档案 / 班级管理 / 工作管理 / 我的）；
+ * 右：课堂工具 · 搜索 · 同步（登录后）· 头像。
+ * 左侧 Sidebar 已移除（需求方拍板），一级导航收回顶部；模块内二级导航在 ModuleLayout。
+ *
+ * 头像行为（登录态驱动）：
+ * - 未登录：点击 → 登录弹窗（`useLoginModal`）
+ * - 已登录：点击 → 个人菜单（编辑资料 / 数据同步 / 退出登录）
  */
+const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const userStore = useUserStore()
-const { state, signedIn, syncing, syncWithFeedback } = useCloudSync()
+const { signedIn, syncing, syncWithFeedback } = useCloudSync()
+const loginModal = useLoginModal()
 
-defineProps<{
-  /** 小屏抽屉侧栏是否展开（仅移动端生效） */
-  sidebarOpen: boolean
-}>()
-
-const emit = defineEmits<{
-  'toggle-sidebar': []
-}>()
-
-/** 滚动后加深毛玻璃背景 */
 const scrolled = ref(false)
 function onScroll(): void {
   scrolled.value = window.scrollY > 8
@@ -40,27 +46,65 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 
 const profile = computed(() => userStore.profile)
 const initial = computed(() => userStore.initial)
-// 未配置环境 / 未登录都算本地模式：同步按钮只在登录后出现，
-// 否则教师点进去只会看到「未登录」三个字（入口在控制中心的云端同步面板）
-const showSync = computed(() => signedIn.value)
+
+/** 一级导航：与路由表的一级模块一一对应（班级 / 工作管理落到各自默认子页） */
+const NAV_ITEMS = [
+  { label: '首页', to: '/' },
+  { label: '学生档案', to: '/students' },
+  { label: '班级管理', to: '/class/seats' },
+  { label: '工作管理', to: '/work/works' },
+  { label: '我的', to: '/my' },
+] as const
+
+/** 当前激活的一级项（/class/leave 也算「班级管理」激活） */
+function isActive(to: string): boolean {
+  if (to === '/') return route.path === '/'
+  return route.path === to || route.path.startsWith(`${to}/`)
+}
+
+const menuOpen = ref(false)
+
+function onAvatarClick(): void {
+  if (signedIn.value) menuOpen.value = !menuOpen.value
+  else loginModal.show()
+}
+
+function closeMenu(): void {
+  menuOpen.value = false
+}
+
+function goEditProfile(): void {
+  closeMenu()
+  router.push('/my')
+}
+
+function goDataSync(): void {
+  closeMenu()
+  router.push('/my/tools')
+}
+
+async function onSignOut(): Promise<void> {
+  closeMenu()
+  await syncWithFeedbackSignOut()
+}
+
+/** 退出登录：清云会话与同步记账；班级数据留在本机（Local First） */
+async function syncWithFeedbackSignOut(): Promise<void> {
+  const { signOut } = useCloudSync()
+  try {
+    await signOut()
+    toast.success('已退出登录，数据只保留在本机')
+  } catch (error) {
+    toast.danger(`退出登录没成功：${error instanceof Error ? error.message : '原因未知'}`)
+  }
+}
 
 function onSearch(): void {
-  // UI-2 预留位：全局搜索未实现，先给轻提示
   toast.info('全局搜索还在路上，先埋头干活。')
 }
 
 async function onSync(): Promise<void> {
-  // 有等教师裁决的冲突（Phase 9C）：去工具箱处理
-  if (state.value.conflicts.length > 0) {
-    toast.info('有模块本机与云端都有数据，需要确认保留哪一份，去工具箱处理。')
-    await router.push('/my/tools')
-    return
-  }
-  if (state.value.checked && state.value.status === 'signedOut') {
-    toast.info('还没登录，先到工具箱登录一次。')
-    await router.push('/my/tools')
-    return
-  }
+  if (syncing.value) return
   await syncWithFeedback()
 }
 </script>
@@ -68,36 +112,37 @@ async function onSync(): Promise<void> {
 <template>
   <header class="app-header" :class="{ 'is-scrolled': scrolled }">
     <div class="app-header__inner">
-      <div class="app-header__left">
-        <button
-          type="button"
-          class="icon-btn app-header__menu-btn"
-          :aria-label="sidebarOpen ? '关闭导航菜单' : '打开导航菜单'"
-          @click="emit('toggle-sidebar')"
+      <RouterLink to="/" class="brand" aria-label="回到首页">
+        <img class="brand__logo" src="/icons/icon-192.png" alt="" />
+        <span class="brand__text">
+          <span class="brand__name">TeacherDesk</span>
+        </span>
+      </RouterLink>
+
+      <!-- 一级导航（左侧 Sidebar 移除后收回顶部） -->
+      <nav class="top-nav" aria-label="一级导航">
+        <RouterLink
+          v-for="item in NAV_ITEMS"
+          :key="item.to"
+          :to="item.to"
+          class="top-nav__item"
+          :class="{ 'is-active': isActive(item.to) }"
         >
-          <X v-if="sidebarOpen" :size="20" :stroke-width="2" />
-          <Menu v-else :size="20" :stroke-width="2" />
-        </button>
-
-        <RouterLink to="/" class="brand" aria-label="回到首页">
-          <img class="brand__logo" src="/icons/icon-192.png" alt="" />
-          <span class="brand__text">
-            <span class="brand__name">TeacherDesk</span>
-            <span class="brand__subtitle">班主任工作台</span>
-          </span>
+          {{ item.label }}
         </RouterLink>
-      </div>
-
-      <!-- 中间留白：为全局搜索预留 -->
-      <div class="app-header__spacer" aria-hidden="true" />
+      </nav>
 
       <div class="app-header__right">
+        <RouterLink to="/my/classroom" class="icon-btn" aria-label="课堂工具">
+          <GraduationCap :size="18" :stroke-width="2" aria-hidden="true" />
+        </RouterLink>
+
         <button type="button" class="icon-btn" aria-label="搜索（即将上线）" @click="onSearch">
           <Search :size="18" :stroke-width="2" aria-hidden="true" />
         </button>
 
         <button
-          v-if="showSync"
+          v-if="signedIn"
           type="button"
           class="icon-btn"
           :disabled="syncing"
@@ -112,13 +157,52 @@ async function onSync(): Promise<void> {
           />
         </button>
 
-        <RouterLink to="/my" class="avatar" aria-label="进入我的">
-          <img v-if="profile.avatar" :src="profile.avatar" alt="" class="avatar__img" />
-          <span v-else-if="initial" class="avatar__fallback" aria-hidden="true">{{ initial }}</span>
-          <User v-else class="avatar__guest" :size="20" :stroke-width="2" aria-hidden="true" />
-        </RouterLink>
+        <!-- 头像：未登录 → 登录弹窗；已登录 → 个人菜单 -->
+        <div class="avatar-wrap">
+          <button type="button" class="avatar" aria-label="账号" @click="onAvatarClick">
+            <img
+              v-if="signedIn && profile.avatar"
+              :src="profile.avatar"
+              alt=""
+              class="avatar__img"
+            />
+            <span v-else-if="signedIn && initial" class="avatar__fallback" aria-hidden="true">{{
+              initial
+            }}</span>
+            <User v-else class="avatar__guest" :size="20" :stroke-width="2" aria-hidden="true" />
+          </button>
+
+          <Transition name="menu">
+            <div v-if="menuOpen && signedIn" class="avatar-menu" role="menu">
+              <button
+                type="button"
+                class="avatar-menu__item"
+                role="menuitem"
+                @click="goEditProfile"
+              >
+                <PencilLine :size="15" :stroke-width="2" aria-hidden="true" />
+                编辑资料
+              </button>
+              <button type="button" class="avatar-menu__item" role="menuitem" @click="goDataSync">
+                <Database :size="15" :stroke-width="2" aria-hidden="true" />
+                数据同步
+              </button>
+              <button
+                type="button"
+                class="avatar-menu__item avatar-menu__item--danger"
+                role="menuitem"
+                @click="onSignOut"
+              >
+                <LogOut :size="15" :stroke-width="2" aria-hidden="true" />
+                退出登录
+              </button>
+            </div>
+          </Transition>
+        </div>
       </div>
     </div>
+
+    <LoginModal />
   </header>
 </template>
 
@@ -129,7 +213,7 @@ async function onSync(): Promise<void> {
   left: 0;
   right: 0;
   z-index: var(--z-nav);
-  /* UI-2：全宽毛玻璃工具栏，接近 macOS——半透明 + blur + 极弱底部分隔线 */
+  /* 全宽毛玻璃工具栏，接近 macOS——半透明 + blur + 极弱底部分隔线 */
   height: calc(var(--nav-height) + env(safe-area-inset-top, 0px));
   padding-top: env(safe-area-inset-top, 0px);
   background: var(--glass-bg);
@@ -153,21 +237,54 @@ async function onSync(): Promise<void> {
   padding: 0 var(--page-pad-x);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--spacing-md);
 }
 
-.app-header__left {
+/* ---- 一级导航 ---- */
+.top-nav {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  gap: var(--space-1);
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.app-header__spacer {
-  flex: 1;
+.top-nav::-webkit-scrollbar {
+  display: none;
 }
 
+.top-nav__item {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.top-nav__item:hover {
+  color: var(--color-text-primary);
+  background: var(--bg-hover);
+}
+
+.top-nav__item.is-active {
+  color: var(--color-primary-dark);
+  background: var(--color-primary-soft);
+}
+
+.top-nav__item:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+/* ---- 右侧 ---- */
 .app-header__right {
   display: flex;
   align-items: center;
@@ -175,7 +292,7 @@ async function onSync(): Promise<void> {
   flex-shrink: 0;
 }
 
-/* ---- 图标按钮（搜索 / 同步 / 汉堡）：柔和高亮，无按钮感 ---- */
+/* ---- 图标按钮：柔和高亮，无按钮感 ---- */
 .icon-btn {
   width: 36px;
   height: 36px;
@@ -186,6 +303,7 @@ async function onSync(): Promise<void> {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
+  text-decoration: none;
   cursor: pointer;
   transition:
     background var(--transition-fast),
@@ -216,11 +334,7 @@ async function onSync(): Promise<void> {
   }
 }
 
-.app-header__menu-btn {
-  display: none;
-}
-
-/* ---- 品牌：36px Logo + 双行文字 ---- */
+/* ---- 品牌 ---- */
 .brand {
   display: flex;
   align-items: center;
@@ -238,12 +352,6 @@ async function onSync(): Promise<void> {
   box-shadow: var(--shadow-xs);
 }
 
-.brand__text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.2;
-}
-
 .brand__name {
   font-size: var(--text-md);
   font-weight: var(--font-weight-semibold);
@@ -252,19 +360,21 @@ async function onSync(): Promise<void> {
   white-space: nowrap;
 }
 
-.brand__subtitle {
-  font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
+/* ---- 头像与个人菜单 ---- */
+.avatar-wrap {
+  position: relative;
 }
 
-/* ---- 头像 ---- */
 .avatar {
   width: 36px;
   height: 36px;
+  padding: 0;
+  border: none;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
+  cursor: pointer;
+  background: transparent;
   box-shadow:
     0 0 0 2px var(--color-bg-white),
     0 0 0 4px var(--color-primary-bg);
@@ -299,25 +409,74 @@ async function onSync(): Promise<void> {
   font-weight: var(--font-weight-semibold);
 }
 
-/* 未设置资料时的占位：中性用户图标（不放假字母/假名字） */
+/* 未登录占位：中性用户图标（不放假字母/假名字） */
 .avatar__guest {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-card-soft, var(--color-sky-light));
+  background: var(--color-sky-light);
   color: var(--color-text-tertiary);
 }
 
-@media (max-width: 1023px) {
-  .app-header__menu-btn {
-    display: flex;
-  }
+.avatar-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 160px;
+  padding: var(--space-2);
+  background: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+}
+
+.avatar-menu__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: var(--text-md);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.avatar-menu__item:hover {
+  background: var(--bg-hover);
+}
+
+.avatar-menu__item--danger {
+  color: var(--color-danger);
+}
+
+.avatar-menu__item:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.menu-enter-active,
+.menu-leave-active {
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.menu-enter-from,
+.menu-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 @media (max-width: 640px) {
-  .brand__subtitle {
+  .brand__name {
     display: none;
   }
 }

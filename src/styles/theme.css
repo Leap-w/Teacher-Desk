@@ -95,7 +95,7 @@
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
-  --spacing-card: var(--spacing-md);
+  --spacing-card: var(--spacing-lg); /* v3.0.2-rc：卡片内边距 24px */
   --spacing-lg: 24px;
   --spacing-page: var(--spacing-lg);
   --spacing-xl: 32px;
@@ -113,7 +113,7 @@
   /* ========== 8. 字号（V6.0 层级：Display / H1 / H2 / H3 / Body / Caption） ========== */
   --font-hero-num: clamp(56px, 7vw, 72px);
   --font-hero-title: clamp(56px, 6vw, 64px);
-  --font-page-title: clamp(56px, 6vw, 64px); /* 一级标题 */
+  --font-page-title: 32px; /* 一级标题（v3.0.2-rc：昌都记忆层级 32/16） */
   --font-section-title: 20px;
   --font-card-title: 26px; /* 卡片标题（V5.2：26–30px） */
   --font-content: 16px; /* 正文 */
@@ -181,15 +181,15 @@
      全项目只有一条弹性曲线：CDL spring（0.16, 1, 0.3, 1）。
      --ease-standard 被重定义为 spring——所有既有组件引用它的地方自动统一，不再有第二套动画。
      --ease-out 供线性收敛类微交互（hover / focus）选用，不与 spring 混用于同一属性。 */
-  --duration-fast: 150ms;
-  --duration-base: 200ms; /* UI-1 新增：常规微交互 */
+  --duration-fast: 180ms; /* v3.0.2-rc：时长统一 180 / 240ms */
+  --duration-base: 240ms; /* v3.0.2-rc：常规微交互 */
   --duration-normal: 300ms;
   --duration-slow: 400ms;
   --duration-flip: 300ms; /* 排座双视角翻转专用（需求约定约 300ms） */
   --ease-standard: cubic-bezier(0.16, 1, 0.3, 1); /* CDL spring */
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1); /* UI-1 新增 */
-  --transition-fast: 150ms ease;
+  --transition-fast: 180ms ease;
   --transition-base: 200ms var(--ease-out); /* UI-1：200ms + ease-out */
   --transition-spring: 350ms cubic-bezier(0.16, 1, 0.3, 1);
 
@@ -212,7 +212,7 @@
   --nav-blur: 20px;
   --sidebar-width: 232px;
   --glass-bg-scrolled: rgba(255, 255, 255, 0.88); /* Header 滚动后透明度略增 */
-  --page-max-width: 1440px;
+  --page-max-width: 960px; /* 顶部导航版：内容居中收窄（v3.0.2-rc） */
   --page-pad-x: 40px; /* 页面左右留白 */
   --page-top-gap: 32px; /* 页面标题距导航的统一间距（UI-2） */
   --card-gap: 24px; /* 卡片间距 */

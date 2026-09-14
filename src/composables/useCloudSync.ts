@@ -4,7 +4,7 @@ import { useToast } from '@/composables/useToast'
 import {
   cloudSyncState,
   resolveConflicts,
-  signInAndSync,
+  signInWithEmailAndSync,
   signOutAndStop,
   syncNow,
 } from '@/services/cloudSync'
@@ -163,14 +163,14 @@ export function useCloudSync() {
   }
 
   /**
-   * 用用户名 + 密码登录并立刻对齐一次（工具箱那张卡走这条）。
+   * 用**邮箱** + 密码登录并立刻对齐一次（v3.0.2-rc：全局登录弹窗走这条；
+   * 旧的用户名表单已随工具箱重做移除，登录统一为邮箱形态）。
    *
    * **本函数不做提示、不吞异常**：登录的成败要结合「本地有几份数据、云端有没有」才有意义
-   * （首次同步的四种处境），那句判断与提示留在页面里——放在这里就会逼着页面去解析状态。
-   * 邮箱登录在控制中心的同步面板（`useCloudActions`），两条入口各自保留（双入口不迁移）。
+   * （首次同步的四种处境），那句判断与提示留在弹窗里——放在这里就会逼着弹窗去解析状态。
    */
-  async function signIn(username: string, password: string): Promise<void> {
-    await signInAndSync(username, password)
+  async function signInWithEmail(email: string, password: string): Promise<void> {
+    await signInWithEmailAndSync(email, password)
   }
 
   /** 登出并停止同步（清队列与对齐记账；云端数据不动） */
@@ -190,7 +190,7 @@ export function useCloudSync() {
     lastSyncedClock,
     syncWithFeedback,
     resolveConflict,
-    signIn,
+    signInWithEmail,
     signOut,
   }
 }
