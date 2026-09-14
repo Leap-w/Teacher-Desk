@@ -109,20 +109,20 @@ npm run build
 
 ## 11. 死代码与分层体检（V3.0.0 起，每次大版本过一遍）
 
-三条脚本化检查，都能**跑出一份清单**，不靠眼睛看：
+四条脚本化检查（**已入库在 `scripts/audit/`**，路径无关，换机器不用改），都能**跑出一份清单**，不靠眼睛看：
 
 ```bash
 # ① 未引用的源文件 / 死导出 / 未使用依赖 / TODO / console / 临时文件
 #    （输出为空即干净；「导出但只在本文件内用」属于风格问题，不是死代码）
-node /tmp/td-audit.cjs && node /tmp/td-audit2.cjs
+node scripts/audit/dead-code.cjs && node scripts/audit/dead-exports.cjs
 
 # ② 架构纪律：谁在直连底层（views/stores 直连 storage/sync/localStorage 应为空）
 #    另含：定时器与事件监听是否成对清理 / JSON.parse 是否包 try / v-for 是否都有 key
-node /tmp/td-audit3.cjs
+node scripts/audit/layering-and-hygiene.cjs
 
 # ③ 运行时：逐路由控制台报错 + 未捕获异常 + 404 + 可访问性抽查
 #    （无头 Chrome + CDP，起服务与浏览器的写法见下方「附」）
-node /tmp/td-runtime.cjs
+node scripts/audit/runtime-check.cjs
 ```
 
 **判定标准**：① 无死码（**有决策记录保留**的除外，且必须在文档里写明理由）；
