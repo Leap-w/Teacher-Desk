@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import { useTimetableStore } from '@/stores/timetable'
 import {
   COURSE_IMPORT_HEADERS,
@@ -88,9 +89,12 @@ async function onFileChange(event: Event): Promise<void> {
   }
 }
 
-function onConfirm(): void {
+async function onConfirm(): Promise<void> {
   if (!plan.value || !canConfirm.value) return
-  const outcome = timetableStore.applyCourseImport(plan.value.plan.lessons)
+  // RC-01 / RC-02：导入期间暂停同步，写完这张课表后自动补推一次
+  const outcome = await runLockedOperation('schedule-import', () =>
+    timetableStore.applyCourseImport(plan.value!.plan.lessons),
+  )
   if (!outcome.ok) {
     toast.danger(outcome.reason)
     return

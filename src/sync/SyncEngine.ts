@@ -373,7 +373,24 @@ export function createSimulatedTransport(options: SimulatedTransportOptions = {}
 export const syncEngine = new SyncEngine({
   transport: createRuntimeTransport(),
   retryDelayMs: 1000,
+  timeoutMs: 20_000,
 })
+
+/**
+ * 长事务结束后的自动冲刷（V2.3.1-rc · Phase RC-1 · RC-02）。
+ *
+ * Excel 导入 / 批量修改这类操作一次写很多键，教师刚把表格交进来，最不想做的是
+ * 接着去找「立即同步」。因此在操作锁释放后由调用方（`useOperationLock`）或无锁路径的
+ * 调度层直接冲一次队列——**队列空则什么都不做**，所以本地模式（未配置 / 未登录）下
+ * 它不会把引擎状态从 `LocalOnly` 推到 `Synced`，界面也不会有任何假信号。
+ */
+export function flushAfterOperation(): Promise<{
+  succeeded: number
+  failed: number
+  remaining: number
+}> {
+  return syncEngine.flush()
+}
 
 function createRuntimeTransport(): SyncTransport {
   const noop = (): TransportOutcome => ({ ok: true, at: Date.now() })

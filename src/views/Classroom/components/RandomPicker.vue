@@ -9,6 +9,7 @@ import {
   PICK_MODES,
   PICK_ROLL_MS,
   PICK_TICK_MS,
+  canTrigger,
   drawOnce,
   pickPoolFor,
   rollFrame,
@@ -36,6 +37,8 @@ const emptyReason = ref('')
 
 let rollTimer: ReturnType<typeof setInterval> | null = null
 let stopTimer: ReturnType<typeof setTimeout> | null = null
+/** 上一次开抽的时刻（RC-03 防连点：动画期间 + 刚定格的一瞬都不重开） */
+let lastDrawnAt: number | null = null
 
 /** 在读学生（点名池的唯一来源） */
 const roster = computed(() => studentStore.activeStudents)
@@ -82,6 +85,10 @@ function selectMode(next: PickMode): void {
 
 function start(): void {
   if (rolling.value) return
+  // RC-03 防连点：讲台上连点两下不该抽出两个人（窗口 = 一次滚动动画的时长）
+  const now = Date.now()
+  if (!canTrigger(lastDrawnAt, now)) return
+  lastDrawnAt = now
   clearTimers()
   emptyReason.value = ''
   resultStudentId.value = null

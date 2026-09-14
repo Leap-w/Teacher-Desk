@@ -21,6 +21,7 @@ import { cloudSyncState, isCloudReady, SYNC_DEBOUNCE_MS } from '@/services/cloud
 import { onSyncDirty } from '@/services/sync'
 
 import { createCloudTransport, type CloudTransport } from './CloudTransport'
+import { operationLock } from './operationLock'
 import { syncEngine } from './SyncEngine'
 import { setActiveTransport } from './transportRegistry'
 
@@ -81,6 +82,9 @@ export function scheduleFlush(delay = SYNC_DEBOUNCE_MS): void {
   if (debounceTimer !== null) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     debounceTimer = null
+    // 长事务（Excel 导入 / 批量修改）期间不冲刷：改动要作为一个批次落地，
+    // 否则云端会先看到改到一半的样子（RC-01）。解锁时会补一次冲刷。
+    if (operationLock.locked) return
     void syncEngine.flush()
   }, delay)
 }
@@ -141,8 +145,20 @@ export function startAutoSync(): void {
     if (!isCloudReady()) return
     // 整轮对账期间的写盘是「采纳远端」的副作用，不是教师的改动：不入队，避免回声
     if (cloudSyncState.value.status === 'syncing') return
+    // 长事务进行中（RC-01）：先记账，等解锁后一次性补推——导入中途不把半成品推上云
+    if (operationLock.deferKey(key)) return
     if (syncEngine.enqueue(key)) scheduleFlush()
   })
+
+  // ③b 长事务解锁：把期间拦下的脏键补进队列并立刻冲刷（RC-02：导入完成自动同步，
+  //     不需要教师再去点「立即同步」）。队列本来就是空的也不怕——冲刷见空即返回。
+  unsubscribes.push(
+    operationLock.onUnlock((keys) => {
+      if (!isCloudReady()) return
+      for (const key of keys) syncEngine.enqueue(key)
+      scheduleFlush(0)
+    }),
+  )
 
   // ④ 重新联网 / 回到前台：一次整轮对账（补上断网期间与后台期间的改动）
   if (typeof window !== 'undefined') {

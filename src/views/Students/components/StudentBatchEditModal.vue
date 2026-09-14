@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { AppButton, AppField, AppInput, AppModal, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import { useStudentStore } from '@/stores/student'
 import { ALL_DORMITORIES, CADRE_CUSTOM, CADRE_OPTIONS } from '@/utils/student'
 import { splitTagInput } from '@/utils/studentBatch'
@@ -127,10 +128,13 @@ function buildChanges(): StudentBatchChanges {
   return changes
 }
 
-function submit() {
+async function submit() {
   if (!canSubmit.value) return
   const ids = props.students.map((student) => student.id)
-  const outcome = studentStore.applyStudentBatch(ids, buildChanges())
+  // RC-01 / RC-02：批量修改期间暂停同步，改完这批学生后自动补推一次
+  const outcome = await runLockedOperation('student-batch', () =>
+    studentStore.applyStudentBatch(ids, buildChanges()),
+  )
 
   if (outcome.updated === 0 && outcome.skipped === 0) {
     toast.info(`所选的 ${ids.length} 名学生无需修改`)

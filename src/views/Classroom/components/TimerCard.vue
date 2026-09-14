@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Pause, Play, RotateCcw, Timer } from 'lucide-vue-next'
 
 import { useToast } from '@/composables/useToast'
@@ -7,6 +7,8 @@ import {
   TIMER_MAX_MINUTES,
   TIMER_MIN_MINUTES,
   TIMER_PRESETS_MIN,
+  canTriggerControl,
+  elapsedSince,
   formatDuration,
   isValidMinutes,
   isFinished,
@@ -36,6 +38,8 @@ const customValue = ref('')
 
 let timer: ReturnType<typeof setInterval> | null = null
 let startedAt = 0
+/** 上一次按控制按钮的时刻（RC-03：按钮防抖，双击不会读成「开始 → 暂停」） */
+let lastControlAt: number | null = null
 
 const totalMs = computed(() => minutes.value * 60_000)
 const leftMs = computed(() => remainingMs(totalMs.value, elapsed.value))
@@ -50,22 +54,38 @@ function stopTicking(): void {
   }
 }
 
+/** 按钮防抖（RC-03）：窗口内的重复点击直接忽略 */
+function allowControl(): boolean {
+  const now = Date.now()
+  if (!canTriggerControl(lastControlAt, now)) return false
+  lastControlAt = now
+  return true
+}
+
+/**
+ * 用「现在 − 起跑时刻」重算已计时（RC-04）。
+ * 到点则收尾并提示；返回是否已到点。切后台回来调一次它，时间立刻对齐。
+ */
+function syncElapsed(): boolean {
+  elapsed.value = elapsedSince(startedAt, Date.now(), totalMs.value)
+  if (elapsed.value < totalMs.value) return false
+  stopTicking()
+  if (phase.value === 'running') {
+    phase.value = 'finished'
+    // 结束提示：页面内轻提示（拍板：不用系统通知）
+    toast.success(`时间到（${minutes.value} 分钟）`)
+  }
+  return true
+}
+
 function startTicking(): void {
   stopTicking()
   startedAt = Date.now() - elapsed.value
-  timer = setInterval(() => {
-    elapsed.value = Date.now() - startedAt
-    if (elapsed.value >= totalMs.value) {
-      elapsed.value = totalMs.value
-      stopTicking()
-      phase.value = 'finished'
-      // 结束提示：页面内轻提示（拍板：不用系统通知）
-      toast.success(`时间到（${minutes.value} 分钟）`)
-    }
-  }, 250) // 250ms 刷新一次：秒级数字不会跳秒，也不浪费
+  timer = setInterval(syncElapsed, 250) // 250ms 刷新一次：秒级数字不会跳秒，也不浪费
 }
 
 function onStart(): void {
+  if (!allowControl()) return
   const next = nextPhase(phase.value, 'start')
   if (next === 'paused') {
     phase.value = 'paused'
@@ -79,9 +99,20 @@ function onStart(): void {
 }
 
 function onReset(): void {
+  if (!allowControl()) return
   stopTicking()
   phase.value = nextPhase(phase.value, 'reset')
   elapsed.value = 0
+}
+
+/**
+ * 回到前台立刻对一次账（RC-04）：后台标签页的定时器会被浏览器压慢，
+ * 回来的第一件事就是按时间戳重算，而不是等下一个 tick。
+ */
+function onVisibilityChange(): void {
+  if (document.visibilityState !== 'visible') return
+  if (phase.value !== 'running') return
+  syncElapsed()
 }
 
 function selectPreset(value: number): void {
@@ -104,7 +135,18 @@ function applyCustom(): void {
   customOpen.value = false
 }
 
-onBeforeUnmount(stopTicking)
+onMounted(() => {
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+  }
+  stopTicking()
+})
 </script>
 
 <template>

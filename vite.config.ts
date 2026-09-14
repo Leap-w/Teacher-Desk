@@ -26,7 +26,7 @@ export default defineConfig({
         start_url: '/',
         display: 'standalone',
         theme_color: '#2F8F83',
-        background_color: '#F8FAFB', /* 与 --bg-page 一致（Polish-1 对齐） */
+        background_color: '#F8FAFB' /* 与 --bg-page 一致（Polish-1 对齐） */,
         // 官方图标（docs/图标.png）等比导出，见 public/icons/；maskable 版带 80% 安全区留白
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

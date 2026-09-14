@@ -112,6 +112,30 @@ UI（同步徽章 / 提示条）──只读──► SyncSnapshot
 **回声抑制**：整轮对账采纳远端时的写盘（状态为 `syncing`）**不再入队**——
 否则会把刚取下来的内容又推回去，两台设备之间来回多推一轮。
 
+### 长事务（Operation Lock，RC-1 起）
+
+导入 / 批量修改这类「一次写很多键」的操作，不能和自动同步抢同一个键——否则云端会先看到
+改到一半的样子。做法是一条**纯调度**的锁（`src/sync/operationLock.ts`，不 import Vue / 引擎 / 云模块）：
+
+```
+长事务入口（views/*）：runLockedOperation(name, fn)   ← composables/useOperationLock.ts
+  ├─ operationLock.begin(name)              计数式上锁（同名可嵌套，最后一个 end 才解锁）
+  ├─ fn()                                   真正写数据（一次写很多键）
+  ├─ await nextTick()                       ★ 等本批写盘广播（Vue watcher）跑完再解锁
+  ├─ operationLock.end(name)                完全解锁 → 通知订阅者
+  └─ flushAfterOperation()                  队列空则什么都不做（本地模式不会被误标「已同步」）
+
+锁定期间：
+  onSyncDirty(key) → operationLock.deferKey(key) ✓  记账，不入队、不推云
+  scheduleFlush()  → 查 locked，锁定则跳过          导入中途半个方案都不上云
+解锁时：
+  autoSync 的 onUnlock → 逐个 enqueue(记账的键) → scheduleFlush(0) → 立刻补推
+```
+
+**Operation Lock（长期规范）**：任何「一次写很多键」的操作都必须走 `runLockedOperation()`；
+**不许**自己写 `begin` / `end`（漏写 `end` 会把自动同步永久停掉，而界面看不出任何异常）。
+`finally` 保证解锁一定发生，写入抛错也不留死锁。
+
 ### 同步时序（一次本地改动，Cloud-4 完整链路）
 
 ```
@@ -162,20 +186,23 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 
 ## 分层规则（改代码前先看）
 
-| 层           | 允许                                           | 禁止                                             |
-| ------------ | ---------------------------------------------- | ------------------------------------------------ |
-| views        | 调 Store、组件、只读同步状态                   | 碰 repositories / services / localStorage        |
-| stores       | 调 Repository、utils                           | 碰 services/storage、services/sync、localStorage |
-| sync         | 调注入的 SyncTransport                         | 直接调 CloudAdapter / fetch / localStorage       |
-| repositories | 调 adapter、utils、（seed 可读 student store） | 碰业务 Store 的其它成员、组件                    |
-| adapters     | 调 services/storage、services/sync             | 业务判断（normalize / 播种守卫）                 |
-| services     | —                                              | 不 import 上层（保持可独立测试）                 |
+| 层           | 允许                                                 | 禁止                                             |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------ |
+| views        | 调 Store、组件、只读同步状态、`runLockedOperation()` | 碰 repositories / services / localStorage        |
+| stores       | 调 Repository、utils                                 | 碰 services/storage、services/sync、localStorage |
+| sync         | 调注入的 SyncTransport                               | 直接调 CloudAdapter / fetch / localStorage       |
+| repositories | 调 adapter、utils、（seed 可读 student store）       | 碰业务 Store 的其它成员、组件                    |
+| adapters     | 调 services/storage、services/sync                   | 业务判断（normalize / 播种守卫）                 |
+| services     | —                                                    | 不 import 上层（保持可独立测试）                 |
 
-## 下一步（Phase Cloud-3+）
+> `views` 对同步的唯一合法入口是 `composables/useOperationLock.ts`（长事务）与
+> `composables/useSyncEngine.ts`（只读状态）；页面**不许**直接 import `src/sync/autoSync.ts`
+> （那个文件 import 云模块，会把 SDK 拖进页面依赖）。
 
-- **CloudAdapter 实现**：pull/push/sync 对接 CloudBase（作为 `SyncTransport` 注入 SyncEngine，
-  遵守 Sync Engine First）；冲突口径迁自 `services/cloudSync.ts`；`SyncState` 由真实动作驱动
-  （UI 徽章与提示条随之点亮）；同步队列持久化（断网恢复后继续推）。
+## 下一步
+
+- **CloudBase 真机验证**：`docs/release-checklist.md` 第 3、10 节是上线当天的人工步骤。
 - **PostgreSQL（可选远端）**：只新增一个 `DataSourceAdapter` 实现，Store 与页面零改动。
+- **课堂 / 教学侧工具（V2.3+、V2.4）**：新工具先补 `utils/` 纯逻辑 + 常驻测试，页面只做渲染与交互。
 
 详细历史决策见 `docs/开发手册.md` §9（按阶段编号）；用户可感知的变化见 `docs/CHANGELOG.md`。

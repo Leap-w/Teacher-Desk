@@ -192,6 +192,46 @@ export function groupResultLabel(group: LotteryGroup | undefined): string {
   return group ? group.name : '还没有值日组'
 }
 
+/* ==================== 防连点 / 后台恢复（RC-03 · RC-04） ==================== */
+
+/**
+ * 点名 / 抽签的防连点窗口（毫秒）。
+ * 取值 = 滚动动画时长：讲台上连点两下不该抽出两个人——动画期间与刚定格的瞬间都不重开。
+ */
+export const DRAW_COOLDOWN_MS = PICK_ROLL_MS
+
+/** 计时器控制按钮的防抖窗口：双击「开始」不该被读成「开始 → 暂停」 */
+export const CONTROL_DEBOUNCE_MS = 300
+
+/**
+ * 某个时刻是否允许触发。`lastAt` 为 `null` 表示从未触发过。
+ * 纯函数、时钟由调用方给 → 测试里不需要真的等 1 秒。
+ */
+export function canTrigger(
+  lastAt: number | null,
+  now: number,
+  cooldown = DRAW_COOLDOWN_MS,
+): boolean {
+  if (lastAt === null) return true
+  return now - lastAt >= cooldown
+}
+
+/** 计时器控制按钮（开始 / 暂停 / 重置）是否允许触发：比防连点短得多的一档 */
+export function canTriggerControl(lastAt: number | null, now: number): boolean {
+  return canTrigger(lastAt, now, CONTROL_DEBOUNCE_MS)
+}
+
+/**
+ * 已计时毫秒（RC-04）：**用时间戳相减，不累加 tick**。
+ *
+ * 浏览器会把后台标签页的 `setInterval` 压到 1 秒甚至更慢，累加 tick 的计时器
+ * 一切后台回来就会少走一截（教师在讲台上切到课件再切回来，时间就不对了）。
+ * 起跑时刻记一次、每次刷新用「现在 − 起跑」重算，因此切后台 / 回前台都准。
+ */
+export function elapsedSince(startedAt: number, now: number, totalMs: number): number {
+  return Math.min(Math.max(0, now - startedAt), totalMs)
+}
+
 /* ==================== 页面元信息 ==================== */
 
 /** 三个工具（页面横排的卡片顺序；测试据此断言「只做三个」） */

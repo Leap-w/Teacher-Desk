@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import {
   DORMITORY_HINT,
   parseStudentRows,
@@ -160,10 +161,13 @@ const hints = computed(() => {
   return list
 })
 
-function confirm(): void {
+async function confirm(): Promise<void> {
   const current = result.value
   if (!current || current.importable === 0) return
-  const outcome = studentStore.applyStudentImport(current.plan)
+  // RC-01 / RC-02：导入期间暂停同步，写完这批学生后自动补推一次
+  const outcome = await runLockedOperation('student-import', () =>
+    studentStore.applyStudentImport(current.plan),
+  )
   toast.success(`导入完成：新增 ${outcome.added} 名，更新 ${outcome.updated} 名`)
   emit('update:modelValue', false)
 }

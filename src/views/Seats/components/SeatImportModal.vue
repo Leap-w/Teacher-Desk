@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import { readSheetRows } from '@/services/studentImport'
 import {
   parseSeatRows,
@@ -162,11 +163,14 @@ const hints = computed(() => {
   return list
 })
 
-function confirm(): void {
+async function confirm(): Promise<void> {
   const current = result.value
   if (!current || current.blocked > 0 || current.assignable === 0) return
   const hadPending = seatStore.pendingLogsCount > 0
-  const outcome = seatStore.applySeatImport(current.plan.assignments)
+  // RC-01 / RC-02：导入期间暂停同步（不把写了一半的方案推上云），写完后自动补推一次
+  const outcome = await runLockedOperation('seat-import', () =>
+    seatStore.applySeatImport(current.plan.assignments),
+  )
   if (!outcome.ok) {
     toast.danger(`导入失败：${outcome.reason ?? '数据已变化，请刷新后重试'}`)
     return

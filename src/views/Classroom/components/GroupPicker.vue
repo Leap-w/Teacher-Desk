@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Shapes } from 'lucide-vue-next'
 
 import { useDutyStore } from '@/stores/duty'
-import { pickRandomGroup, type LotteryGroup } from '@/utils/classroom'
+import {
+  PICK_ROLL_MS,
+  PICK_TICK_MS,
+  canTrigger,
+  pickRandomGroup,
+  type LotteryGroup,
+} from '@/utils/classroom'
 
 import ResultDisplay from './ResultDisplay.vue'
 import ToolCard from './ToolCard.vue'
@@ -18,6 +24,11 @@ const dutyStore = useDutyStore()
 
 const resultName = ref('')
 const rolling = ref(false)
+
+let rollTimer: ReturnType<typeof setInterval> | null = null
+let stopTimer: ReturnType<typeof setTimeout> | null = null
+/** 上一次开抽的时刻（RC-03 防连点：与点名同一档窗口） */
+let lastDrawnAt: number | null = null
 
 /** 组 → 抽签用投影（含组员数，签到台上一眼看出这组几个人） */
 const groups = computed<LotteryGroup[]>(() =>
@@ -38,25 +49,40 @@ function show(group: LotteryGroup | undefined): void {
   resultName.value = group.name
 }
 
-/** 抽签：滚动 1 秒（与点名同一节奏）后定格 */
+function clearTimers(): void {
+  if (rollTimer !== null) {
+    clearInterval(rollTimer)
+    rollTimer = null
+  }
+  if (stopTimer !== null) {
+    clearTimeout(stopTimer)
+    stopTimer = null
+  }
+}
+
+/** 抽签：滚动 1 秒（与点名同一节奏）后定格；离开页面时把定时器收干净 */
 function draw(): void {
-  if (!hasGroups.value || rolling.value) {
+  if (!hasGroups.value) {
     show(undefined)
     return
   }
+  if (rolling.value) return
+  // RC-03 防连点：与随机点名同一档窗口
+  const now = Date.now()
+  if (!canTrigger(lastDrawnAt, now)) return
+  lastDrawnAt = now
+
+  clearTimers()
   rolling.value = true
-  const startedAt = Date.now()
-  const step = (): void => {
-    show(pickRandomGroup(groups.value))
-    if (Date.now() - startedAt < 1000) {
-      setTimeout(step, 90)
-      return
-    }
+  rollTimer = setInterval(() => show(pickRandomGroup(groups.value)), PICK_TICK_MS)
+  stopTimer = setTimeout(() => {
+    clearTimers()
     show(pickRandomGroup(groups.value))
     rolling.value = false
-  }
-  step()
+  }, PICK_ROLL_MS)
 }
+
+onBeforeUnmount(clearTimers)
 </script>
 
 <template>
@@ -76,6 +102,7 @@ function draw(): void {
         type="button"
         class="group-btn"
         :class="{ 'is-active': resultName === group.name }"
+        :disabled="rolling"
         @click="show(group)"
       >
         {{ group.name }}
@@ -119,6 +146,12 @@ function draw(): void {
 .group-btn:hover {
   border-color: var(--color-border-medium);
   color: var(--color-text-primary);
+}
+
+/* 滚动期间不许改结果（点了也只是改显示，和「抽签中」打架） */
+.group-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .group-btn.is-active {

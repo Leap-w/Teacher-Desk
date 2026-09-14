@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import { useWorkStore } from '@/stores/work'
 import {
   WORK_IMPORT_HEADERS,
@@ -87,9 +88,12 @@ async function onFileChange(event: Event): Promise<void> {
   }
 }
 
-function onConfirm(): void {
+async function onConfirm(): Promise<void> {
   if (!plan.value || !canConfirm.value) return
-  const outcome = workStore.applyWorkImport(plan.value.plan.works)
+  // RC-01 / RC-02：导入期间暂停同步，写完这批任务后自动补推一次
+  const outcome = await runLockedOperation('work-import', () =>
+    workStore.applyWorkImport(plan.value!.plan.works),
+  )
   if (!outcome.ok) {
     toast.danger(outcome.reason)
     return

@@ -4,19 +4,21 @@
 
 > 发 CHANGELOG 时先对照本表，避免迭代多了丢失整体节奏。逐阶段决策见开发手册 §9.x，架构见 `docs/ARCHITECTURE.md`。
 
-| 版本     | 代号                 | 主题                                                                    | 状态                               |
-| -------- | -------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
-| V2.0     | UI 重构              | Design System → App Shell → Dashboard → Class Hub → Work Hub            | ✅（v2.0.0 ~ v2.1.0）              |
-| V2.1     | Beta 基线            | 全站巡检与体验收官（Polish-1）                                          | ✅（v2.1.1-beta）                  |
-| **V2.2** | **Cloud Foundation** | Cloud-1 仓储层 → Cloud-2 同步引擎 → Cloud-3 云端接入 → Cloud-4 多端验证 | ✅ 已完成（v2.2.0 ~ v2.2.3-alpha） |
-| V2.3     | 课堂与教学工具       | Classroom-1 课堂工具（点名 / 计时 / 抽签）→ 后续课堂与教学侧工具        | 🚧 进行中（v2.3.0-alpha）          |
-| ~~Widget~~ | ~~macOS 桌面小组件~~ | ~~今日课程 / 待办 / 值日（只读）~~                                      | ❌ **已废弃**（2026-09-14，见 §9.55） |
-| V2.4     | 教学工具             | 成绩、评语、家长沟通等教学侧工具                                        | 规划中                             |
-| V3.0     | 正式版               | 稳定版：本地 + 云同步双轨、完整教学闭环                                 | 愿景                               |
+| 版本       | 代号                 | 主题                                                                    | 状态                                      |
+| ---------- | -------------------- | ----------------------------------------------------------------------- | ----------------------------------------- |
+| V2.0       | UI 重构              | Design System → App Shell → Dashboard → Class Hub → Work Hub            | ✅（v2.0.0 ~ v2.1.0）                     |
+| V2.1       | Beta 基线            | 全站巡检与体验收官（Polish-1）                                          | ✅（v2.1.1-beta）                         |
+| **V2.2**   | **Cloud Foundation** | Cloud-1 仓储层 → Cloud-2 同步引擎 → Cloud-3 云端接入 → Cloud-4 多端验证 | ✅ 已完成（v2.2.0 ~ v2.2.3-alpha）        |
+| V2.3       | 课堂与教学工具       | Classroom-1 课堂工具（点名 / 计时 / 抽签）→ RC-1 发布候选 → 后续工具    | 🚧 进行中（v2.3.0-alpha → **v2.3.1-rc**） |
+| ~~Widget~~ | ~~macOS 桌面小组件~~ | ~~今日课程 / 待办 / 值日（只读）~~                                      | ❌ **已废弃**（2026-09-14，见 §9.55）     |
+| V2.4       | 教学工具             | 成绩、评语、家长沟通等教学侧工具                                        | 规划中                                    |
+| V3.0       | 正式版               | 稳定版：本地 + 云同步双轨、完整教学闭环                                 | 愿景                                      |
 
 **V2.2 分解**：Cloud-1 `v2.2.0-alpha` Repository 数据访问层（Repository First）✅ → Cloud-2 `v2.2.1-alpha` 同步引擎（Queue/State/Conflict/Events，本地模拟；Sync Engine First）✅ → Cloud-3 `v2.2.2-alpha` CloudBase 单用户云同步（CloudTransport 真实通道、邮箱登录、自动同步四触发点、首次初始化确认、Local First + LWW）✅ → Cloud-4 `v2.2.3-alpha` 多设备验证与可靠性（双设备八模块验证、冲突与 LWW 验证、队列持久化、Outbox、同步诊断、指数退避与超时、CI 启用）✅ —— **V2.2 Cloud Foundation 收官**。
 
-**节奏约定**：① 一阶段一 tag、一条 CHANGELOG、一段开发手册小节；② 架构规范只在阶段里立、不在阶段里破（Repository First / Sync Engine First / Consistency Before Features）；③ 新功能先补数据模型与仓储，页面不直连数据源。
+**V2.3 分解**：Classroom-1 `v2.3.0-alpha` 课堂工具（随机点名 / 课堂计时器 / 抽签；One-Tap Classroom）✅ → **RC-1 `v2.3.1-rc` 发布候选**（统一操作锁、导入后自动同步、课堂防连点、计时器后台恢复、快速返回；全站真机回归 + `docs/release-checklist.md`；**Stability Before Release**）✅ —— 此后 TeacherDesk 作为日常主力工作台投入真实教学使用，新功能（Classroom-2+ / 教学侧工具）建立在这套基线之上。
+
+**节奏约定**：① 一阶段一 tag、一条 CHANGELOG、一段开发手册小节；② 架构规范只在阶段里立、不在阶段里破（Repository First / Sync Engine First / Consistency Before Features / Single User Cloud / One-Tap Classroom / **Observable Sync** / **Operation Lock**）；③ 新功能先补数据模型与仓储，页面不直连数据源；④ **正式发布前必须过 `docs/release-checklist.md`**。
 
 ---
 

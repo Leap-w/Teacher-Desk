@@ -8,7 +8,9 @@
  * 云通道与自动同步接线在 `./CloudTransport.ts` 与 `./autoSync.ts`——
  * 只有 `main.ts` 与云相关测试引它们，业务代码不要直接引（要走引擎）。
  */
-export { SyncEngine, createSimulatedTransport, syncEngine } from './SyncEngine'
+export { SyncEngine, createSimulatedTransport, flushAfterOperation, syncEngine } from './SyncEngine'
+export { OperationLock, operationLock } from './operationLock'
+export type { OperationUnlockListener } from './operationLock'
 export { activeTransport, hasActiveTransport, setActiveTransport } from './transportRegistry'
 export { SyncQueue } from './SyncQueue'
 export { SyncStateMachine } from './SyncState'
