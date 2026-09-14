@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "vue-tsc --noEmit && vite build && node scripts/hosting-routes.cjs",
     "deploy": "tcb deploy",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",

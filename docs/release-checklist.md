@@ -23,6 +23,10 @@ npm run build
 - [ ] `eslint` 零 error
 - [ ] `vue-tsc` 零 error（**注意**：`declare const` 在模板表达式里不可见，全局常量走 `import.meta.env`）
 - [ ] `npm run test` 全绿（当前 **554** 条）
+- [ ] **SPA 深链占位**：`npm run build` 已自动生成 `<路由>/index.html`
+      （`scripts/hosting-routes.cjs`；`src/__tests__/hostingRoutes.test.ts` 守护路由表一致性）；
+      部署后抽查两个子路由：直接刷新不 404、返回的 HTML 指向**本次**构建的 chunk
+      （占位指向旧 chunk = 上一版事故，见 CHANGELOG 2026-09-14 部署修复）
 - [ ] 测试时区已固定（`vitest.config.ts` 的 `env.TZ`）——不得依赖测机时区，否则本机绿、CI 红
 - [ ] `npm run build` 成功，且 `dist/` 里没有上次的旧产物（先 `rm -rf dist`）
 
