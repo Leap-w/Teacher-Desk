@@ -103,17 +103,10 @@ const tabs = computed(() => {
   font-weight: var(--font-weight-medium);
 }
 
-/* UI-2：桌面端二级导航由侧栏接管，胶囊 Tab 只在小屏（<1024px）显示 */
-@media (min-width: 1024px) {
-  .module-page__tabs {
-    display: none;
-  }
-
-  .module-page__head {
-    margin-bottom: var(--spacing-lg);
-  }
-}
-
+/* 二级导航在所有断点都显示。
+   v3.0.3-rc 修复：v3.0.2-rc 移除左侧 Sidebar 后，这里仍留着「桌面端由侧栏接管 → 隐藏胶囊 Tab」
+   的规则，结果桌面宽度下二级导航**整条消失**（座位 / 请假 / 值日 / 周末 切换不了）。
+   顶部导航版的 IA 是「一级在顶栏、二级在模块内」，因此这里不再隐藏。 */
 .module-page__tab {
   padding: 7px 18px;
   border: none;

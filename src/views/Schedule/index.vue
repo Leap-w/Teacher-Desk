@@ -404,7 +404,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
 
 <style scoped>
 .schedule-page {
-  max-width: 1080px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
   display: flex;
   flex-direction: column;

@@ -50,7 +50,7 @@ describe('「我的」路由（V1.1.6）', () => {
     expect(byPath('/my/profile')).toMatchObject({ redirect: '/my' })
   })
 
-  it('个人资料进备份模块（BACKUP_MODULES 第 11 块，备份 / 恢复覆盖它）', () => {
+  it('个人资料进备份模块（BACKUP_MODULES 第 10 块，备份 / 恢复覆盖它）', () => {
     const hit = BACKUP_MODULES.find((module) => module.key === `${prefix}:profile`)
     expect(hit).toMatchObject({ label: '个人资料', unit: '份' })
   })

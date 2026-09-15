@@ -10,6 +10,20 @@ import type { RouteRecordRaw } from 'vue-router'
  */
 const ModuleLayout = () => import('@/components/layout/ModuleLayout.vue')
 
+/**
+ * 旧入口兼容（v3.0.4-rc）：各模块页右上角 ⚙ 与旧书签带的 `?module=<id>`
+ * → 对应的二级设置页。id 沿用 V1.3.2 定下的那套，URL 不失效。
+ */
+const SETTINGS_MODULE_GROUP: Record<string, string> = {
+  appearance: 'display',
+  time: 'term',
+  work: 'teaching',
+  seats: 'teaching',
+  leave: 'class',
+  duty: 'class',
+  weekend: 'class',
+}
+
 /** 一级导航项顺序由本表驱动：首页 / 学生档案 / 班级管理 / 工作管理 / 我的 */
 export const routes: RouteRecordRaw[] = [
   {
@@ -96,16 +110,50 @@ export const routes: RouteRecordRaw[] = [
     path: '/my/profile',
     redirect: '/my',
   },
+  /**
+   * 二级设置页（v3.0.4-rc）：设置从「就地展开」改成「一页一组」，
+   * 「我的 → 设置」里的每一项都进这里的一页。
+   *
+   * `/my/settings` 本身保留为**兼容入口**：各模块页右上角的 ⚙ 与旧书签带
+   * `?module=<id>` 进来时，按下面的对照表直接落到对应的二级页（URL 不失效）。
+   */
   {
     path: '/my/settings',
-    // V1.3.2：设置并入「我的」页功能设置 Tab（?module=xxx 直达对应分组，URL 兼容）
-    redirect: (to) => ({ path: '/my', query: to.query }),
+    redirect: (to) => {
+      const raw = Array.isArray(to.query.module) ? to.query.module[0] : to.query.module
+      const group = typeof raw === 'string' ? SETTINGS_MODULE_GROUP[raw] : undefined
+      return group ? { path: `/my/settings/${group}` } : { path: '/my' }
+    },
+  },
+  {
+    path: '/my/settings/display',
+    name: 'settings-display',
+    component: () => import('@/views/My/settings/DisplaySettings.vue'),
+    meta: { title: '显示设置', hidden: true },
+  },
+  {
+    path: '/my/settings/teaching',
+    name: 'settings-teaching',
+    component: () => import('@/views/My/settings/TeachingSettings.vue'),
+    meta: { title: '教学设置', hidden: true },
+  },
+  {
+    path: '/my/settings/class',
+    name: 'settings-class',
+    component: () => import('@/views/My/settings/ClassSettings.vue'),
+    meta: { title: '班级设置', hidden: true },
+  },
+  {
+    path: '/my/settings/term',
+    name: 'settings-term',
+    component: () => import('@/views/My/settings/TermSettings.vue'),
+    meta: { title: '学期与倒计时', hidden: true },
   },
   {
     path: '/my/tools',
     name: 'my-tools',
     component: () => import('@/views/Toolbox/index.vue'),
-    meta: { title: '工具箱', hidden: true },
+    meta: { title: '数据与同步', hidden: true },
   },
   {
     // 课堂工具（Phase Classroom-1）：从「我的 → 工具箱」进入，也可直接开链接

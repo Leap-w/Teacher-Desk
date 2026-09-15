@@ -1162,7 +1162,7 @@ async function runCompareExport() {
 
 <style scoped>
 .seats-page {
-  max-width: 1280px;
+  max-width: var(--page-max-width);
 }
 
 /* 图例（放在 SeatStatusBar 右侧插槽，最低视觉权重） */

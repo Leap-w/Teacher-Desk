@@ -301,7 +301,7 @@ function confirmRemove() {
 
 <style scoped>
 .weekend-page {
-  max-width: 1080px;
+  max-width: var(--page-max-width);
 }
 
 .page-head {

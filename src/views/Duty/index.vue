@@ -325,7 +325,7 @@ function openImport(mode: 'groups' | 'arrange'): void {
 
 <style scoped>
 .duty-page {
-  max-width: 1080px;
+  max-width: var(--page-max-width);
 }
 
 .page-head {

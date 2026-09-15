@@ -6,7 +6,7 @@ import type { WorkSummary } from '@/utils/work'
 
 /**
  * TaskStats — 任务统计（V2.0.9-alpha · Phase UI-5B）：
- * 四张真实统计（workStore.summary）：今日待办 / 今日已完成 / 本周剩余 / 逾期。
+ * 四张真实统计（workStore.summary）：今日待完成 / 今日已完成 / 本周剩余 / 逾期。
  * 统计卡复用 DashboardStatCard（UI-3 沉淀），零新样式。
  */
 defineProps<{
@@ -19,7 +19,7 @@ defineProps<{
     <DashboardStatCard
       :icon="ListTodo"
       :value="summary.todayOpen"
-      label="今日待办"
+      label="今日待完成"
       hint="归属今天或更早且未完成"
     />
     <DashboardStatCard

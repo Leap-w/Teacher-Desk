@@ -4,7 +4,7 @@ import { useToast } from '@/composables/useToast'
 import {
   cloudSyncState,
   resolveConflicts,
-  signInWithEmailAndSync,
+  signInAndSync,
   signOutAndStop,
   syncNow,
 } from '@/services/cloudSync'
@@ -163,14 +163,17 @@ export function useCloudSync() {
   }
 
   /**
-   * 用**邮箱** + 密码登录并立刻对齐一次（v3.0.2-rc：全局登录弹窗走这条；
-   * 旧的用户名表单已随工具箱重做移除，登录统一为邮箱形态）。
+   * 用**账号（用户名）+ 密码**登录并立刻对齐一次（v3.0.3-rc：全局登录弹窗走这条）。
+   *
+   * **走用户名登录，不是邮箱登录**：CloudBase 控制台建出来的账号是「用户名」类型，
+   * 邮箱那套接口登不上（2026-09-12 真环境实测，见 `services/cloudbase.ts` 与开发手册 §9.20 取舍 ⑪）；
+   * 输入框也不再是 `type="email"`——浏览器原生校验会把用户名挡在提交之前，表现同样是「点了没反应」。
    *
    * **本函数不做提示、不吞异常**：登录的成败要结合「本地有几份数据、云端有没有」才有意义
    * （首次同步的四种处境），那句判断与提示留在弹窗里——放在这里就会逼着弹窗去解析状态。
    */
-  async function signInWithEmail(email: string, password: string): Promise<void> {
-    await signInWithEmailAndSync(email, password)
+  async function signInWithAccount(account: string, password: string): Promise<void> {
+    await signInAndSync(account, password)
   }
 
   /** 登出并停止同步（清队列与对齐记账；云端数据不动） */
@@ -190,7 +193,7 @@ export function useCloudSync() {
     lastSyncedClock,
     syncWithFeedback,
     resolveConflict,
-    signInWithEmail,
+    signInWithAccount,
     signOut,
   }
 }

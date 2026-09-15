@@ -2,7 +2,6 @@ import { addDaysToDateKey, formatDateKey } from '@/utils/date'
 import { DUTY_SETTINGS_ID } from '@/utils/duty'
 import { currentWeekendKey } from '@/utils/weekend'
 import type { Student } from '@/types'
-import type { Todo } from '@/types/dashboard'
 import type { DutyRecord } from '@/types/duty'
 import type { LeaveRecord } from '@/types/leave'
 import type { Lesson } from '@/types/timetable'
@@ -249,15 +248,6 @@ export function createSeedLessons(): Lesson[] {
       teacher: '我',
       type: 'normal',
     },
-  ]
-}
-
-/** 首次启动的示例待办（Phase 4 的今日待办卡片；勾选状态由 dashboard store 持久化） */
-export function createSeedTodos(): Todo[] {
-  return [
-    { id: 'todo-01', text: '班会准备', done: false },
-    { id: 'todo-02', text: '检查卫生', done: false },
-    { id: 'todo-03', text: '批改作业', done: false },
   ]
 }
 

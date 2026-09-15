@@ -1,22 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { Monitor, Moon, Sun, UserRound } from 'lucide-vue-next'
-
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  AppButton,
-  AppDrawer,
-  AppField,
-  AppInput,
-  AppSection,
-  AppSwitch,
-  AppSegmented,
-} from '@/components/ui'
-import { useCountdownSettings, HERO_BACKGROUNDS } from '@/composables/useCountdownSettings'
+  CalendarClock,
+  CalendarRange,
+  Cloud,
+  Palette,
+  UserRound,
+  UsersRound,
+  type LucideIcon,
+} from 'lucide-vue-next'
+
+import { AppButton, AppDrawer, AppField, AppInput, AppSection } from '@/components/ui'
 import { useLoginModal } from '@/composables/useLoginModal'
 import { useToast } from '@/composables/useToast'
-import { useTheme } from '@/composables/useTheme'
 import { useCloudSync } from '@/composables/useCloudSync'
-import { COURSE_PERIODS } from '@/types/timetable'
 import { useUserStore } from '@/stores/user'
 import AboutCard from './components/AboutCard.vue'
 import ProfileHero from './components/ProfileHero.vue'
@@ -26,28 +24,66 @@ import SettingsSection from './components/SettingsSection.vue'
 import type { UserProfileInput } from '@/types/user'
 
 /**
- * 我的（v3.0.2-rc 重做）——单页四区：
- * ① 个人信息（登录态驱动：已登录 = Hero + 编辑；未登录 = 空状态 + 立即登录）
- * ② 工作时光（一张大卡：支教天数 / 学期进度）
- * ③ 偏好设置（只放个人偏好：深色模式 / 首页倒计时与 Hero 背景 / 课程时间 / 默认视图）
- * ④ 关于
- * 数据管理 / 云同步 / 工具箱入口全部迁出（数据与同步在工具箱页，课堂工具有独立页）。
+ * 我的（v3.0.4-rc · 对齐 Changdu-Memory `Profile.vue` 的排布）。
+ *
+ * **四块，自上而下**：
+ * ① 个人信息（登录态驱动：已登录 = Profile Hero + 编辑；未登录 = 默认头像 + 尚未登录 + 登录按钮）
+ * ② 工作时光（与首页 Hero 读同一份设置）
+ * ③ 设置（**每一项都是一个入口，点进对应的二级设置页**——不再就地展开）
+ * ④ 关于（页面底部：当前版本 / GitHub / 检查更新）
+ *
+ * 设置分组（v3.0.4-rc）：显示设置 / 教学设置 / 班级设置 / 学期与倒计时；
+ * 原有设置项一项未删，只是从「就地展开」改成「一页一组」。
+ * 数据与同步仍是单独一块的**一个入口**（云同步 / 导出 / 导入在那一页）。
  */
 const toast = useToast()
+const router = useRouter()
 const userStore = useUserStore()
-const countdown = useCountdownSettings()
-const { theme, effective, setTheme } = useTheme()
 const { signedIn } = useCloudSync()
 const loginModal = useLoginModal()
 
 const profile = computed(() => userStore.profile)
 const appVersion = import.meta.env.APP_VERSION
 
-const THEME_OPTIONS = [
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-  { value: 'system', label: '跟随系统' },
-] as const
+/** 设置入口（每一项 → 一个二级设置页） */
+interface SettingEntry {
+  key: string
+  icon: LucideIcon
+  title: string
+  subtitle: string
+  to: string
+}
+
+const settingEntries: SettingEntry[] = [
+  {
+    key: 'display',
+    icon: Palette,
+    title: '显示设置',
+    subtitle: '深色模式 · 默认首页',
+    to: '/my/settings/display',
+  },
+  {
+    key: 'teaching',
+    icon: CalendarClock,
+    title: '教学设置',
+    subtitle: '课程时间 · 座位图默认视角',
+    to: '/my/settings/teaching',
+  },
+  {
+    key: 'class',
+    icon: UsersRound,
+    title: '班级设置',
+    subtitle: '请假 · 值日 · 周末返校',
+    to: '/my/settings/class',
+  },
+  {
+    key: 'term',
+    icon: CalendarRange,
+    title: '学期与倒计时',
+    subtitle: '支教日期 · 学期起止 · Hero 背景与文案',
+    to: '/my/settings/term',
+  },
+]
 
 /* ---------- 头像（仅登录后可见入口） ---------- */
 
@@ -121,35 +157,21 @@ function openLogin(): void {
   loginModal.show()
 }
 
-/* ---------- 偏好设置 ---------- */
-
-const courseTimeValue = computed(
-  () => `${COURSE_PERIODS.length} 个时间段 · ${COURSE_PERIODS[0]!.startTime} 首课`,
-)
-
-function soonRow(): void {
-  toast.info('这个设置还在开发中，敬请期待')
-}
-
 /* ---------- 关于 ---------- */
 
 function checkUpdate(): void {
   toast.info(`当前已是最新版本 ${appVersion}`)
 }
-
-onMounted(() => {
-  // 占位：保持 onMounted 生命周期显式（头像 input ref 由模板持有）
-})
 </script>
 
 <template>
   <div class="my-page">
-    <div class="page-head">
+    <header class="page-head">
       <h1 class="page-head__title">我的</h1>
-      <p class="page-head__sub">班主任的个人工作中心与控制中心</p>
-    </div>
+      <p class="page-head__sub">班主任的个人工作中心</p>
+    </header>
 
-    <!-- ===== 第一部分：个人信息（登录态驱动） ===== -->
+    <!-- ===== ① 个人信息（登录态驱动） ===== -->
     <AppSection title="个人信息">
       <ProfileHero
         v-if="signedIn"
@@ -170,7 +192,7 @@ onMounted(() => {
         </template>
       </ProfileHero>
 
-      <!-- 未登录：空状态（默认头像 + 立即登录；编辑入口全部隐藏） -->
+      <!-- 未登录：默认头像 + 尚未登录 + 登录按钮（编辑入口全部隐藏） -->
       <div v-else class="guest-card">
         <span class="guest-card__avatar" aria-hidden="true">
           <UserRound :size="30" :stroke-width="1.8" />
@@ -179,118 +201,45 @@ onMounted(() => {
           <p class="guest-card__title">尚未登录</p>
           <p class="guest-card__hint">登录后同步 TeacherDesk 数据</p>
         </div>
-        <AppButton type="button" @click="openLogin">立即登录</AppButton>
+        <AppButton type="button" @click="openLogin">登录</AppButton>
       </div>
     </AppSection>
 
-    <!-- ===== 第二部分：工作时光（一张大卡） ===== -->
-    <AppSection title="工作时光">
+    <!-- ===== ② 工作时光（与首页 Hero 同一份数据） ===== -->
+    <AppSection>
       <WorkTimeCard />
     </AppSection>
 
-    <!-- ===== 第三部分：偏好设置（只放个人偏好） ===== -->
-    <AppSection title="偏好设置">
-      <SettingsSection title="外观">
-        <div class="pref-row">
-          <span class="pref-row__label">深色模式</span>
-          <!-- 不用 v-model：显式走 setTheme（落盘 + 应用一次完成） -->
-          <AppSegmented
-            :model-value="theme"
-            :options="[...THEME_OPTIONS]"
-            label="深色模式偏好"
-            @update:model-value="setTheme($event)"
+    <!-- ===== ③ 设置（每项一个入口，点进二级设置页） ===== -->
+    <AppSection title="设置">
+      <div class="settings-stack">
+        <SettingsSection title="设置">
+          <SettingsCell
+            v-for="entry in settingEntries"
+            :key="entry.key"
+            :icon="entry.icon"
+            :title="entry.title"
+            :subtitle="entry.subtitle"
+            @click="router.push(entry.to)"
           />
-        </div>
-        <p class="pref-row__hint">
-          <component
-            :is="theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor"
-            :size="14"
-            :stroke-width="2"
-            aria-hidden="true"
+        </SettingsSection>
+
+        <!-- 数据与同步：唯一入口（云同步 / 导出 / 导入在那一页） -->
+        <SettingsSection title="数据与同步">
+          <SettingsCell
+            :icon="Cloud"
+            icon-tone="neutral"
+            title="数据与同步"
+            subtitle="云同步 · 导出数据 · 导入数据"
+            @click="router.push('/my/tools')"
           />
-          <span v-if="theme === 'system'">
-            跟随系统：系统切换深浅时应用实时跟随（当前{{
-              effective === 'dark' ? '深色' : '浅色'
-            }}）</span
-          >
-          <span v-else>已固定为{{ theme === 'dark' ? '深色' : '浅色' }}主题，无需刷新</span>
-        </p>
-      </SettingsSection>
-
-      <SettingsSection title="首页">
-        <SettingsCell title="课程时间设置" :subtitle="courseTimeValue" />
-        <SettingsCell title="首页默认视图" badge-text="开发中" @click="soonRow" />
-        <SettingsCell title="座位图默认视角" badge-text="开发中" @click="soonRow" />
-        <div class="time-form">
-          <AppField label="倒计时标题">
-            <AppInput
-              :model-value="countdown.settings.value.title"
-              placeholder="如 距离期末考试"
-              @update:model-value="countdown.update({ title: $event })"
-            />
-          </AppField>
-          <div class="time-form__dates">
-            <AppField label="开始日期">
-              <AppInput
-                type="date"
-                :model-value="countdown.settings.value.startDate"
-                @update:model-value="countdown.update({ startDate: String($event) })"
-              />
-            </AppField>
-            <AppField label="目标日期">
-              <AppInput
-                type="date"
-                :model-value="countdown.settings.value.targetDate"
-                @update:model-value="countdown.update({ targetDate: String($event) })"
-              />
-            </AppField>
-          </div>
-
-          <AppField label="Hero 背景">
-            <div class="bg-presets">
-              <button
-                v-for="preset in HERO_BACKGROUNDS"
-                :key="preset.id"
-                type="button"
-                class="bg-presets__item"
-                :class="{ 'is-active': countdown.settings.value.background === preset.url }"
-                @click="countdown.update({ background: preset.url })"
-              >
-                <img class="bg-presets__thumb" :src="preset.url" alt="" />
-                <span class="bg-presets__label">{{ preset.label }}</span>
-              </button>
-            </div>
-            <AppInput
-              class="bg-custom"
-              :model-value="
-                HERO_BACKGROUNDS.some((p) => p.url === countdown.settings.value.background)
-                  ? ''
-                  : countdown.settings.value.background
-              "
-              placeholder="自定义背景图 URL（可选）"
-              @update:model-value="countdown.update({ background: String($event) })"
-            />
-          </AppField>
-
-          <div class="time-form__switch">
-            <span class="time-form__switch-label">显示进度与百分比</span>
-            <AppSwitch
-              :model-value="countdown.settings.value.showProgress"
-              label="显示进度"
-              @update:model-value="countdown.update({ showProgress: $event })"
-            />
-          </div>
-          <p class="time-form__hint">
-            已过去 {{ countdown.daysPassed.value }} 天 · 剩余 {{ countdown.daysRemaining.value }} 天
-            · 完成 {{ countdown.progress.value }}%（自动计算，无需手动修改）
-          </p>
-        </div>
-      </SettingsSection>
-
-      <!-- ===== 第四部分：关于 ===== -->
-      <div class="my-page__about">
-        <AboutCard @check-update="checkUpdate" />
+        </SettingsSection>
       </div>
+    </AppSection>
+
+    <!-- ===== ④ 关于（页面底部） ===== -->
+    <AppSection title="关于" class="my-page__about">
+      <AboutCard @check-update="checkUpdate" />
     </AppSection>
 
     <!-- 编辑资料抽屉（登录后） -->
@@ -323,7 +272,7 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-/* ---- 页面头 ---- */
+/* ---- 页面头（与昌都记忆 profile__header 同一层级：32px + 分割线） ---- */
 .page-head {
   display: flex;
   flex-direction: column;
@@ -334,7 +283,7 @@ onMounted(() => {
 
 .page-head__title {
   font-size: var(--font-page-title);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   line-height: var(--leading-tight);
   letter-spacing: -0.02em;
   color: var(--color-text-primary);
@@ -345,180 +294,15 @@ onMounted(() => {
   color: var(--color-text-secondary);
 }
 
-/* ---- 次级导航（我的 ｜ 功能设置；与 ModuleLayout tabs 同款） ---- */
-.my-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 3px;
-  margin: var(--spacing-lg) 0 var(--spacing-xl);
-  background: var(--color-border-light);
-  border-radius: var(--radius-full);
-  font-size: var(--font-secondary);
-  font-weight: var(--font-weight-medium);
-  align-self: flex-start;
-}
-
-.my-tabs--sub {
-  margin: 0 0 var(--spacing-lg);
-}
-
-.my-tab {
-  padding: 7px 18px;
-  border: none;
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  white-space: nowrap;
-  user-select: none;
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: inherit;
-}
-
-.my-tab:hover:not(.is-active) {
-  color: var(--color-text-primary);
-  background: var(--bg-hover);
-}
-
-.my-tab.is-active {
-  background: var(--bg-card);
-  color: var(--color-text-primary);
-  box-shadow: var(--shadow-xs);
-  font-weight: var(--font-weight-semibold);
-}
-
-.my-tab:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
-}
-
-/* ---- Control Center 布局：桌面双列（主列层级高，侧列放低频） ---- */
-.cc-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-4);
-}
-
-.cc-main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.cc-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  min-width: 0;
-  align-content: start;
-}
-
-@media (min-width: 960px) {
-  .cc-layout {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    align-items: start;
-  }
-}
-
 .avatar-input {
   display: none;
 }
 
-/* ---- 功能设置 Tab ---- */
-.settings-pane {
+/* ---- 设置栈：分组之间统一留白（昌都记忆 Settings 列表间距） ---- */
+.settings-stack {
   display: flex;
   flex-direction: column;
-}
-
-.settings-card {
-  padding: var(--space-2) 0;
-  background: var(--bg-card);
-  border: var(--border-hairline-width) solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
-  overflow: hidden;
-}
-
-/* 时间设置表单 */
-.time-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-card);
-  padding: var(--space-3);
-}
-
-.time-form__dates {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--spacing-card);
-}
-
-.bg-presets {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  margin-bottom: var(--space-2);
-}
-
-.bg-presets__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px;
-  border: 2px solid var(--color-border-light);
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-
-.bg-presets__item.is-active {
-  border-color: var(--color-primary);
-}
-
-.bg-presets__thumb {
-  width: 88px;
-  height: 52px;
-  object-fit: cover;
-  border-radius: var(--radius-xs);
-  display: block;
-}
-
-.bg-presets__label {
-  font-size: var(--font-caption);
-  color: var(--color-text-secondary);
-}
-
-.bg-custom {
-  margin-top: var(--space-2);
-}
-
-.time-form__switch {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-fill-disabled);
-  border-radius: var(--radius-md);
-}
-
-.time-form__switch-label {
-  font-size: var(--font-secondary);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
-}
-
-.time-form__hint {
-  margin: 0;
-  font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
+  gap: var(--spacing-xl);
 }
 
 /* 编辑资料抽屉表单 */
@@ -528,41 +312,21 @@ onMounted(() => {
   gap: var(--spacing-card);
 }
 
-/* ---- 外观（深色模式） ---- */
-.appearance-pane {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.appearance-pane__hint {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-}
-
-.appearance-pane__hint svg {
-  flex-shrink: 0;
-}
-
-/* ---- 未登录空状态卡（v3.0.2-rc） ---- */
+/* ---- 未登录空状态卡 ---- */
 .guest-card {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-lg);
-  background: var(--bg-card);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-xl);
+  background: var(--color-bg-white);
+  border: var(--border-hairline-width) solid var(--color-border-light);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
 }
 
 .guest-card__avatar {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -579,40 +343,18 @@ onMounted(() => {
 
 .guest-card__title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--font-section-title);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
 .guest-card__hint {
   margin: 4px 0 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-}
-
-/* ---- 偏好行 ---- */
-.pref-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-md);
-}
-
-.pref-row__label {
-  font-size: var(--text-md);
-  color: var(--color-text-primary);
-}
-
-.pref-row__hint {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--font-secondary);
   color: var(--color-text-tertiary);
 }
 
 .my-page__about {
-  margin-top: var(--spacing-md);
+  margin-bottom: 0;
 }
 </style>

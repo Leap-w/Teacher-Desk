@@ -6,8 +6,9 @@ import { CLASSROOM_TOOLS } from '@/utils/classroom'
 /**
  * ClassroomEntryCard — 课堂工具入口（V2.3.0-alpha · Phase Classroom-1）。
  *
- * 位置：我的 → 工具箱。整卡可点（Hover 抬升 + 箭头），文案列出三个工具的用途，
- * 让教师不必点进去才知道里面有什么。
+ * 位置：**首页「课堂工具」区块**（v3.0.3-rc 起；此前挂在我的 → 工具箱）。
+ * 整卡可点（Hover 抬升 + 箭头），文案列出三个工具的用途，
+ * 让教师不必点进去才知道里面有什么。课堂工具本身仍是独立页面 `/my/classroom`。
  */
 const tools = CLASSROOM_TOOLS
 </script>

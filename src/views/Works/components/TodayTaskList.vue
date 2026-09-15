@@ -7,7 +7,7 @@ import { ListTodo } from 'lucide-vue-next'
 import type { WorkItem } from '@/types/work'
 
 /**
- * TodayTaskList — 今日待办（V2.0.9-alpha · Phase UI-5B）：
+ * TodayTaskList — 今日待完成（V2.0.9-alpha · Phase UI-5B）：
  * Action First 第二层，页面第一优先级内容。数据 = workStore.todayList
  * （归属日期 ≤ 今天且未完成，含逾期——逾期项由卡片自身的紧急色阶自然强调）。
  */

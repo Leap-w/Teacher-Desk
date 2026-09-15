@@ -16,8 +16,8 @@ export { dutyRepository } from './duty/dutyRepository'
 export { weekendRepository } from './weekend/weekendRepository'
 export { scheduleRepository } from './schedule/scheduleRepository'
 export { taskRepository } from './task/taskRepository'
-export { dashboardRepository } from './dashboard/dashboardRepository'
 export { userProfileRepository, DEFAULT_USER_PROFILE } from './user/userProfileRepository'
+export { appSettingsRepository, DEFAULT_APP_SETTINGS } from './settings/appSettingsRepository'
 export { syncQueueRepository, SYNC_QUEUE_STORAGE_KEY } from './sync/syncQueueRepository'
 export {
   themeRepository,

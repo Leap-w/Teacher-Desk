@@ -25,7 +25,8 @@ export default defineConfig({
         lang: 'zh-CN',
         start_url: '/',
         display: 'standalone',
-        theme_color: '#2F8F83',
+        theme_color:
+          '#4A8C94' /* 与 --color-primary（CDL v6.0 高原青）一致；旧值 #2F8F83 是 CDL 迁移前的品牌色 */,
         background_color: '#F8FAFB' /* 与 --bg-page 一致（Polish-1 对齐） */,
         // 官方图标（docs/图标.png）等比导出，见 public/icons/；maskable 版带 80% 安全区留白
         icons: [

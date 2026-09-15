@@ -128,11 +128,19 @@ const countdownText = computed(() => {
 .today-course {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-lg) var(--spacing-xl);
+  /* v3.0.3-rc：卡片加高——全天课程一屏读完，不再被压扁 */
+  min-height: 420px;
+  padding: var(--spacing-xl) var(--spacing-xl) var(--spacing-lg);
   background: var(--color-bg-white);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-xl);
+  border: var(--border-hairline-width) solid var(--color-border-light);
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
+}
+
+@media (max-width: 640px) {
+  .today-course {
+    min-height: 0;
+  }
 }
 
 /* ---- 头部状态（沿用 NextCourseCard 的视觉语言） ---- */
@@ -204,7 +212,8 @@ const countdownText = computed(() => {
   margin: var(--spacing-md) 0 0;
   padding: 0;
   /* 课程多时内部滚动：不撑破首页（同时是暗色下的滚动容器） */
-  max-height: 264px;
+  flex: 1;
+  max-height: 360px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -217,7 +226,8 @@ const countdownText = computed(() => {
   grid-template-columns: 64px 110px 1fr auto;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--spacing-sm) var(--spacing-md);
+  /* v3.0.3-rc：行高加大——讲台距离下也读得清 */
+  padding: var(--spacing-md);
   border-radius: var(--radius-sm);
   border-left: 3px solid transparent;
   font-size: var(--text-md);

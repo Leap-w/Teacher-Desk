@@ -19,7 +19,7 @@ import {
   pullKeyNow,
   pushAllLocalNow,
   pushKeyNow,
-  signInWithEmailAndSync,
+  signInAndSync,
   signOutAndStop,
   syncNow,
   cloudSyncState,
@@ -39,8 +39,8 @@ export interface CloudTransport extends SyncTransport {
   firstSyncSituation(): Promise<FirstSyncSituation>
   /** 用本机数据初始化云端（教师在确认弹窗里选「初始化」后调用） */
   initializeFromLocal(): Promise<{ pushed: number; failed: number }>
-  /** 邮箱登录（登录表单走这条） */
-  signIn(email: string, password: string): Promise<void>
+  /** 账号（用户名）+ 密码登录（登录弹窗走这条） */
+  signIn(username: string, password: string): Promise<void>
   /** 当前账号（未登录为 null） */
   account(): string | null
 }
@@ -137,8 +137,8 @@ export function createCloudTransport(): CloudTransport {
       return pushAllLocalNow()
     },
 
-    async signIn(email: string, password: string): Promise<void> {
-      await signInWithEmailAndSync(email, password)
+    async signIn(username: string, password: string): Promise<void> {
+      await signInAndSync(username, password)
     },
 
     account(): string | null {

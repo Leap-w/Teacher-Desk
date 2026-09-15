@@ -335,7 +335,7 @@ function clearFilters() {
 
 <style scoped>
 .leave-page {
-  max-width: 1080px;
+  max-width: var(--page-max-width);
   padding-bottom: var(--spacing-2xl);
 }
 

@@ -212,8 +212,8 @@
   --nav-blur: 20px;
   --sidebar-width: 232px;
   --glass-bg-scrolled: rgba(255, 255, 255, 0.88); /* Header 滚动后透明度略增 */
-  --page-max-width: 960px; /* 顶部导航版：内容居中收窄（v3.0.2-rc） */
-  --page-pad-x: 40px; /* 页面左右留白 */
+  --page-max-width: 1440px; /* 全宽版（v3.0.4-rc）：与顶部胶囊同宽，Hero 基本铺满屏幕 */
+  --page-pad-x: 32px; /* 页面左右留白（v3.0.4-rc：40 → 32，把宽度让给内容） */
   --page-top-gap: 32px; /* 页面标题距导航的统一间距（UI-2） */
   --card-gap: 24px; /* 卡片间距 */
   --section-gap: 32px; /* 区块间距 */

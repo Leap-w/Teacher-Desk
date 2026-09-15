@@ -20,7 +20,6 @@ import { appConfig } from '@/config'
 import { createSeedLessons } from '@/services/mock'
 import { readRaw } from '@/services/storage'
 import { useConstraintStore } from '@/stores/constraint'
-import { useDashboardStore } from '@/stores/dashboard'
 import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { useSeatStore } from '@/stores/seat'
@@ -76,13 +75,6 @@ const DOMAINS: Domain[] = [
     key: `${prefix}:timetable`,
     load: () => void useTimetableStore(),
     count: () => useTimetableStore().lessons.length,
-    seedsWhenMissing: true,
-  },
-  {
-    label: '今日待办',
-    key: `${prefix}:dashboard:todos`,
-    load: () => void useDashboardStore(),
-    count: () => useDashboardStore().todos.length,
     seedsWhenMissing: true,
   },
   {
@@ -417,22 +409,5 @@ describe('逐域最小规范化：认得出的留下，认不出的丢弃，缺�
 
     expect(items.map((item) => item.id)).toEqual(['c1'])
     expect(items[0]!.enabled).toBe(false)
-  })
-
-  it('待办：文本为空的条目丢弃，done 非 true 一律视为未完成（不把 "true" 当成已完成）', () => {
-    browser.localStorage.seed(
-      `${prefix}:dashboard:todos`,
-      JSON.stringify([
-        { id: 't1', text: '   ', done: true },
-        { id: 't2', text: '收作业', done: 'true' },
-        { id: 't3', text: '开班会', done: true },
-      ]),
-    )
-
-    const todos = useDashboardStore().todos
-
-    expect(todos.map((item) => item.id)).toEqual(['t2', 't3'])
-    expect(todos[0]!.done).toBe(false)
-    expect(todos[1]!.done).toBe(true)
   })
 })

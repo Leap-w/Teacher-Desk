@@ -39,6 +39,10 @@
 
 > **Phase 10 / 11 已取消（2026-09-12 需求方拍板）**：理由是同一条——**这个工具是工作台，不是记录系统**。班级事务记录、三级通知落档、把待办扩成带截止时间 / 优先级 / 分类的「工作安排」，做的都是「把发生过的事记下来」，而 TeacherDesk 要解决的是「今天 / 这周要做什么」。加进来会让它向「教务系统」滑，而真正的记录系统学校里已经有了。将来若「今日待办」确不够用，**作为既有模块的增量并入**（例如卡片上加一个截止时间），不新开模块。**Phase 12（macOS Widget）已废弃（2026-09-14 需求方拍板）**：不再开发 macOS Widget，**规划与预留架构一并移除**——`macos/` 工程（35 个文件）、Snapshot 协议与相关规范已从仓库删除（历史版本仍可从 tag `v1.0.0` 取回）。**CloudBase 继续作为唯一的云同步方案。** 决策记录见 `docs/开发手册.md` **§9.55**。
 
+> **下面这段是「按阶段交付」的历史记录**，每条写的是**那个阶段交付时的样子**，不是当前状态。
+> 想知道现在的首页 / 「我的」/ 数据与同步长什么样，看 `docs/CHANGELOG.md` 最新一条（v3.0.3-rc）。
+> 特别提醒：**工作台的「今日待办」模块已在 v3.0.3-rc 整体移除**（数据层一并删除），下面 Phase 4 / 8 / 9A / 9B / 9C 里提到它，都属于历史。
+
 学生档案已完成：搜索与筛选、重名学生区分、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）。
 
 座位管理（Phase 3A）已完成：固定教室模型（高一9班 · 7 排 × 9 列 · 3-3-3 分列 · 63 座就座 62 · 末排尾座留空）、老师 / 学生双视角可视化网格（约 300ms 翻转动画，选中跨视角保持）、班委 / 高个 / 标签强调标记、多座位方案管理（开学初 / 新建 / 切换 / 重命名 / 删除历史）。
@@ -80,14 +84,14 @@
 | 路由       | Vue Router 4                                                                                |
 | 状态管理   | Pinia 3                                                                                     |
 | 原子化 CSS | UnoCSS（presetWind3，主题对接 theme.css 变量）                                              |
-| 图标       | @vicons/ionicons5（Ionicons，按需引入）                                                     |
+| 图标       | lucide-vue-next（按需引入）                                                                 |
 | 后端       | 腾讯云 CloudBase（`@cloudbase/js-sdk`，内置文档型数据库 + 账号密码鉴权，v0.14.0）           |
 | PWA        | vite-plugin-pwa（autoUpdate）                                                               |
 | 部署       | 腾讯云 CloudBase 静态网站托管（`cloudbaserc.json` + `tcb deploy`，v1.0.0）                  |
 | 测试       | Vitest 3（`npm run test`，开发依赖；纯函数 / 数据层 / 同步核心，不连真 CloudBase，v0.14.1） |
 | 代码规范   | ESLint 9（flat）+ Prettier 3                                                                |
 
-组件全部自行封装（不引入 UI 组件库），Apple 风格：主题色松石青 `#2F8F83`、16px 圆角、毛玻璃、柔和阴影。Design Tokens 统一维护在 `src/styles/theme.css`。
+组件全部自行封装（不引入 UI 组件库），Apple 风格：主色高原青 `#4A8C94`（CDL v6.0 设计令牌）、卡片圆角 24px、毛玻璃、柔和阴影。Design Tokens 统一维护在 `src/styles/theme.css`（含 `[data-theme='dark']` 深色覆盖）。
 
 ## 启动方式
 
@@ -106,7 +110,7 @@ npm run dev         # 开发服务器
 npm run type-check  # TypeScript 类型检查（vue-tsc --noEmit）
 npm run lint        # ESLint 检查并自动修复
 npm run format      # Prettier 格式化
-npm run test        # 回归测试（81 项，离线可跑，不需要云环境）
+npm run test        # 回归测试（24 个文件 559 项，离线可跑，不需要云环境）
 npm run test:watch  # 同上，改一处跑一次
 npm run build       # 类型检查 + 生产构建
 npm run deploy      # 构建并发布到 CloudBase 静态网站托管（需先 tcb login，v1.0.0）
@@ -129,20 +133,20 @@ npm run deploy                  # = tcb deploy：安装依赖 → 构建 → 上
 
 - **配置在 `cloudbaserc.json`**：`framework: vite` / `buildCommand: npm run build` / `outputDir: dist` / `deployPath: /`——部署在站点**根**，所以 `vite.config.ts` 的 `base` 保持默认 `/`。
 - **发布前置（2026-09-12 已核对，两件都已就绪）**：① 静态网站托管**已开通**——CLI 报状态「已上线」；② 本环境的静态托管域名**默认就躺在**控制台「环境配置 → 安全来源」里（开发手册 §9.20 第 5 条记录），**无需手动添加**。②之所以要紧：**不在安全来源里，页面能打开，但登录与同步会被云端拒**。
-- **不需要配 SPA 回退重写**：全应用是**哈希路由**（`#/…`），任何路径都由 `index.html` 承担；默认域名**自带 HTTPS**（PWA 的硬前提）。
+- **深链靠构建期生成路由占位，不靠控制台重写规则**：全应用是**历史路由**（`createWebHistory`，路径形如 `/my/tools`）。`npm run build` 的最后一步 `node scripts/hosting-routes.cjs` 会按路由表在 `dist/` 里为每个已知路径生成一份 `<路由>/index.html`（当前 19 个，每次构建重建），静态托管因此能直接命中深链、刷新不 404——**这也是为什么部署必须走 `npm run build`，不能只上传 `dist/` 里的旧产物**。默认域名**自带 HTTPS**（PWA 的硬前提）。
 - **退路**（要用纯文件上传、不走构建时）：先 `npm run build`，再 `tcb hosting deploy dist / -e teacher-desk-d6gdsgqb8f9dc13d2`。
 - ✅ **首次发布已完成（2026-09-12）**：`--dry-run` 与真实上传都跑通了。计划与实际一致——单个 `hosting` 资源 `teacherdesk`、部署路径 `/`、46 个文件上传成功（`[uploadFiles] 全部完成！共处理 45 + 1 个文件`），**`deleted: 0`**，云端环境自带的 9 个文件（`__auth/`、`cloud-admin/` 等）**一个没动**。`dist/` 是构建产物，不入库（`.gitignore` 已覆盖）。
 - ⚠️ **两个已实测、待处理的首屏加载问题**（2026-09-12 用 `curl` 读响应头确认，非推测）：
   - **未启用 gzip**：响应里**没有 `content-encoding: gzip`**，入口 chunk 传输 917,700 字节——而它 gzip 后只有 251 kB。首屏要白白多下 ~666 kB。官方文档里**没找到**开启 gzip 的开关（别家 CloudBase 站点是有 `Content-Encoding: gzip` 的），暂不知怎么开。
   - **默认不缓存**：所有文件（含带哈希的 `assets/*.js`）响应头都是 `cache-control: no-store, no-cache, must-revalidate, max-age=0`。**这个可以在控制台「静态网站托管 → 缓存配置」里按后缀改**（官方建议：图片 30 天、CSS/JS 7 天、HTML 1 小时）——带哈希的文件名本来就是为了长缓存设计的，值得改。
-  - 缓解因素：PWA 的 Service Worker 会预缓存 48 项（2181.22 KiB），**装成 PWA 之后不再走网络**；受影响的主要是**第一次访问**。
+  - 缓解因素：PWA 的 Service Worker 会预缓存 91 项（约 4.20 MiB），**装成 PWA 之后不再走网络**；受影响的主要是**第一次访问**。
 
 ### 云端同步（可选，v0.14.0 起）
 
 不配也能用——**不登录时应用完全按本地模式运行**，云端同步卡片会提示未登录。要用同步，先做两件事：
 
 1. **云侧准备（一次性，在 CloudBase 控制台做）**——**这一件已于 2026-09-12 办好**，下面是留档说明，换环境或重建时照做：为环境 `teacher-desk-d6gdsgqb8f9dc13d2` 开启**用户名密码登录**方式 → 在**「身份认证 → 用户管理」里把账号建出来** → 建一个名为 **`teacherdesk`** 的集合 → 权限选**「仅创建者可读写」**。⚠️ **不要用「匿名登录 + 所有人可读」**：一个账号里装的是全班学生的姓名 / 学号 / 家庭住址 / 请假与返家记录。⚠️ **建账号时把「邮箱验证」关掉**：应用里没有输入验证码的地方，开着它账号会停在未验证、**登录必被拒**（要留就把验证方式设成「验证链接」，别用「验证码」）。
-2. **应用内登录**：工具箱 →「云端同步」→ 用户名 + 密码（**控制台「新建用户」建的那个用户名**，不是邮箱——`2026-09-12` 起应用改走用户名登录，理由见开发手册 §9.20 取舍 ⑪）。**应用里不提供注册**（网站单教师自用，账号在控制台建）。
+2. **应用内登录**：点**顶部右侧头像**（或「我的 → 数据与同步」）→ 账号 + 密码（**控制台「新建用户」建的那个用户名**，不是邮箱——`2026-09-12` 起应用改走用户名登录，理由见开发手册 §9.20 取舍 ⑪）。**应用里不提供注册**（网站单教师自用，账号在控制台建）。
 
 > **⚠️ 登录被拒的两种情况**（都踩过，都记下来）：
 >
@@ -180,32 +184,38 @@ TeacherDesk/
 ├── public/             # 图标：icons/（官方图标 13 档尺寸 + maskable-512）+ apple-touch-icon（PNG）
 ├── src/
 │   ├── components/
-│   │   ├── ui/         # 通用基础组件
-│   │   ├── layout/     # AppHeader / Sidebar
+│   │   ├── ui/         # 通用基础组件（AppButton / AppCard / AppModal / AppDrawer / AppSegmented / AppToast 等）
+│   │   ├── layout/     # AppHeader（顶部玻璃胶囊导航）/ ModuleLayout（模块内二级导航）/ LoginModal
+│   │   │               #   / SettingsEntryButton（各模块页右上角 ⚙，直达对应二级设置页）
+│   │   ├── dashboard/  # DashboardHero（首页 Hero 大背景图）/ DashboardSection / QuickActionGrid / ActivityTimeline
 │   │   └── flow/       # RegisterPointModal / RegisterStatusLine（「日期 + 上午 / 下午」公共流程件，Phase 7A）
-│   ├── composables/    # useToast / useToday（useNow 共享时钟 + 日期问候）/ useCloudSync（同步状态与动作，顶栏与工具箱共用）
+│   ├── composables/    # useToast / useToday（useNow 共享时钟 + 日期问候）/ useTheme（浅色 / 深色 / 跟随系统）
+│   │                   #   / useCloudSync（同步状态与动作，顶栏与数据与同步页共用）/ useLoginModal（全局登录弹窗开关）
+│   │                   #   / useBackup / useSyncEngine / useSyncDiagnostics / useCloudActions / useOperationLock
 │   ├── config/         # appConfig（存储键前缀 / 云环境 ID / 集合名）
 │   ├── constants/      # Toast 时长与堆栈上限
-│   ├── router/         # 路由（侧边导航由此驱动）
+│   ├── router/         # 路由（顶部一级导航由本表驱动；二级设置页路由 + SPA 深链占位口径）
 │   ├── services/       # storage.ts（本机存储唯一出口）/ sync.ts（同设备跨标签页同步）
 │   │                   #   / remote.ts（远端端口接口）+ cloudbase.ts（唯一碰 SDK 的模块）+ cloudSync.ts（云端同步引擎，Phase 9B）
-│   │                   #   / mock 种子数据（学生 / 课表 / 待办 / 请假 / 值日 / 周末返家）+ api 占位（仍无调用方）
-│   ├── stores/         # student（学生）/ seat（排座）/ constraint（座位约束）（八个，全部落 localStorage）
-│   │                   #   / timetable（课表 + 增删改）/ dashboard（今日待办）/ leave（请假 + 离校登记）
-│   │                   #   / duty（值日组 + 轮换设置）/ weekend（周末返家登记）
-│   ├── styles/         # theme.css 设计变量 + 全局样式
-│   ├── types/          # classroom / seat / constraint / timetable（唯一课程模型）/ dashboard / leave / duty
-│   │                   #   / point（半天 + 日期端点形状，Phase 7A）/ weekend（周末返家记录，Phase 7B）+ index
-│   ├── utils/          # date / id / object（isPlainObject 唯一来源）/ student / seat（含方案对比变化文案）
-│   │                   #   / constraint（检查器）/ seatArrange（自动排座）
-│   │                   #   / timetable（星期 / 节次 / 班级标识 / 时段冲突 / 周末列）/ leave（时长 / 时段文案 / 重叠判定）
-│   │                   #   / point（半天顺序键 / 日期点守卫 / 登记两点守卫与健壮化，Phase 7A）
-│   │                   #   / weekend（周末键 / 相对说法 / 记录健壮化与排序，Phase 7B）
-│   │                   #   / duty（轮换推进 / 说明文案 / 记录健壮化）/ backup（备份导出 / 校验 / 合并 / 清空）
-│   ├── __tests__/      # 回归测试（Phase 9C，4 个测试文件 81 项，随仓库长期存在）
-│   │                   #   decideKey（同步判决 21）/ storage（写盘幂等 12）/ revive（各域读取 38）/ cloudSync（队列与首次同步 10）
+│   │                   #   / mock 种子数据（学生 / 课表 / 请假 / 值日 / 周末返家）+ api 占位（仍无调用方）
+│   ├── stores/         # 十个领域 store，全部落 localStorage：
+│   │                   #   student（学生）/ seat（排座）/ constraint（座位约束）/ timetable（课表 + 增删改）
+│   │                   #   / leave（请假 + 离校登记）/ duty（值日组 + 轮换设置）/ weekend（周末返家登记）
+│   │                   #   / work（工作清单）/ user（教师个人资料）/ appSettings（Hero 与工作时光共用的设置）
+│   ├── styles/         # theme.css 设计变量（CDL 令牌 + 深色模式覆盖）+ 全局样式
+│   ├── types/          # classroom / seat / constraint / timetable（唯一课程模型）/ leave / duty / weekend / work / user
+│   │                   #   / appSettings（Hero 背景与文案、学期起止、支教开始、默认首页）/ point + index
+│   ├── utils/          # date / id / object（isPlainObject 唯一来源）/ student（含批量与查询）/ studentViewPrefs
+│   │                   #   / seat（含方案对比变化文案）/ constraint（检查器）/ seatArrange（自动排座）/ seatPlanConstraint / seatView / seatExport
+│   │                   #   / timetable（星期 / 节次 / 班级标识 / 时段冲突 / 周末列）/ scheduleNow（当前课 / 下一节判定唯一实现）
+│   │                   #   / leave / duty（轮换推进 / 说明文案 / 记录健壮化）/ weekend / point
+│   │                   #   / classroom（课堂工具元信息）/ work / backup（备份导出 / 校验 / 合并 / 清空）
+│   ├── __tests__/      # 常驻回归自检（24 个测试文件 559 项，随仓库长期存在）
 │   │                   #   / helpers/env.ts（假浏览器底座：内存存储 / 假广播通道 / 假时钟 / 断网开关）
-│   ├── views/          # Home（工作台）/ Students / Seats / Schedule / Leave / Duty / Weekend / Toolbox（均为完成模块，无占位页）
+│   ├── views/          # Home（工作台）/ Students / Seats / Schedule / Leave / Duty / Weekend / Works（工作清单）
+│   │                   #   / My（我的：个人信息 / 工作时光 / 设置入口 / 关于）
+│   │                   #   / My/settings（二级设置页：显示 / 教学 / 班级 / 学期与倒计时）
+│   │                   #   / Toolbox（数据与同步）/ Classroom（课堂工具）
 │   ├── App.vue
 │   └── main.ts
 └── package.json
@@ -213,4 +223,4 @@ TeacherDesk/
 
 ## PWA
 
-manifest 与 Service Worker 已配置（autoUpdate），生产构建后可安装（**48 个 precache 条目 / 约 2.13 MiB**——v0.14.0 起含 CloudBase SDK，比 v0.13.0 增约 774 KiB）。图标为**正式 PNG**（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` 满幅 / `apple-touch-icon.png` 180×180，v0.10.1 起；标签页仍用 `favicon.svg`），`workbox.globPatterns` 已含 `png`（否则离线启动会掉图标）。
+manifest 与 Service Worker 已配置（autoUpdate），生产构建后可安装（**91 个 precache 条目 / 约 4.20 MiB**——含 CloudBase SDK、xlsx、html2canvas、jspdf 等按需 chunk）。图标为**正式 PNG**（`icon-192.png` / `icon-512.png` / `icon-maskable-512.png` 满幅 / `apple-touch-icon.png` 180×180，v0.10.1 起），`workbox.globPatterns` 已含 `png`（否则离线启动会掉图标）。

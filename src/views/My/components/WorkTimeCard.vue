@@ -1,19 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { useCountdownSettings } from '@/composables/useCountdownSettings'
+import { useAppSettingsStore } from '@/stores/appSettings'
 
 /**
- * WorkTimeCard — 工作时光（V2.1.0-beta · Phase UI-5C）：
- * Control Center 第二层。数据 = useCountdownSettings（与首页 Hero 共用，零新数据）：
- * 支教天数（本学期已过）/ 本学期进度（渐变进度条 + 三点轴）/ 当前学年（派生）。
+ * WorkTimeCard — 工作时光（V2.1.0-beta · Phase UI-5C；v3.0.4-rc 接入统一设置）。
+ *
+ * Control Center 第二层，**与首页 Hero 读同一份数据**（`useAppSettingsStore`）：
+ * - 支教天数 ← `serviceStart`（首页 Hero 的「第 X 天」是同一个值）
+ * - 本学期进度 ← `semesterStart` → `semesterEnd`（首页 Hero 进度条同源）
+ * - 轴上的「开学 / 期末」日期 ← 学期起止
+ *
+ * 改任一处日期，这里与首页同时更新；本组件不再有自己的设置读取（旧
+ * `useCountdownSettings` 已并入 store）。
  */
-const countdown = useCountdownSettings()
+const appSettings = useAppSettingsStore()
 
-const daysWorked = computed(() => countdown.daysPassed.value)
-const termProgress = computed(() => countdown.progress.value)
-const termStart = computed(() => countdown.settings.value.startDate)
-const termEnd = computed(() => countdown.settings.value.targetDate)
+const daysWorked = computed(() => appSettings.daysWorked)
+const termProgress = computed(() => appSettings.termProgress)
+const termStart = computed(() => appSettings.settings.semesterStart)
+const termEnd = computed(() => appSettings.settings.semesterEnd)
 
 /** 当前学年：8 月起算新学年（如 2026-09 → 2026–2027） */
 const schoolYear = computed(() => {
@@ -71,9 +77,9 @@ const fmtDate = (iso: string) => {
 .work-time {
   padding: var(--space-5) var(--space-5) var(--space-4);
   border: var(--border-hairline-width) solid var(--color-border-light);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-card);
   background: var(--bg-card);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-card);
 }
 
 .wt-head {
@@ -85,7 +91,7 @@ const fmtDate = (iso: string) => {
 
 .wt-title {
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--font-content);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
@@ -131,7 +137,7 @@ const fmtDate = (iso: string) => {
   color: var(--color-text-secondary);
 }
 
-/* 渐变进度条 + 三点轴（沿用原实现，数据同源） */
+/* 渐变进度条 + 三点轴（数据同源） */
 .term-progress__track {
   height: 8px;
   border-radius: var(--radius-full);

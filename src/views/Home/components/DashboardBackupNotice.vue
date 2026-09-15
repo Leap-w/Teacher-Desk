@@ -21,8 +21,8 @@ const router = useRouter()
 const now = useNow()
 
 /**
- * 只读一次：导出发生在工具箱页，回到工作台会重新挂载（读到的就是新值）；
- * 隐私模式下读不到按「从未导出」处理（与工具箱同一口径，见 services/storage.ts）。
+ * 只读一次：导出发生在「数据与同步」页，回到工作台会重新挂载（读到的就是新值）；
+ * 隐私模式下读不到按「从未导出」处理（与数据与同步页同一口径，见 services/storage.ts）。
  */
 const lastBackupAt = ref(useBackup().read(LAST_BACKUP_KEY) ?? '')
 const reminder = computed(() => backupReminder(lastBackupAt.value, now.value))
@@ -37,7 +37,7 @@ const reminder = computed(() => backupReminder(lastBackupAt.value, now.value))
   >
     <span class="notice-icon" aria-hidden="true"><Download :size="18" :stroke-width="2" /></span>
     <p class="notice-text">{{ reminder.text }}</p>
-    <AppButton size="sm" variant="secondary" @click="router.push('/toolbox')">
+    <AppButton size="sm" variant="secondary" @click="router.push('/my/tools')">
       去导出备份
     </AppButton>
   </div>

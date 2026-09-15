@@ -192,7 +192,7 @@ function onSubmit(): void {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  /* 触控目标 ≥44px：与今日待办同口径，手机上好点 */
+  /* 触控目标 ≥44px：与工作清单的统计卡同口径，手机上好点 */
   padding: var(--space-3) var(--space-3);
   cursor: pointer;
   transition: background var(--transition-fast);

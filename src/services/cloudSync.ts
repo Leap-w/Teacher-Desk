@@ -32,7 +32,6 @@ import {
   createCloudBaseRemote,
   currentUser,
   isCloudConfigured,
-  signInWithEmail,
   signInWithUsername,
   signOutCloud,
 } from '@/services/cloudbase'
@@ -662,8 +661,15 @@ export function startCloudSync(): void {
 }
 
 /**
- * 登录并立刻对齐一次。失败**不吞**：登录这种教师主动发起的动作，
+ * 账号（用户名）+ 密码登录并立刻对齐一次。失败**不吞**：登录这种教师主动发起的动作，
  * 必须让他看到「为什么没成」（登录方式没开、用户名或密码错、账号没建……）。
+ *
+ * **走用户名登录，不走邮箱登录**（v3.0.3-rc 修复回归）：CloudBase 控制台「身份认证 →
+ * 用户管理 → 新建用户」的必填项是用户名 / 用户昵称 / 密码，邮箱只是选填——账号天生是
+ * 「用户名」类型，`signInWithEmailAndPassword` 那套接口**登不上**（2026-09-12 真环境实测，
+ * 见 `services/cloudbase.ts` 顶部说明与开发手册 §9.20 取舍 ⑪）。
+ * v3.0.2-rc 的全局登录弹窗把调用误接回 `signInWithEmail`，界面上表现就是「点了没反应」。
+ * 想让用户名就是邮箱地址完全可以：CloudBase 的用户名字符集允许邮箱格式。
  */
 export async function signInAndSync(username: string, password: string): Promise<void> {
   await signInWithUsername(username, password)
@@ -825,14 +831,4 @@ export async function probeFirstSync(): Promise<FirstSyncSituation> {
   if (localReal.length > 0 && cloudReal.length === 0) return 'local-only'
   if (localReal.length === 0 && cloudReal.length > 0) return 'cloud-only'
   return 'both'
-}
-
-/**
- * 邮箱 + 密码登录并立刻对齐一次（Cloud-3 的登录形态）。
- * 失败**不吞**：登录是教师主动发起的动作，必须让他看到原因。
- */
-export async function signInWithEmailAndSync(email: string, password: string): Promise<void> {
-  await signInWithEmail(email, password)
-  remote = null
-  await syncNow()
 }

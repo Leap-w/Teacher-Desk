@@ -27,8 +27,9 @@ dev-dist
 .claude/settings.local.json
 .claude/worktrees/
 
-# WorkBuddy 会话本地数据（记忆 / 日志，不入库）
+# WorkBuddy 会话本地数据（记忆 / 日志 / 验收截图，不入库）
 .workbuddy/
+.workbuddy-ai/
 
 # 设计母项目参考（Changdu Memory，含自身 node_modules，不进本仓库）
 docs/昌都记忆/

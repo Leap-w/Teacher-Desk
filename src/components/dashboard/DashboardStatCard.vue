@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-vue-next'
 
 /**
  * DashboardStatCard — 统一统计卡（V2.0.2-alpha · Phase UI-3 沉淀）：
- * 左图标 / 中数字（字号大于普通标题）/ 下说明。用于今日待办、学生人数、
+ * 左图标 / 中数字（字号大于普通标题）/ 下说明。用于工作清单统计、学生人数、
  * 请假人数、值日人数等；提供 to 时整卡可点（RouterLink），否则纯展示。
  * Hover：2px 微抬升。
  */

@@ -46,8 +46,9 @@ vi.mock('@/services/cloudbase', () => ({
       cloud.docs.delete(key)
     },
   }),
-  signInWithUsername: async () => {
+  signInWithUsername: async (_username: string, password: string) => {
     if (cloud.signInError) throw cloud.signInError
+    if (password !== 'right') throw new Error('账号或密码错误')
     cloud.signedIn = true
   },
   signInWithEmail: async (_email: string, password: string) => {
@@ -747,10 +748,10 @@ describe('autoSync · 触发点', () => {
   })
 })
 
-/* ==================== ⑦ 登录（Email）与首次初始化 ==================== */
+/* ==================== ⑦ 登录（账号 / 用户名）与首次初始化 ==================== */
 
 describe('登录与首次初始化（§三 / §六）', () => {
-  it('46. 邮箱登录成功：会话确认并立刻整轮对账', async () => {
+  it('46. 账号登录成功：会话确认并立刻整轮对账', async () => {
     const auto = await import('@/sync/autoSync')
     auto.startAutoSync()
     await flushMicrotasks()
@@ -762,7 +763,7 @@ describe('登录与首次初始化（§三 / §六）', () => {
     auto.resetAutoSyncForTest()
   })
 
-  it('47. 邮箱登录失败（密码错）向上抛，不吞错误', async () => {
+  it('47. 账号登录失败（密码错）向上抛，不吞错误', async () => {
     const auto = await import('@/sync/autoSync')
     await expect(auto.signInAndSync('teacher@example.com', 'wrong')).rejects.toThrow(
       '账号或密码错误',

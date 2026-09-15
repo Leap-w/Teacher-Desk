@@ -5,9 +5,16 @@ import { PencilLine, User, X } from 'lucide-vue-next'
 import type { UserProfile } from '@/types/user'
 
 /**
- * ProfileHero — 个人身份 Hero（V2.1.0-beta · Phase UI-5C）：
- * Control Center 第一层：头像（上传/删除逻辑经事件上抛，原逻辑不变）+
- * 姓名 + 身份（班级班主任 / 学科教师 / 学校）。不放设置按钮。
+ * ProfileHero — 个人身份 Hero（v3.0.3-rc · 对齐 Changdu-Memory `Profile.vue` 的 profile-hero）。
+ *
+ * **DOM 与视觉层级与昌都记忆「我的档案」首卡一一对应**：
+ * `div.profile-hero`（夜空渐变卡）→ 雪山线稿纹理 SVG → `div.profile-hero__content`
+ * → `div.profile-hero__profile`（渐变环头像 + 姓名 + 身份行 + 签名行）
+ * → `div.profile-hero__attrs`（两项属性简徽：学校 / 学科）。
+ * 只替换内容来源：姓名 = 昵称，身份行 = 班级 · 班主任，属性 = 学校 / 任教学科。
+ *
+ * 头像上传 / 删除逻辑仍经事件上抛（与既有版本一致，不碰 Store 与数据结构）；
+ * 未登录时本组件不会被渲染（由页面换成登录空状态卡）。
  */
 const props = defineProps<{
   profile: UserProfile
@@ -27,73 +34,112 @@ onMounted(() => {
   })
 })
 
-/** 身份行：字段为空就整行不显示——绝不渲染「 · 班主任」这种半截身份 */
+const displayName = computed(() => props.profile.nickname.trim() || '尚未设置资料')
+
+/** 身份行：班级 · 班主任（班级为空时只说班主任） */
 const roleLine = computed(() =>
-  props.profile.className.trim() ? `${props.profile.className} · 班主任` : '',
+  props.profile.className.trim() ? `${props.profile.className.trim()} · 班主任` : '班主任',
 )
-const subjectLine = computed(() =>
-  props.profile.subject.trim() ? `${props.profile.subject} · 教师` : '',
+
+/** 属性简徽：字段为空显示「待设置」，不渲染半截身份 */
+const school = computed(() => props.profile.school.trim() || '待设置')
+const subject = computed(() => props.profile.subject.trim() || '待设置')
+
+/** 资料填过任一身份字段才显示「已认证」勾选，避免空资料上挂一个假徽标 */
+const verified = computed(
+  () =>
+    props.profile.nickname.trim() !== '' ||
+    props.profile.school.trim() !== '' ||
+    props.profile.className.trim() !== '' ||
+    props.profile.subject.trim() !== '',
 )
 </script>
 
 <template>
   <section class="profile-hero" :class="{ 'is-entered': entered }">
-    <div class="hero-avatar-wrap">
-      <button
-        type="button"
-        class="hero-avatar"
-        :aria-label="props.profile.avatar ? '更换头像' : '上传头像'"
-        @click="emit('pick-avatar')"
-      >
-        <img v-if="props.profile.avatar" :src="props.profile.avatar" alt="我的头像" />
-        <span v-else-if="props.initial" class="avatar-fallback" aria-hidden="true">{{
-          props.initial
-        }}</span>
-        <User v-else class="avatar-guest" :size="34" :stroke-width="1.8" aria-hidden="true" />
-      </button>
-      <button
-        v-if="props.profile.avatar"
-        type="button"
-        class="avatar-remove"
-        aria-label="删除头像"
-        @click="emit('remove-avatar')"
-      >
-        <X :size="12" :stroke-width="2" aria-hidden="true" />
-      </button>
-      <slot name="avatar-input" />
-    </div>
+    <!-- 背景雪山线稿纹理（与昌都记忆同一形状、同一透明度） -->
+    <svg class="profile-hero__texture" viewBox="0 0 500 150" fill="none" aria-hidden="true">
+      <path d="M0 150L120 40L200 110L320 10L500 150H0Z" fill="currentColor" />
+    </svg>
 
-    <div class="hero-main">
-      <h2 class="hero-name">
-        {{ props.profile.nickname.trim() || '尚未设置资料' }}
-      </h2>
-      <p v-if="roleLine || subjectLine" class="hero-roles">
-        <span v-if="roleLine" class="role-chip is-primary">{{ roleLine }}</span>
-        <span v-if="subjectLine" class="role-chip">{{ subjectLine }}</span>
-      </p>
-      <p v-if="props.profile.school" class="hero-school">{{ props.profile.school }}</p>
-      <p v-if="!props.profile.nickname.trim()" class="hero-hint">
-        填写称呼、学校与任教学科，让各页面正确称呼你
-      </p>
-    </div>
+    <div class="profile-hero__content">
+      <div class="profile-hero__profile">
+        <div class="profile-hero__avatar-wrap">
+          <button
+            type="button"
+            class="profile-hero__avatar-ring"
+            :aria-label="props.profile.avatar ? '更换头像' : '上传头像'"
+            @click="emit('pick-avatar')"
+          >
+            <img v-if="props.profile.avatar" :src="props.profile.avatar" alt="我的头像" />
+            <span v-else-if="props.initial" class="avatar-fallback" aria-hidden="true">{{
+              props.initial
+            }}</span>
+            <User v-else class="avatar-guest" :size="34" :stroke-width="1.8" aria-hidden="true" />
+          </button>
+          <button
+            v-if="props.profile.avatar"
+            type="button"
+            class="profile-hero__avatar-remove"
+            aria-label="删除头像"
+            @click="emit('remove-avatar')"
+          >
+            <X :size="12" :stroke-width="2" aria-hidden="true" />
+          </button>
+          <span v-if="verified" class="profile-hero__verified" aria-hidden="true">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 13l4 4L19 7" />
+            </svg>
+          </span>
+          <slot name="avatar-input" />
+        </div>
 
-    <button type="button" class="hero-edit" @click="emit('edit')">
-      <PencilLine :size="14" :stroke-width="2" aria-hidden="true" />
-      编辑资料
-    </button>
+        <div class="profile-hero__name-wrap">
+          <h2 class="profile-hero__name">{{ displayName }}</h2>
+          <p class="profile-hero__sub">{{ roleLine }}</p>
+        </div>
+      </div>
+
+      <!-- 个人属性简徽 -->
+      <div class="profile-hero__attrs">
+        <div class="profile-hero__attr">
+          <span class="profile-hero__attr-label">学校</span>
+          <span class="profile-hero__attr-value">{{ school }}</span>
+        </div>
+        <div class="profile-hero__attr">
+          <span class="profile-hero__attr-label">任教学科</span>
+          <span class="profile-hero__attr-value">{{ subject }}</span>
+        </div>
+      </div>
+
+      <button type="button" class="profile-hero__edit" @click="emit('edit')">
+        <PencilLine :size="14" :stroke-width="2" aria-hidden="true" />
+        编辑资料
+      </button>
+    </div>
   </section>
 </template>
 
 <style scoped>
+/* ==========================================
+   Personal Hero Card（对齐 Changdu-Memory .profile-hero）
+   ========================================== */
 .profile-hero {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-5) var(--space-6);
-  border: var(--border-hairline-width) solid var(--color-border-light);
-  border-radius: var(--radius-xl);
-  background: linear-gradient(135deg, var(--color-primary-bg) 0%, var(--bg-card) 60%);
-  box-shadow: var(--shadow-xs);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: linear-gradient(145deg, #101820 0%, #1f343a 40%, var(--color-primary) 100%);
+  box-shadow: 0 20px 40px -15px rgba(16, 24, 32, 0.3);
+  color: #ffffff;
   opacity: 0;
   transform: translateY(6px);
   transition:
@@ -106,59 +152,114 @@ const subjectLine = computed(() =>
   transform: translateY(0);
 }
 
-.hero-avatar-wrap {
-  position: relative;
-  flex-shrink: 0;
+.profile-hero__texture {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 160px;
+  opacity: 0.1;
+  color: currentColor;
+  pointer-events: none;
 }
 
-.hero-avatar {
-  width: 84px;
-  height: 84px;
-  padding: 3px;
+.profile-hero__content {
+  position: relative;
+  z-index: 2;
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+@media (min-width: 768px) {
+  .profile-hero__content {
+    padding: var(--spacing-xl);
+  }
+}
+
+/* ---- 头像与姓名信息 ---- */
+.profile-hero__profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.profile-hero__avatar-wrap {
+  position: relative;
+}
+
+/* 渐变环头像（金 → 天空蓝 → 高原青） */
+.profile-hero__avatar-ring {
+  width: 96px;
+  height: 96px;
+  padding: 4px;
   border: none;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--color-gold), var(--color-sky), var(--color-primary));
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
   cursor: pointer;
+  display: block;
   transition: transform var(--duration-base) var(--ease-out);
 }
 
-.hero-avatar:hover {
-  transform: scale(1.04);
+@media (hover: hover) {
+  .profile-hero__avatar-ring:hover {
+    transform: scale(1.04);
+  }
 }
 
-.hero-avatar:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
+.profile-hero__avatar-ring:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
 }
 
-.hero-avatar img,
-.avatar-fallback {
+.profile-hero__avatar-ring img,
+.avatar-fallback,
+.avatar-guest {
   width: 100%;
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
-  display: block;
-}
-
-.avatar-fallback {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(
-    145deg,
-    color-mix(in srgb, var(--color-primary-dark) 82%, var(--color-text-primary)),
-    var(--color-primary-dark)
-  );
-  font-size: var(--font-num-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-inverse);
 }
 
-.avatar-remove {
+.avatar-fallback {
+  background: rgba(16, 24, 32, 0.55);
+  font-size: var(--font-num-lg);
+  font-weight: var(--font-weight-semibold);
+  color: #ffffff;
+}
+
+.avatar-guest {
+  background: rgba(16, 24, 32, 0.4);
+  color: rgba(226, 232, 240, 0.8);
+}
+
+/* 右下角认证勾选 */
+.profile-hero__verified {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid #101820;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.profile-hero__avatar-remove {
   position: absolute;
   top: 0;
-  right: 0;
+  left: 0;
   width: 24px;
   height: 24px;
   display: flex;
@@ -167,108 +268,96 @@ const subjectLine = computed(() =>
   border: none;
   border-radius: 50%;
   background: var(--color-danger);
-  color: var(--color-text-inverse);
+  color: #ffffff;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
 }
 
-.hero-main {
-  flex: 1;
+.profile-hero__name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   min-width: 0;
 }
 
-.hero-name {
-  margin: 0 0 var(--space-1);
-  font-size: 28px;
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.02em;
-  color: var(--color-text-primary);
-}
-
-.hero-roles {
+.profile-hero__name {
   margin: 0;
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  font-size: 32px;
+  line-height: 1.2;
+  font-weight: var(--font-weight-extrabold);
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  word-break: break-word;
 }
 
-.role-chip {
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  background: var(--color-fill-disabled);
-  font-size: var(--font-secondary);
-  font-weight: var(--font-weight-medium);
-  color: var(--color-text-secondary);
-}
-
-.role-chip.is-primary {
-  background: var(--color-primary-bg);
-  color: var(--color-primary-strong);
-}
-
-.hero-school {
-  margin: var(--space-2) 0 0;
+.profile-hero__sub {
+  margin: 0;
   font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
+  font-weight: var(--font-weight-medium);
+  color: rgba(204, 255, 250, 0.9);
 }
 
-.hero-edit {
-  flex-shrink: 0;
+/* ---- 个人属性简徽 ---- */
+.profile-hero__attrs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+}
+
+.profile-hero__attr {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.profile-hero__attr-label {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.profile-hero__attr-value {
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-semibold);
+  color: rgba(226, 232, 240, 0.95);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 编辑资料 ---- */
+.profile-hero__edit {
+  align-self: center;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  border: var(--border-hairline-width) solid var(--color-border);
+  padding: 8px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: var(--radius-full);
-  background: var(--bg-card);
+  background: rgba(255, 255, 255, 0.1);
   font-family: inherit;
   font-size: var(--font-secondary);
   font-weight: var(--font-weight-medium);
-  color: var(--color-text-secondary);
+  color: #ffffff;
   cursor: pointer;
-  transition:
-    background var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--duration-base) var(--ease-out);
+  transition: background var(--transition-fast);
 }
 
-.hero-edit:hover {
-  background: var(--bg-hover);
-  color: var(--color-text-primary);
-  transform: translateY(-1px);
-}
-
-.hero-edit:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
-}
-
-@media (max-width: 640px) {
-  .profile-hero {
-    flex-direction: column;
-    text-align: center;
-    padding: var(--space-5) var(--space-4);
-  }
-
-  .hero-roles {
-    justify-content: center;
+@media (hover: hover) {
+  .profile-hero__edit:hover {
+    background: rgba(255, 255, 255, 0.18);
   }
 }
 
-/* 未设置资料的引导行（浅色 tertiary，不抢「编辑资料」的注意力） */
-.hero-hint {
-  margin: 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-}
-
-/* 无头像且无昵称首字时的用户图标占位 */
-.avatar-guest {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-tertiary);
+.profile-hero__edit:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
 }
 </style>

@@ -30,7 +30,7 @@ const doneHint = computed(() =>
     <div class="hero-text">
       <p class="hero-date">{{ dateLabel }}</p>
       <h1 class="hero-title">
-        今日<span class="hero-strong">{{ todayOpen }}</span> 项待办
+        今日<span class="hero-strong">{{ todayOpen }}</span> 项待完成
       </h1>
       <p class="hero-hint">
         {{ doneHint }}

@@ -29,14 +29,14 @@ onMounted(() => {
   })
 })
 
-/** 回工作台：有站内来源就回退（回到触发它的那一页），否则回工具箱 */
+/** 回工作台：有站内来源就回退（回到触发它的那一页），否则回首页 */
 function goBack(): void {
   const back = router.options.history.state.back
   if (typeof back === 'string' && back) {
     router.back()
     return
   }
-  void router.push('/my/tools')
+  void router.push('/')
 }
 </script>
 

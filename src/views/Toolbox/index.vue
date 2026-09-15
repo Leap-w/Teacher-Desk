@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { Cloud, Download, RefreshCw, Upload } from 'lucide-vue-next'
 
 import { AppButton, AppCard, AppModal } from '@/components/ui'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useLoginModal } from '@/composables/useLoginModal'
-import LoginModal from '@/components/layout/LoginModal.vue'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import type { ConflictChoice } from '@/composables/useCloudSync'
@@ -22,15 +22,19 @@ import {
   type MergeStat,
 } from '@/utils/backup'
 import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
-import { Download, Upload } from 'lucide-vue-next'
-import SyncDiagnosticsCard from './components/SyncDiagnosticsCard.vue'
 import SettingsCell from '@/views/My/components/SettingsCell.vue'
 import SettingsSection from '@/views/My/components/SettingsSection.vue'
 
 /**
- * 工具箱（近期增量「数据管理」，见 docs/开发计划.md §六）。
- * 本页只做数据备份 / 恢复与清空：整页操作都以「写 localStorage → 重载」收尾，
- * 由八个 store 用各自既有的 normalize* 重新加载（见 utils/backup.ts 顶部说明）。
+ * 数据与同步（v3.0.3-rc 收敛）。
+ *
+ * **本页只负责三件事，且只有三个入口**：云同步 / 导出数据 / 导入数据。
+ * 同步诊断九宫格、重置数据、工具箱、合并入口、备份与恢复的重复入口全部移除
+ * （清空 / 重置能力仍在 `utils/backup.ts`，只是不再作为界面入口出现）。
+ *
+ * 整页操作以「写 localStorage → 重载」收尾，由八个 store 用各自既有的 normalize*
+ * 重新加载（见 utils/backup.ts 顶部说明）。云同步的引擎与文案不在这一页：
+ * 状态与动作来自 `composables/useCloudSync.ts`（与顶栏同步按钮**同一份**）。
  */
 
 const toast = useToast()
@@ -68,18 +72,8 @@ const lastBackupText = computed(() => {
   return `上次导出：${formatDateOnly(date)} ${formatClock(date)}`
 })
 
-/* ---------- 云端同步（Phase 9B） ---------- */
+/* ---------- 云同步（Phase 9B / 9C） ---------- */
 
-/**
- * 云端同步的状态与操作。
- *
- * **同步的引擎不在这一页**：谁新谁旧、该推还是该采纳，全部在 `services/cloudSync.ts`；
- * 状态怎么说、点了按钮报什么，都在 `composables/useCloudSync.ts`——和顶栏那个同步按钮
- * **同一份**，所以两处不可能再各说各话。本页自己负责的只剩登录 / 登出：顶栏放不下表单，
- * 也不该在顶栏摆一个密码框。
- *
- * 下面解构成 `cloud*` 只是为了少改模板里的名字（模板早就这么叫了）。
- */
 const {
   state: cloud,
   busy: cloudBusy,
@@ -90,19 +84,37 @@ const {
   resolveConflict,
 } = useCloudSync()
 
+/** 云同步行右侧的值：未登录 / 已同步 / 需要确认…（与顶栏同一份口径） */
+const cloudValue = computed(() => {
+  if (!cloud.value.checked) return '检查中…'
+  if (!cloud.value.account) return '未登录'
+  return cloudStatusView.value.text
+})
+
 /**
- * 冲突确认弹窗是否打开（Phase 9C）。
+ * 冲突确认弹窗（Phase 9C）。
  *
- * 冲突的处置**只在弹窗里发生**：卡片上那个按钮只负责把弹窗打开。这不是多一道手续——
- * 两个选项都要覆盖掉一边的数据，且都不可撤销（本机这份被覆盖后在别处再无副本，
- * 云端那份被覆盖后另一台设备下次同步也会跟着换掉），点错没有回头路。
+ * 冲突的处置**只在弹窗里发生**：两个选项都要覆盖掉一边的数据，且都不可撤销
+ * （本机这份被覆盖后在别处再无副本，云端那份被覆盖后另一台设备下次同步也会跟着换掉），
+ * 点错没有回头路。同步流程自己不替教师做这个决定。
  */
 const conflictOpen = ref(false)
 
-/** 执行冲突处置（弹窗里的两个按钮）；处置完刷新本页概览——本机数据可能整份换掉了 */
 async function doResolveConflict(choice: ConflictChoice): Promise<void> {
   conflictOpen.value = false
   await resolveConflict(choice)
+  refreshSnapshot()
+}
+
+/** 云同步行的动作：未登录先登录，已登录立即同步 */
+async function onCloudRow(): Promise<void> {
+  if (cloudBusy.value) return
+  if (!cloud.value.checked) return
+  if (!cloud.value.account) {
+    loginModal.show()
+    return
+  }
+  await syncWithFeedback()
   refreshSnapshot()
 }
 
@@ -111,10 +123,9 @@ async function doResolveConflict(choice: ConflictChoice): Promise<void> {
 /**
  * 成功收尾：先广播 → 写一次性提示 → 重载，由各 store 的 normalize* 重新加载。
  *
- * 广播（Phase 9A）必须在重载**之前**：导入备份 / 清空数据是**整批换数据**
- * （键可能新增、也可能消失），别的入口没法逐键对齐，只能整页重来。
- * 少了这一句，另一个标签页内存里还留着旧数据，教师下一次编辑就会把刚导入的整份覆盖掉
- * ——那正是技术债 #2 的另一半。
+ * 广播（Phase 9A）必须在重载**之前**：导入备份是**整批换数据**（键可能新增、也可能消失），
+ * 别的入口没法逐键对齐，只能整页重来。少了这一句，另一个标签页内存里还留着旧数据，
+ * 教师下一次编辑就会把刚导入的整份覆盖掉。
  */
 function finish(notice: string): void {
   storage.reloadPeers()
@@ -123,7 +134,7 @@ function finish(notice: string): void {
     window.location.reload()
   } catch (error) {
     // 沙箱 iframe 里 reload 可能被拦；提示已写进 sessionStorage，下次进入本页会补弹
-    console.warn('[toolbox] 页面重载被拦截：', error)
+    console.warn('[data] 页面重载被拦截：', error)
   }
 }
 
@@ -134,7 +145,7 @@ function reportCommitFailure(outcome: Extract<CommitOutcome, { ok: false }>, act
   } else {
     toast.danger(`${action}中断，且未能自动恢复。本机数据可能不完整，请立刻刷新页面检查`)
   }
-  console.warn(`[toolbox] ${action}失败：`, outcome.error)
+  console.warn(`[data] ${action}失败：`, outcome.error)
 }
 
 /* ---------- 导出 ---------- */
@@ -146,7 +157,7 @@ function exportBackup(): void {
     downloadJson(JSON.stringify(backup, null, 2), `teacherdesk-backup-${formatDateKey(now)}.json`)
   } catch (error) {
     toast.danger('导出失败：浏览器没能开始下载，请重试')
-    console.warn('[toolbox] 导出失败：', error)
+    console.warn('[data] 导出失败：', error)
     return
   }
   try {
@@ -270,63 +281,49 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="toolbox-page">
-    <header class="page-toolbar">
-      <div>
-        <h1 class="page-title">数据与同步</h1>
-        <p class="page-subtitle">管理 TeacherDesk 本机与云端数据</p>
-      </div>
+  <div class="data-page">
+    <header class="page-head">
+      <h1 class="page-head__title">数据与同步</h1>
+      <p class="page-head__sub">云同步 · 导出 · 导入</p>
     </header>
 
-    <!-- Cloud-4：同步诊断（Observable Sync：状态 / 队列 / 待同步键 / 最近错误 / 通道） -->
-    <SyncDiagnosticsCard />
-
-    <AppCard
-      title="导入导出"
-      subtitle="本机数据保存在这台设备的浏览器里，清理浏览器缓存、换设备或换浏览器都会全部丢失，建议定期导出备份。"
-    >
-      <!-- 操作区：Apple Settings Cell（与「我的」页同一套设置行规范） -->
-      <SettingsSection title="导入导出">
-        <SettingsCell
-          :icon="Download"
-          icon-tone="neutral"
-          title="导出数据"
-          :subtitle="lastBackupText"
-          @click="exportBackup"
-        />
-        <SettingsCell
-          :icon="Upload"
-          icon-tone="neutral"
-          title="导入数据"
-          subtitle="从备份文件恢复（JSON）"
-          @click="pickFile"
-        />
-      </SettingsSection>
-
-      <input
-        ref="fileInput"
-        class="file-input"
-        type="file"
-        accept=".json,application/json"
-        tabindex="-1"
-        aria-hidden="true"
-        @change="onFilePicked"
+    <!-- 只有三项：云同步 / 导出数据 / 导入数据 -->
+    <SettingsSection title="数据与同步">
+      <SettingsCell
+        :icon="Cloud"
+        icon-tone="primary"
+        title="云同步"
+        :subtitle="cloudLastSyncedText"
+        :value="cloudValue"
+        :chevron="false"
+        @click="onCloudRow"
       />
-    </AppCard>
+      <SettingsCell
+        :icon="Download"
+        icon-tone="neutral"
+        title="导出数据"
+        :subtitle="lastBackupText"
+        :chevron="false"
+        @click="exportBackup"
+      />
+      <SettingsCell
+        :icon="Upload"
+        icon-tone="neutral"
+        title="导入数据"
+        subtitle="从备份文件恢复（JSON）"
+        :chevron="false"
+        @click="pickFile"
+      />
+    </SettingsSection>
 
-    <!-- 没配环境 ID 的构建里整块不显示：与其摆一个按不动的开关，不如不出现 -->
-    <AppCard
-      v-if="cloud.status !== 'disabled'"
-      title="云同步"
-      subtitle="把本机数据同步到你自己的云端账号，换设备或换浏览器时不用重新录一遍。不登录也能照常用——数据只留在本机，和以前一样。"
-    >
+    <!-- 云同步的处境说明：只讲事实，不放第二个入口 -->
+    <AppCard v-if="cloud.status !== 'disabled'" title="云同步状态">
       <div class="cloud-block">
         <div class="cloud-status">
           <span class="cloud-dot" :class="`is-${cloudStatusView.tone}`" aria-hidden="true" />
           <span class="cloud-status-text">{{ cloudStatusView.text }}</span>
           <span v-if="cloud.account" class="cloud-account">{{ cloud.account }}</span>
         </div>
-        <p class="footnote">{{ cloudLastSyncedText }}</p>
         <!-- 云端给的原因原样摆出来。教师多半看不懂，但照着它去搜索、或截图发给懂的人，
              都比我们编一句「同步失败，请稍后再试」有用得多 -->
         <p v-if="cloud.error" class="cloud-error">云端返回的原因：{{ cloud.error }}</p>
@@ -337,47 +334,51 @@ onMounted(() => {
           <p class="conflict-title">本机与云端都有数据，需要你确认保留哪一份</p>
           <p class="footnote">
             这些模块：{{ cloudConflictLabels.join('、') }}。同步暂时跳过了它们——本机这份和云端那份
-            都原样保留着，只是这几项没在同步。这种情况通常出现在：你在没联网的时候录了新内容，
-            而云端还存着另一台设备上同步上去的旧内容。
+            都原样保留着，只是这几项没在同步。
           </p>
           <div class="action-row">
             <AppButton variant="secondary" @click="conflictOpen = true">去确认保留哪一份</AppButton>
-            <AppButton variant="ghost" @click="exportBackup">先导出本机备份</AppButton>
           </div>
         </div>
 
-        <!-- 未登录：入口指向全局登录弹窗（不放表单——登录从点头像/点这里唤起） -->
-        <div v-if="!cloud.checked" class="action-row">
-          <p class="footnote">正在检查登录状态…</p>
-        </div>
-        <div v-else-if="!cloud.account && cloud.status === 'offline'" class="action-row">
-          <p class="footnote">连不上云端，暂时无法确认登录状态。恢复网络后会自动重试。</p>
-        </div>
+        <p v-if="!cloud.checked" class="footnote">正在检查登录状态…</p>
         <div v-else-if="!cloud.account" class="action-row">
-          <AppButton @click="loginModal.show()">立即登录同步</AppButton>
+          <AppButton @click="loginModal.show()">登录后开启云同步</AppButton>
           <p class="footnote">不注册：账号在云开发控制台「身份认证 → 用户管理」新建。</p>
         </div>
         <div v-else class="action-row">
           <AppButton
             :loading="cloudBusy"
             :disabled="cloudBusy || cloud.status === 'syncing'"
-            @click="syncWithFeedback"
+            @click="onCloudRow"
           >
+            <RefreshCw :size="16" :stroke-width="2" aria-hidden="true" />
             立即同步
           </AppButton>
         </div>
 
         <p class="footnote">
-          同步规则：新设备登录以云端为准；两边都有数据不会自动覆盖，会先请你确认保留哪一份；之后同一项两边都改过，以写得晚的一方为准。
+          同步规则：新设备登录以云端为准；两边都有数据不会自动覆盖，会先请你确认保留哪一份；
+          之后同一项两边都改过，以写得晚的一方为准。
         </p>
         <p class="footnote">
-          同步需要云端先做好三件事：开启登录方式、在「身份认证 →
-          用户管理」建好账号、建好数据集合。若一直失败，先查这三项。
+          本机数据保存在这台设备的浏览器里，清理浏览器缓存、换设备或换浏览器都会全部丢失，
+          建议定期导出备份。
         </p>
       </div>
     </AppCard>
 
-    <AppModal v-model="importOpen" title="导入备份（合并）" :width="560">
+    <input
+      ref="fileInput"
+      class="file-input"
+      type="file"
+      accept=".json,application/json"
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onFilePicked"
+    />
+
+    <AppModal v-model="importOpen" title="导入数据" :width="560">
       <template v-if="importMeta">
         <p class="modal-file">{{ importMeta.filename }}</p>
         <p class="footnote">{{ importMetaText }}</p>
@@ -400,13 +401,14 @@ onMounted(() => {
           </tbody>
         </table>
         <p class="note-text">
-          合并规则：本机独有的记录原样保留，备份独有的追加到末尾，同一编号的记录用备份里的版本覆盖。合并不会删除当前数据。
+          规则：本机独有的记录原样保留，备份独有的追加到末尾，同一编号的记录用备份里的版本覆盖。
+          导入不会删除当前数据。
         </p>
         <p v-if="importHasChanges" class="warn-text">
-          被覆盖的版本无法找回。若本机数据比备份新，请先点「先导出当前备份」留一份。
+          被覆盖的版本无法找回。若本机数据比备份新，请先导出当前备份留一份。
         </p>
         <p v-if="!importHasChanges" class="warn-text">
-          备份文件里没有可合并的记录，导入不会改变任何内容。
+          备份文件里没有可导入的记录，导入不会改变任何内容。
         </p>
         <p v-if="importSkipped.length > 0" class="warn-text">
           本机「{{ importSkipped.join('、') }}」读取异常，为避免覆盖原文，本次导入不会改动它。
@@ -425,7 +427,7 @@ onMounted(() => {
         <AppButton variant="ghost" @click="importOpen = false">取消</AppButton>
         <AppButton variant="secondary" @click="exportBackup">先导出当前备份</AppButton>
         <AppButton :loading="importing" :disabled="!importHasChanges" @click="confirmImport">
-          合并导入（新增 {{ importSummary.added }} 条 / 覆盖 {{ importSummary.replaced }} 条）
+          导入（新增 {{ importSummary.added }} 条 / 覆盖 {{ importSummary.replaced }} 条）
         </AppButton>
       </template>
     </AppModal>
@@ -454,75 +456,38 @@ onMounted(() => {
         </AppButton>
       </template>
     </AppModal>
-
-    <LoginModal />
   </div>
 </template>
 
 <style scoped>
-.toolbox-page {
-  max-width: 960px;
+.data-page {
+  max-width: var(--page-max-width);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--spacing-xl);
 }
 
-.page-toolbar {
+/* ---- 页面头（与「我的」同一套页面标题层级） ---- */
+.page-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: 0;
-}
-
-.page-title {
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: -0.3px;
-}
-
-.page-subtitle {
-  margin-top: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.count-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.count-item {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  background: var(--color-fill-disabled);
-  border-radius: var(--radius-md);
+  padding: 0 4px var(--spacing-lg);
+  border-bottom: var(--border-hairline-width) solid var(--color-border);
 }
 
-.count-label {
-  font-size: var(--text-sm);
+.page-head__title {
+  font-size: var(--font-page-title);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.page-head__sub {
+  font-size: var(--font-content);
   color: var(--color-text-secondary);
-}
-
-.count-value {
-  font-weight: 600;
-}
-
-.count-broken {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-danger);
-}
-
-/* 「还没打开过」：不是错误也不是 0，用最轻的一档文字，避免被当成异常 */
-.count-pending {
-  font-size: var(--text-sm);
-  color: var(--color-text-faint);
 }
 
 .footnote {
@@ -536,29 +501,15 @@ onMounted(() => {
   align-items: center;
   gap: var(--space-3);
   flex-wrap: wrap;
-  margin-top: var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .file-input {
   display: none;
 }
 
-.zone-item dt {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  margin-top: var(--space-2);
-}
-
-.zone-item dd {
-  /* dd 默认有 40px 缩进，会与上面的小标题错开 */
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  line-height: 1.6;
-}
-
 .modal-file {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   word-break: break-all;
 }
 
@@ -573,7 +524,7 @@ onMounted(() => {
 .merge-table td {
   padding: var(--space-1) var(--space-2);
   text-align: left;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: var(--border-hairline-width) solid var(--color-border);
 }
 
 .merge-table th {
@@ -603,8 +554,7 @@ onMounted(() => {
   line-height: 1.6;
 }
 
-/* 云端同步：自带纵向间距。AppCard 的 body 不管子元素的间隔（各卡片内容形态差得远，
-   在那边定一套反而处处要覆盖），故这一块自己成列 */
+/* 云同步：自带纵向间距（AppCard 的 body 不管子元素的间隔） */
 .cloud-block {
   display: flex;
   flex-direction: column;
@@ -638,7 +588,7 @@ onMounted(() => {
 }
 
 .cloud-status-text {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .cloud-account {
@@ -647,8 +597,7 @@ onMounted(() => {
   word-break: break-all;
 }
 
-/* 云端返回的原因：是给人看的原文，不是我们写的文案，故用次一级的颜色，
-   与「危险操作」那类红字区分开——红字是「你会丢数据」，这里只是「没同步上」 */
+/* 云端返回的原因：是给人看的原文，不是我们写的文案，故用次一级的颜色 */
 .cloud-error {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
@@ -659,15 +608,13 @@ onMounted(() => {
   word-break: break-word;
 }
 
-/* 待裁决的冲突（Phase 9C）：用左边框与底色把它与普通说明文字分开——
-   这是这一页唯一「不做选择就同步不下去」的事，不该长得像一条脚注。
-   用警示色而不是危险色：它不表示「你要丢数据了」，只表示「这里需要你拍板」 */
+/* 待裁决的冲突（Phase 9C）：用左边框与底色把它与普通说明文字分开 */
 .conflict-block {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3);
-  border: 1px solid var(--color-warning-soft-strong);
+  border: var(--border-hairline-width) solid var(--color-warning-soft-strong);
   border-left-width: 3px;
   border-radius: var(--radius-md);
   background: var(--color-warning-soft);
@@ -675,14 +622,7 @@ onMounted(() => {
 
 .conflict-title {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--color-warning-strong);
-}
-
-.cloud-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  max-width: 360px;
 }
 </style>

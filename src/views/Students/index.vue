@@ -432,7 +432,7 @@ function clearFilters() {
 
 <style scoped>
 .students-page {
-  max-width: 1200px;
+  max-width: var(--page-max-width);
 }
 
 .page-toolbar {

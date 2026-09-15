@@ -20,7 +20,7 @@ import WorkImportModal from './components/WorkImportModal.vue'
 /**
  * 工作清单页面（V2.0.9-alpha · Phase UI-5B · Tasks Hub）。
  *
- * Action First 四层：Hero → 统计 → 今日待办｜即将到来（桌面双列）→ 已完成时间轴。
+ * Action First 四层：Hero → 统计 → 今日待完成｜即将到来（桌面双列）→ 已完成时间轴。
  * 分组沿用 store 口径：todayList（≤ 今天未完成，含逾期）/ weekList（本周剩余）/
  * laterList（本周日之后）/ 已完成（时间轴倒序）。
  * 增删改 / 完成 / 导入逻辑全部原样保留。
@@ -174,7 +174,7 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
     <template v-if="filter === 'all'">
       <div class="tasks-columns">
         <div class="col-main">
-          <!-- Layer 2 主体：今日待办置顶 -->
+          <!-- Layer 2 主体：今日待完成置顶 -->
           <section class="today-section">
             <h2 class="section-title is-today">今天</h2>
             <TodayTaskList
@@ -279,7 +279,7 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
 
 <style scoped>
 .tasks-page {
-  max-width: 1080px;
+  max-width: var(--page-max-width);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
