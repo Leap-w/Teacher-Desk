@@ -11,7 +11,8 @@
 > **本版不新增业务模块**：不修改 StudentStore、SeatStore、SyncEngine 架构，不加路由、不加一级导航。
 > 只做四件事——**课程表补齐七天并能一键清空**、**座位图三处布局问题**、
 > **重名显示规则收敛成一条**、**首页 Hero 以下的字号抬一级**。唯一 UI 基准仍是仓库内 `docs/昌都记忆/Changdu Memory` 源码。
-> 详细取舍见开发手册 §9.64；常驻测试由 651 项增至 **665 项**（新增 `v331Linkage.test.ts` 14 项、`studentName.test.ts` 13 项）。
+> 详细取舍见开发手册 §9.64；常驻测试由 651 项增至 **666 项**（新增 `v331Linkage.test.ts` 14 项、
+> `studentName.test.ts` 13 项，交付当日另补一条排序 locale 守卫——见下方「交付时修掉的一条静默缺陷」）。
 
 ### 课程表：七天 + 删除所有课程（P0）
 
@@ -66,6 +67,25 @@
 - **新增 `v331Linkage.test.ts`（14 项）专门盯接缝**：周末课进今日课程（含「周日 = 7」）、
   清空课程后 store 与作息各自的状态、导出图两视角的门窗与座位行数量、导出图与页面共用同一份排布真源，
   以及**全项目扫描**确认没有任何地方再调用已删除的 `formatStudentDisplayName`。
+
+### 交付时修掉的一条静默缺陷：姓名排序跟着测机 locale 变
+
+- **现象**：本机六步全绿，推上去 **CI 红在 `weekend.test.ts` 的排序断言**上——
+  期望 `['c','b','a']`，CI 得到 `['b','c','a']`。
+- **根因**：`sortWeekendReturns` 的姓名比对**没写明 locale**（`src/utils/weekend.ts`），
+  `localeCompare` 于是跟随**运行环境的默认 locale**。本机 macOS 是 `zh-CN` → 走拼音，
+  「王五（wáng）」在「张三（zhāng）」前；CI 的 Linux runner `LANG` 未设 → 默认落回 `en-US`
+  → **退化成码点序**（张 U+5F20 < 王 U+738B），顺序整个反过来。
+  实测三组 locale：`LC_ALL=C` / `en_US.UTF-8` 下 `'王五'.localeCompare('张三') === 1`，
+  显式传 `'zh-Hans-CN'` 后**三种环境结果一致**。
+- **仓库本来就有约定**：`utils/seat.ts`、`utils/timetable.ts`、`stores/timetable.ts` 的中文比对
+  都写了 `'zh-Hans-CN'`，只有周末这一处漏了。全仓扫了一遍其余 26 处 `localeCompare`：
+  比的是日期串 / 学号 / id（纯 ASCII），结果与 locale 无关，**故意不加参数**；
+  只有 `StudentBatchEditModal` 对教师自定义标签（中文）排序同样漏了，一并补上。
+- **新守卫（本机也能红）**：原来那条行为断言**只有 CI 抓得到**（本机默认 locale 是 `zh-CN`，永远绿），
+  所以补了一条**不依赖运行环境**的源码断言——名字比对的 locale 必须写在代码里，谁删掉本机当场红。
+  这与当年 `vitest.config.ts` 固定 `TZ` 是同一类问题：**凡是「本机绿、CI 红」的口径，
+  都要在代码里钉死，不能交给运行环境默认值。**
 
 ### 如实记录（与需求描述不一致的两处）
 

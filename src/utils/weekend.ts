@@ -98,12 +98,18 @@ export function normalizeWeekendReturn(raw: unknown): WeekendReturnRecord | null
 /**
  * 列表排序：**周末倒序**（本周末 / 下周末在最前，历史往后），同一周末内按姓名快照升序
  * （快照自带学号后四位，重名也分得开），末位用登记时间与 id 兜底，保证顺序确定、刷新不变。
+ *
+ * 姓名比对**必须写明 `zh-Hans-CN`**（拼音序），与 `utils/seat.ts` / `utils/timetable.ts` 同一约定。
+ * 不写 locale 时 `localeCompare` 跟随运行环境的默认 locale：本机是 `zh-CN` 走拼音，
+ * 而 CI 的 Linux runner（`LANG` 未设 → `en-US`）会退化成码点序，于是「王五」和「张三」
+ * 谁在前变成机器相关——本机绿、CI 红。其余三处比的是日期串与 id（纯 ASCII），
+ * 结果与 locale 无关，故意不加参数。
  */
 export function sortWeekendReturns(records: WeekendReturnRecord[]): WeekendReturnRecord[] {
   return [...records].sort((a, b) => {
     const byWeekend = b.weekendDate.localeCompare(a.weekendDate)
     if (byWeekend !== 0) return byWeekend
-    const byName = a.studentName.localeCompare(b.studentName)
+    const byName = a.studentName.localeCompare(b.studentName, 'zh-Hans-CN')
     if (byName !== 0) return byName
     const byCreated = a.createdAt.localeCompare(b.createdAt)
     return byCreated !== 0 ? byCreated : a.id.localeCompare(b.id)

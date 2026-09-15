@@ -73,7 +73,9 @@ const removableTags = computed(() => {
   for (const student of props.students) {
     for (const tag of student.tags ?? []) seen.add(tag)
   }
-  return [...seen].sort((a, b) => a.localeCompare(b))
+  // 标签是教师自己写的中文（「住校生」「走读」……），同样写明拼音序，
+  // 否则排序跟着运行环境的默认 locale 变（本机 zh-CN / CI en-US 会给出两种顺序）
+  return [...seen].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
 })
 
 const isCustomCadre = computed(() => form.cadreRole === CADRE_CUSTOM)

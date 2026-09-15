@@ -9,6 +9,9 @@
  * 另一条同样静默的规矩：**周末的标识永远是那个周六**。周日不是另一个周末，
  * 周一到周五根本没有可归属的周末（登记到错的那一期，返家名单就整份偏了）。
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -162,5 +165,20 @@ describe('周末返家记录的健壮化与排序', () => {
     // 9/19 那一期在前，其中「王五」按拼音（wáng < zhāng）排在「张三」前面；
     // 9/12 那一期整体垫底——周末倒序优先于姓名升序
     expect(sorted.map((item) => item.id)).toEqual(['c', 'b', 'a'])
+  })
+
+  /**
+   * 上面那条断言**只有 CI 抓得到**，本机永远绿——因为本机默认 locale 是 `zh-CN`（走拼音），
+   * 而 CI 的 Linux runner `LANG` 未设，默认 locale 落回 `en-US`，`localeCompare` 退化成码点序
+   * （张 U+5F20 < 王 U+738B），顺序整个反过来。v3.3.1-rc 交付时正是这么红的：
+   * 本机六步全绿、推上去 CI 挂。所以再补一条**不依赖运行环境**的源码断言——
+   * 名字比对的 locale 必须写在代码里，谁把它删掉，本机就会当场红。
+   */
+  it('姓名比对写明拼音 locale（不写 = 排序跟着测机默认 locale 变）', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('../utils/weekend.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(source).toContain("studentName.localeCompare(b.studentName, 'zh-Hans-CN')")
   })
 })

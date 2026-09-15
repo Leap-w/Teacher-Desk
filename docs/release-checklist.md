@@ -238,5 +238,7 @@ node scripts/audit/runtime-check.cjs
 
 ### 工程
 
-- [ ] 六步全绿；`npm run test` **665 条 / 30 个文件**
+- [ ] 六步全绿；`npm run test` **666 条 / 30 个文件**
 - [ ] `v331Linkage.test.ts` 的 14 项在里面（接缝专项）
+- [ ] **`LC_ALL=en_US.UTF-8 npm run test` 同样全绿**——姓名 / 标签排序必须写明 `zh-Hans-CN`，
+      否则本机（zh-CN）绿、CI（en-US）红（见 CHANGELOG「交付时修掉的一条静默缺陷」）
