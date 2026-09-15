@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { rememberWorkTab } from '@/utils/workTab'
+
 import { routes } from './routes'
 
 /** 全部路由；顶部一级导航由本表驱动（过滤 redirect 项）——定义见 ./routes.ts（可脱离 window 测试） */
@@ -34,6 +36,8 @@ const router = createRouter({
 
 router.afterEach((to) => {
   document.title = to.meta.title ? `${to.meta.title} · TeacherDesk` : 'TeacherDesk'
+  // v3.1.0：记下工作管理里停留的 Tab，下次进 /work 回到这一页（只认 /work 下两页）
+  rememberWorkTab(to.path)
 })
 
 export default router

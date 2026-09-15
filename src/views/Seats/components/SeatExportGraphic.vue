@@ -3,8 +3,14 @@ import { computed } from 'vue'
 
 import { seatAccentOf } from '@/utils/student'
 import { seatOrdinal } from '@/utils/seat'
-import { doorSidesOf, viewRoomItems, viewRowUnits, windowSideOf } from '@/utils/seatView'
-import type { RoomItem, RowUnit } from '@/utils/seatView'
+import {
+  doorSidesOf,
+  viewColUnits,
+  viewRoomItems,
+  viewRowUnits,
+  windowSideOf,
+} from '@/utils/seatView'
+import type { ColUnit, RoomItem, RowUnit } from '@/utils/seatView'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
@@ -44,11 +50,14 @@ function occupantOf(seat: Seat): Student | undefined {
 type ExportItem = RoomItem
 
 /**
- * 与页面**同一份**视角逻辑（`utils/seatView.ts`，V1.1.2 Phase 1）：
- * 老师视角讲台在上、第 1 排最先；学生视角为整间教室的 180° 旋转。
+ * 与页面**同一份**视角逻辑（`utils/seatView.ts`，V1.1.2 Phase 1；v3.2.0 定死纵向朝向）：
+ * 老师视角讲台在下、第 1 排紧挨讲台；学生视角讲台在上、左右镜像（**排号与排序列不变**）。
  * 两处共用实现，导出与页面不可能再对不上。
  */
 const items = computed<ExportItem[]>(() => viewRoomItems(props.view, props.config))
+
+/** 顶部列号行（v3.2.0）：与页面同一份切分，导出图上的列号不会与座位错位 */
+const colUnits = computed<ColUnit[]>(() => viewColUnits(props.view, props.config))
 
 /** 门 / 窗挂哪面墙（学生视角镜像） */
 const doorSides = computed(() => doorSidesOf(props.view, props.config))
@@ -91,7 +100,7 @@ function rowUnits(row: number): RowUnit[] {
     </header>
 
     <div class="ex-room">
-      <span class="ex-windows" :class="`is-${windowsSide}`" aria-hidden="true"><em>窗户</em></span>
+      <span class="ex-windows" :class="`is-${windowsSide}`" aria-hidden="true"><em>窗</em></span>
       <template v-for="item in items" :key="item.key">
         <div v-if="item.kind === 'podium'" class="ex-podium">讲台</div>
         <div
@@ -104,8 +113,18 @@ function rowUnits(row: number): RowUnit[] {
           class="ex-door is-back"
           :class="`is-${doorSides.back}`"
         ></div>
-        <div v-else class="ex-row">
-          <span class="ex-row-label">第 {{ item.row }} 排</span>
+        <!-- 顶部列号行（v3.2.0）：与座位行逐列对齐，左侧空出与行号同宽的位置 -->
+        <div v-else-if="item.kind === 'cols'" class="ex-row is-cols">
+          <span class="ex-row-label"></span>
+          <template v-for="unit in colUnits" :key="unit.key">
+            <span v-if="unit.kind === 'aisle'" class="ex-aisle"></span>
+            <span v-else class="ex-block">
+              <span v-for="col in unit.cols" :key="col" class="ex-col-no">{{ col }}</span>
+            </span>
+          </template>
+        </div>
+        <div v-else-if="item.kind === 'row' && item.row !== undefined" class="ex-row">
+          <span class="ex-row-label">{{ item.row }}</span>
           <template v-for="unit in rowUnits(item.row)" :key="unit.key">
             <span v-if="unit.kind === 'aisle'" class="ex-aisle" aria-hidden="true"></span>
             <span v-else class="ex-block">
@@ -208,30 +227,25 @@ function rowUnits(row: number): RowUnit[] {
   padding: 10px 20px 6px;
 }
 
+/* 窗：整条灰色竖条 + 一个「窗」字（v3.2.0 参考图口径，与页面同款） */
 .ex-windows {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 10px;
+  bottom: 6px;
+  width: 16px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-fill-disabled);
 }
 
 .ex-windows.is-right {
-  right: 2px;
+  right: 0;
 }
 
 .ex-windows.is-left {
-  left: 2px;
-}
-
-.ex-windows::before {
-  content: '';
-  flex: 1;
-  width: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-border-strong);
+  left: 0;
 }
 
 .ex-windows em {
@@ -260,14 +274,14 @@ function rowUnits(row: number): RowUnit[] {
   height: 22px;
 }
 
+/* 门签：浅灰矩形标签（v3.2.0 参考图口径，与页面同款） */
 .ex-door::after {
   content: '';
   position: absolute;
   top: 1px;
-  padding: 1px 8px;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
+  padding: 2px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--color-fill-disabled);
   font-size: 10px;
   color: var(--color-text-secondary);
   white-space: nowrap;
@@ -291,9 +305,10 @@ function rowUnits(row: number): RowUnit[] {
 }
 
 /* ---- 座位排 ---- */
+/* align-items: stretch 让过道条撑满整排高度——过道是「一条通道」，不是两个座位之间的空隙 */
 .ex-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   width: fit-content;
   margin: 0 auto;
@@ -301,26 +316,45 @@ function rowUnits(row: number): RowUnit[] {
 }
 
 .ex-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   width: 44px;
   flex-shrink: 0;
   padding-right: 8px;
-  text-align: right;
   font-size: 10px;
-  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
 }
 
 .ex-block {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-xs);
-  background: var(--color-fill-disabled);
 }
 
+/* 过道：灰色竖条（v3.2.0 参考图口径，与页面同款） */
 .ex-aisle {
   width: 8px;
   flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-fill-disabled);
+}
+
+/* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 50px） */
+.ex-row.is-cols {
+  align-items: center;
+  padding-bottom: 0;
+}
+
+.ex-col-no {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-tertiary);
 }
 
 /* ---- 座位单元（窄列：头像 + 姓名） ---- */

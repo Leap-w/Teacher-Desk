@@ -35,6 +35,25 @@ describe('「我的」路由（V1.1.6）', () => {
     expect(String(settings?.redirect)).toContain('/my')
   })
 
+  it('v3.2.0：深色模式不再有二级页——/my/settings/display 重定向回「我的」', () => {
+    const display = byPath('/my/settings/display')
+    expect(display).toBeDefined()
+    expect(display?.redirect).toBe('/my')
+    // 页组件必须真的撤下：留一份没人路由到的 .vue 迟早被误当成「还有人用」
+    expect(display?.component).toBeUndefined()
+  })
+
+  it('v3.2.0：?module=appearance 也回到「我的」（开关就在那张卡里）', () => {
+    const settings = byPath('/my/settings')
+    const redirect = settings?.redirect as (to: { query: Record<string, string> }) => {
+      path: string
+    }
+    expect(redirect({ query: { module: 'appearance' } })).toEqual({ path: '/my' })
+    // 仍在的模块照旧直达各自的二级页
+    expect(redirect({ query: { module: 'weekend' } })).toEqual({ path: '/my/settings/class' })
+    expect(redirect({ query: { module: 'time' } })).toEqual({ path: '/my/settings/term' })
+  })
+
   it('工具箱整页迁到 /my/tools（复用原组件），且不在侧边栏', () => {
     const tools = byPath('/my/tools')
     expect(tools).toBeDefined()

@@ -5,13 +5,14 @@ import { Github } from 'lucide-vue-next'
  * AboutCard — 关于（v3.0.3-rc · 对齐 Changdu-Memory `Profile.vue` 的 `profile__about-card`）。
  *
  * 位置：「我的」页最底部。**与昌都记忆同一排布**：品牌 Logo → 名称 + 一句话说明
- * → 底部一行（左：当前版本；右：检查更新），GitHub 入口保留在底部一行内。
+ * → 底部一行（左：当前版本；右：GitHub）。
  * 版本号 = `import.meta.env.APP_VERSION`（vite define，package.json 单一来源，禁止硬编码）。
+ *
+ * **v3.3.0 删掉了「检查更新」按钮**。它此前只弹一句「当前已是最新版本 x.y.z」——
+ * 没有任何版本比对，也没发过网络请求，那个结论是凭空断言的（审计 C 类第 2 条）。
+ * 本应用不上架、没有更新服务端，**唯一存在新版本的地方就是 GitHub**，
+ * 而那个链接就在旁边、点了真能到。留一个说假话的按钮，不如只留那条真路。
  */
-const emit = defineEmits<{
-  'check-update': []
-}>()
-
 const appVersion = import.meta.env.APP_VERSION
 </script>
 
@@ -35,7 +36,6 @@ const appVersion = import.meta.env.APP_VERSION
           <Github :size="14" :stroke-width="2" aria-hidden="true" />
           GitHub
         </a>
-        <button type="button" class="about-update" @click="emit('check-update')">检查更新</button>
       </span>
     </div>
   </section>

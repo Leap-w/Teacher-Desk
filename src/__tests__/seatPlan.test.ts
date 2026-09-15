@@ -3,9 +3,10 @@
  *
  * 覆盖几类**错了会静默出错**的东西：
  *  ① 坐标合法性：越界坐标一旦被接受，就会在别的行 / 列上覆盖一个真学生的座位；
- *  ② 视角转换：`(row, col) → (8-row, 10-col)` 必须是**自逆**的 180° 旋转——
- *     写错方向时页面照样能显示，只是学生视角与老师视角的左右是反的，
- *     教师不会发现，直到排座时按错方位叫人；
+ *  ② 视角转换：**只镜像列**（`col → 10-col`），行原样返回——v3.2.0 曾错写成 180° 旋转
+ *     （行、列一起翻），切一次视角「第 1 排」就变成了「第 7 排」，教师说「第三排靠窗那个」
+ *     时两个视角指的不是同一排。这条必须钉死：它错了页面照样显示得整整齐齐，
+ *     只是所有方位说法都悄悄偏了一整排；
  *  ③ 同桌 / 相邻：真实教室里「1/2/3 是一桌」（隔着一个人也算同桌），
  *     而过道两侧既不同桌也不相邻——判错会让教师看到假的「没问题」；
  *  ④ 单一来源：方案级检查器、全局检查器、自动排座求解器必须给出同一结论
@@ -34,10 +35,10 @@ import {
 } from '@/utils/seat'
 import {
   doorSidesOf,
+  mirrorSeatPosition,
   positionAtViewSlot,
-  transformSeatPosition,
   viewColOrder,
-  viewPhysicalRow,
+  viewColUnits,
   viewPositionOf,
   viewRoomItems,
   viewRowUnits,
@@ -105,45 +106,58 @@ describe('坐标：真实教室只有 7 × 9', () => {
   })
 })
 
-describe('视角：老师视角与学生视角是 180° 旋转', () => {
-  it('需求给定的四个角点都能对上（含正中心的原地不动）', () => {
-    expect(transformSeatPosition(1, 1, CFG)).toEqual({ row: 7, col: 9 })
-    expect(transformSeatPosition(1, 9, CFG)).toEqual({ row: 7, col: 1 })
-    expect(transformSeatPosition(7, 1, CFG)).toEqual({ row: 1, col: 9 })
-    expect(transformSeatPosition(7, 9, CFG)).toEqual({ row: 1, col: 1 })
-    // (4,5) 是 7×9 的正中心，旋转后仍是自己
-    expect(transformSeatPosition(4, 5, CFG)).toEqual({ row: 4, col: 5 })
+describe('视角（v3.3.0）：只镜像列，不镜像行', () => {
+  it('需求给定的四个点都严格吻合：行原样、列 10-col', () => {
+    // Row7 Col1 → Row7 Col9
+    expect(mirrorSeatPosition(7, 1, CFG)).toEqual({ row: 7, col: 9 })
+    // Row7 Col2 → Row7 Col8
+    expect(mirrorSeatPosition(7, 2, CFG)).toEqual({ row: 7, col: 8 })
+    // Row4 Col5 → Row4 Col5（正中间那列镜像后原地不动）
+    expect(mirrorSeatPosition(4, 5, CFG)).toEqual({ row: 4, col: 5 })
+    // Row1 Col9 → Row1 Col1
+    expect(mirrorSeatPosition(1, 9, CFG)).toEqual({ row: 1, col: 1 })
   })
 
-  it('变换可逆：transform(transform(p)) === p（否则来回切视角会越切越偏）', () => {
+  it('行**永不**改变：7 排 9 列全扫一遍，row 必须原样返回', () => {
     for (let row = 1; row <= CFG.rows; row++) {
       for (let col = 1; col <= CFG.cols; col++) {
-        const once = transformSeatPosition(row, col, CFG)
-        expect(transformSeatPosition(once.row, once.col, CFG)).toEqual({ row, col })
+        expect(mirrorSeatPosition(row, col, CFG).row).toBe(row)
       }
     }
   })
 
-  it('老师视角 = 物理坐标本身；学生视角 = 旋转后的坐标（两个方向互为逆）', () => {
+  it('变换可逆：mirror(mirror(p)) === p（否则来回切视角会越切越偏）', () => {
+    for (let row = 1; row <= CFG.rows; row++) {
+      for (let col = 1; col <= CFG.cols; col++) {
+        const once = mirrorSeatPosition(row, col, CFG)
+        expect(mirrorSeatPosition(once.row, once.col, CFG)).toEqual({ row, col })
+      }
+    }
+  })
+
+  it('老师视角 = 物理坐标本身；学生视角 = 列镜像（两个方向互为逆）', () => {
     expect(viewPositionOf(2, 3, 'teacher', CFG)).toEqual({ row: 2, col: 3 })
-    expect(viewPositionOf(2, 3, 'student', CFG)).toEqual({ row: 6, col: 7 })
-    expect(positionAtViewSlot(6, 7, 'student', CFG)).toEqual({ row: 2, col: 3 })
+    expect(viewPositionOf(2, 3, 'student', CFG)).toEqual({ row: 2, col: 7 })
+    expect(positionAtViewSlot(2, 7, 'student', CFG)).toEqual({ row: 2, col: 3 })
     expect(positionAtViewSlot(2, 3, 'teacher', CFG)).toEqual({ row: 2, col: 3 })
   })
 
-  it('老师视角第 1 排 → 学生视角第 7 排（前后翻转）', () => {
-    expect(viewPhysicalRow(1, 'teacher', CFG)).toBe(1)
-    expect(viewPhysicalRow(1, 'student', CFG)).toBe(7)
-    expect(viewPhysicalRow(7, 'student', CFG)).toBe(1)
+  it('第一排仍然是第一排、第七排仍然是第七排（排号不因视角改变）', () => {
+    // v3.2.0 这里断言的是 1 → 7；现在两个视角都不动排号
+    expect(viewPositionOf(1, 4, 'student', CFG).row).toBe(1)
+    expect(viewPositionOf(7, 4, 'student', CFG).row).toBe(7)
+    expect(viewPositionOf(1, 4, 'teacher', CFG).row).toBe(1)
   })
 
-  it('列顺序：老师 1→9，学生 9→1（左右翻转）', () => {
+  it('列顺序：老师 1→9，学生 9→1（左右镜像）', () => {
     expect(viewColOrder('teacher', CFG)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(viewColOrder('student', CFG)).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1])
   })
 
-  it('渲染布局：老师视角第 1 排是 1 2 3 | 4 5 6 | 7 8 9，学生视角第 1 排是 9 8 7 | 6 5 4 | 3 2 1', () => {
+  it('渲染布局：同一显示排在两视角下取到**同一排**的座位，只有左右反了', () => {
     const seatsById = emptySeatsById()
+    const idsOf = (units: ReturnType<typeof viewRowUnits>) =>
+      units.flatMap((unit) => (unit.kind === 'block' ? unit.seats.map((seat) => seat.id) : []))
 
     const teacherUnits = viewRowUnits(1, 'teacher', CFG, seatsById)
     // 列块 / 过道 / 列块 / 过道 / 列块 —— 两条纵向过道固定夹在三个区域之间
@@ -154,55 +168,127 @@ describe('视角：老师视角与学生视角是 180° 旋转', () => {
       'aisle',
       'block',
     ])
-    expect(teacherUnits[0]).toMatchObject({ kind: 'block' })
-    expect(
-      teacherUnits
-        .filter((unit) => unit.kind === 'block')
-        .flatMap((unit) => (unit.kind === 'block' ? unit.seats.map((seat) => seat.id) : [])),
-    ).toEqual(['r1c1', 'r1c2', 'r1c3', 'r1c4', 'r1c5', 'r1c6', 'r1c7', 'r1c8', 'r1c9'])
-
-    const studentUnits = viewRowUnits(1, 'student', CFG, seatsById)
-    expect(
-      studentUnits
-        .filter((unit) => unit.kind === 'block')
-        .flatMap((unit) => (unit.kind === 'block' ? unit.seats.map((seat) => seat.id) : [])),
-    ).toEqual(['r7c9', 'r7c8', 'r7c7', 'r7c6', 'r7c5', 'r7c4', 'r7c3', 'r7c2', 'r7c1'])
-  })
-
-  it('房间单元顺序：老师视角讲台在上、后门收底；学生视角整体旋转 180°', () => {
-    const teacher = viewRoomItems('teacher', CFG).map((item) => item.key)
-    const student = viewRoomItems('student', CFG).map((item) => item.key)
-    expect(teacher[0]).toBe('podium')
-    expect(teacher[1]).toBe('door-front')
-    expect(teacher.at(-1)).toBe('door-back')
-    expect(student[0]).toBe('door-back')
-    expect(student.at(-1)).toBe('podium')
-    // 排的顺序整体反过来
-    expect(teacher.slice(2, -1)).toEqual([
-      'row-1',
-      'row-2',
-      'row-3',
-      'row-4',
-      'row-5',
-      'row-6',
-      'row-7',
+    expect(idsOf(teacherUnits)).toEqual([
+      'r1c1',
+      'r1c2',
+      'r1c3',
+      'r1c4',
+      'r1c5',
+      'r1c6',
+      'r1c7',
+      'r1c8',
+      'r1c9',
     ])
-    expect(student.slice(1, -2)).toEqual([
-      'row-7',
-      'row-6',
-      'row-5',
-      'row-4',
-      'row-3',
-      'row-2',
-      'row-1',
+
+    // v3.3.0：学生视角第 1 排 = **物理第 1 排**（v3.2.0 是第 7 排），只是列反过来
+    expect(idsOf(viewRowUnits(1, 'student', CFG, seatsById))).toEqual([
+      'r1c9',
+      'r1c8',
+      'r1c7',
+      'r1c6',
+      'r1c5',
+      'r1c4',
+      'r1c3',
+      'r1c2',
+      'r1c1',
     ])
   })
 
-  it('两门同在配置所写的那面墙（真实教室：右墙），学生视角镜像到左墙', () => {
-    expect(doorSidesOf('teacher', CFG)).toEqual({ front: 'right', back: 'right' })
-    expect(doorSidesOf('student', CFG)).toEqual({ front: 'left', back: 'left' })
+  it('房间单元顺序：两视角的**排序列完全一致**（都是第 7 排在上、第 1 排在下）', () => {
+    // 逐项钉死整条顺序，而不是抽查首尾——「讲台在哪一端」与「排怎么排」正是 v3.2.0/v3.3.0
+    // 两次改动的点，只抽查首尾是看不出来的。
+    expect(viewRoomItems('teacher', CFG).map((item) => item.key)).toEqual([
+      // 上：后门 + 列号 1…9
+      'door-back',
+      'cols',
+      'row-7',
+      'row-6',
+      'row-5',
+      'row-4',
+      'row-3',
+      'row-2',
+      'row-1',
+      // 下：前门 + 讲台（第 1 排紧挨讲台）
+      'door-front',
+      'podium',
+    ])
+    expect(viewRoomItems('student', CFG).map((item) => item.key)).toEqual([
+      // 上：讲台 + 前门 + 列号 9…1
+      'podium',
+      'door-front',
+      'cols',
+      // 排序列与老师视角逐位相同——这是 v3.3.0 的全部要点
+      'row-7',
+      'row-6',
+      'row-5',
+      'row-4',
+      'row-3',
+      'row-2',
+      'row-1',
+      // 下：后门
+      'door-back',
+    ])
+  })
+
+  it('两视角的排序列逐位相等（只有讲台 / 两个门签换了端）', () => {
+    const rowsOf = (items: ReturnType<typeof viewRoomItems>) =>
+      items.filter((item) => item.kind === 'row').map((item) => item.key)
+    expect(rowsOf(viewRoomItems('student', CFG))).toEqual(rowsOf(viewRoomItems('teacher', CFG)))
+  })
+
+  it('列号行：老师 1 2 3 | 4 5 6 | 7 8 9，学生 9 8 7 | 6 5 4 | 3 2 1，过道位置一一对应', () => {
+    const shape = (view: 'teacher' | 'student') =>
+      viewColUnits(view, CFG).map((unit) => (unit.kind === 'aisle' ? '|' : unit.cols.join(' ')))
+
+    expect(shape('teacher')).toEqual(['1 2 3', '|', '4 5 6', '|', '7 8 9'])
+    expect(shape('student')).toEqual(['9 8 7', '|', '6 5 4', '|', '3 2 1'])
+
+    // 列号行的单元数与座位行**逐位相同**：列号因此永远压在它标的座位正上方
+    const seatsById = emptySeatsById()
+    for (const view of ['teacher', 'student'] as const) {
+      expect(viewColUnits(view, CFG).map((unit) => unit.kind === 'aisle')).toEqual(
+        viewRowUnits(1, view, CFG, seatsById).map((unit) => unit.kind === 'aisle'),
+      )
+    }
+  })
+
+  it('每一排的列号都压在它所标的座位上（不是只有第一排对）', () => {
+    const seatsById = emptySeatsById()
+    for (const view of ['teacher', 'student'] as const) {
+      const colCols = viewColUnits(view, CFG).flatMap((unit) =>
+        unit.kind === 'aisle' ? [] : unit.cols,
+      )
+      for (let row = 1; row <= CFG.rows; row++) {
+        const rowCols = viewRowUnits(row, view, CFG, seatsById).flatMap((unit) =>
+          unit.kind === 'aisle' ? [] : unit.seats.map((seat) => seat.col),
+        )
+        expect(rowCols).toEqual(colCols)
+      }
+    }
+  })
+
+  it('两门同在配置所写的那面墙，学生视角换到另一面墙；窗同理', () => {
+    expect(doorSidesOf('teacher', CFG)).toEqual({ front: 'left', back: 'left' })
+    expect(doorSidesOf('student', CFG)).toEqual({ front: 'right', back: 'right' })
     expect(windowSideOf('teacher', CFG)).toBe('right')
     expect(windowSideOf('student', CFG)).toBe('left')
+  })
+
+  it('换视角不动座位数据：同一批 Seat 引用进、同一批引用出（只换显示顺序）', () => {
+    const seatsById = emptySeatsById()
+    const teacher = viewRowUnits(3, 'teacher', CFG, seatsById)
+    const student = viewRowUnits(3, 'student', CFG, seatsById)
+    const idsOf = (units: ReturnType<typeof viewRowUnits>) =>
+      units.flatMap((unit) => (unit.kind === 'block' ? unit.seats : []))
+
+    // 两个视角渲染的是同一批对象（`toBe` 判引用），且都指向 seatsById 里那 9 个
+    for (const seat of [...idsOf(teacher), ...idsOf(student)]) {
+      expect(seatsById.get(seat.id)).toBe(seat)
+    }
+    // 位置全部来自物理坐标：两个视角取的是**同一排**，只是列的先后不同
+    expect(idsOf(student).map((seat) => seat.row)).toEqual([3, 3, 3, 3, 3, 3, 3, 3, 3])
+    expect(idsOf(teacher).map((seat) => seat.row)).toEqual([3, 3, 3, 3, 3, 3, 3, 3, 3])
+    expect(idsOf(student).map((seat) => seat.col)).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1])
   })
 })
 

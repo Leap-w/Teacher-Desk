@@ -4,6 +4,8 @@
  */
 import type { RouteRecordRaw } from 'vue-router'
 
+import { loadWorkTab } from '@/utils/workTab'
+
 /**
  * 父级布局组件**必须懒加载**：routes.ts 会被 node 环境的常驻测试直接 import，
  * 静态 import .vue 会让 vitest 的 transform 直接报错（本仓库测试环境无 jsdom，见 §11.4）。
@@ -13,9 +15,11 @@ const ModuleLayout = () => import('@/components/layout/ModuleLayout.vue')
 /**
  * 旧入口兼容（v3.0.4-rc）：各模块页右上角 ⚙ 与旧书签带的 `?module=<id>`
  * → 对应的二级设置页。id 沿用 V1.3.2 定下的那套，URL 不失效。
+ *
+ * v3.2.0：`appearance`（深色模式）整条撤下——它没有二级页可去了，
+ * 命中不到就按下面的兜底回「我的」页，开关就在那张卡里。
  */
 const SETTINGS_MODULE_GROUP: Record<string, string> = {
-  appearance: 'display',
   time: 'term',
   work: 'teaching',
   seats: 'teaching',
@@ -78,8 +82,12 @@ export const routes: RouteRecordRaw[] = [
     component: ModuleLayout,
     meta: { title: '工作管理', subtitle: '课程安排与工作事项' },
     children: [
-      // V1.3.0：工作管理默认进入工作清单
-      { path: '', redirect: '/work/works' },
+      /*
+       * v3.1.0：默认进课程表（此前是工作清单），并**记住教师上次停留的那一页**——
+       * 重定向写成函数，读 `utils/workTab.ts` 的记忆；没记过则是课程表。
+       * 两个子页的顺序决定二级导航的先后，因此 schedule 排在 works 前面。
+       */
+      { path: '', redirect: () => loadWorkTab() },
       {
         path: 'schedule',
         name: 'schedule',
@@ -125,17 +133,24 @@ export const routes: RouteRecordRaw[] = [
       return group ? { path: `/my/settings/${group}` } : { path: '/my' }
     },
   },
-  {
-    path: '/my/settings/display',
-    name: 'settings-display',
-    component: () => import('@/views/My/settings/DisplaySettings.vue'),
-    meta: { title: '显示设置', hidden: true },
-  },
+  /**
+   * v3.2.0：`/my/settings/display` 这一页**删掉了**——深色模式改在「我的」页的
+   * 系统设置卡里就地开关（`ProfileMenuCard` 的开关行），不再需要一个只放一个开关的页面。
+   * 路径保留为重定向：旧书签与历史记录点进来还是回到能操作它的那一页，而不是 404。
+   */
+  { path: '/my/settings/display', redirect: '/my' },
   {
     path: '/my/settings/teaching',
     name: 'settings-teaching',
     component: () => import('@/views/My/settings/TeachingSettings.vue'),
     meta: { title: '教学设置', hidden: true },
+  },
+  {
+    // v3.3.0：课程时间设置从「假按钮」补成真页面（教学设置的第一项进这里）
+    path: '/my/settings/teaching/periods',
+    name: 'settings-teaching-periods',
+    component: () => import('@/views/My/settings/CourseTimeSettings.vue'),
+    meta: { title: '课程时间', hidden: true },
   },
   {
     path: '/my/settings/class',
@@ -146,8 +161,9 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/my/settings/term',
     name: 'settings-term',
-    component: () => import('@/views/My/settings/TermSettings.vue'),
-    meta: { title: '学期与倒计时', hidden: true },
+    // v3.1.0：「学期与倒计时」改名「时光中心」，组件文件同步改名（路径不动，旧书签不失效）
+    component: () => import('@/views/My/settings/TimeCenterSettings.vue'),
+    meta: { title: '时光中心', hidden: true },
   },
   {
     path: '/my/tools',

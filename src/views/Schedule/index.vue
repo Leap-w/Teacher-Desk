@@ -4,8 +4,8 @@ import { computed, ref, watch } from 'vue'
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useNow } from '@/composables/useToday'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { useTimetableStore } from '@/stores/timetable'
-import { COURSE_PERIODS } from '@/types/timetable'
 import {
   WEEKDAY_COLUMNS,
   WEEKDAY_LABELS,
@@ -19,6 +19,7 @@ import type {
   CoursePeriodId,
   Lesson,
   LessonInput,
+  LessonType,
   Weekday,
 } from '@/types/timetable'
 import LessonDetailDrawer from './components/LessonDetailDrawer.vue'
@@ -35,23 +36,33 @@ import WeekView from './components/WeekView.vue'
 
 const toast = useToast()
 const timetableStore = useTimetableStore()
+const appSettings = useAppSettingsStore()
 const now = useNow()
+
+/**
+ * 生效的时段表（v3.3.0）：默认作息 + 「教学设置 → 课程时间」的覆盖。
+ * 本页所有时间显示与「当前 / 下一节」判定都走它，不再直接读 `COURSE_PERIODS`——
+ * 那样教师改完作息，这里会继续按旧时间判课。
+ */
+const periods = computed(() => appSettings.periods)
 
 /* ---------- Calendar First：当前 / 下一节课（与 Dashboard 同一状态机） ---------- */
 
-const scheduleNow = computed(() => scheduleNowOf(timetableStore.todayLessons, now.value))
+const scheduleNow = computed(() =>
+  scheduleNowOf(timetableStore.todayLessons, now.value, periods.value),
+)
 const currentLessonId = computed(() =>
   scheduleNow.value.lesson && scheduleNow.value.state !== 'done'
     ? scheduleNow.value.lesson.id
     : undefined,
 )
 
-const todaySorted = computed(() => sortLessonsByPeriod(timetableStore.todayLessons))
+const todaySorted = computed(() => sortLessonsByPeriod(timetableStore.todayLessons, periods.value))
 
 const stats = computed(() => ({
   weekCount: timetableStore.weekLessonCount,
   todayCount: timetableStore.todayLessons.length,
-  freePeriods: Math.max(0, COURSE_PERIODS.length - timetableStore.todayLessons.length),
+  freePeriods: Math.max(0, periods.value.length - timetableStore.todayLessons.length),
 }))
 
 const weekdayLabel = computed(() => WEEKDAY_LABELS[timetableStore.todayWeekday] ?? '')
@@ -77,14 +88,24 @@ const editing = ref<Lesson | undefined>(undefined)
 const draftWeekday = ref<Weekday>(1)
 const draftPeriod = ref<CoursePeriodId>('morning')
 
+/**
+ * 抽屉的预置类型（v3.3.0 修正）：**由打开抽屉的那个入口决定，不再从课程自己的类型倒推**。
+ *
+ * 之前模板里写的是 `editing?.type === 'substitute' ? 'substitute' : 'normal'`——
+ * 那是拿课程**已有的**类型当预置值：对一节普通课点「代课」，预置出来还是「正常」，
+ * 教师得自己在下拉里改成代课，入口注释里承诺的「类型预置为代课」从未生效。
+ */
+const presetType = ref<LessonType>('normal')
+
 /** 新增时的默认时段：当天第一个空时段（排满则回到早自习，交给冲突校验拦） */
 function firstFreePeriod(weekday: Weekday): CoursePeriodId {
   const used = new Set(timetableStore.lessonsOf(weekday).map((lesson) => lesson.periodId))
-  return COURSE_PERIODS.find((period) => !used.has(period.id))?.id ?? 'morning'
+  return periods.value.find((period) => !used.has(period.id))?.id ?? 'morning'
 }
 
 function openCreate(weekday: Weekday = activeWeekday.value, period?: CoursePeriodId): void {
   editing.value = undefined
+  presetType.value = 'normal'
   draftWeekday.value = weekday
   draftPeriod.value = period ?? firstFreePeriod(weekday)
   drawerOpen.value = true
@@ -92,6 +113,7 @@ function openCreate(weekday: Weekday = activeWeekday.value, period?: CoursePerio
 
 function openEdit(lesson: Lesson): void {
   editing.value = lesson
+  presetType.value = 'normal'
   drawerOpen.value = true
 }
 
@@ -172,6 +194,7 @@ function detailToSubstitute(): void {
   detailOpen.value = false
   if (lesson) {
     editing.value = lesson
+    presetType.value = 'substitute'
     drawerOpen.value = true
   }
 }
@@ -351,7 +374,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
       :lesson="editing"
       :default-weekday="draftWeekday"
       :default-period-id="draftPeriod"
-      :preset-type="editing?.type === 'substitute' ? 'substitute' : 'normal'"
+      :preset-type="presetType"
       @submit="onSubmit"
       @remove="onRequestRemove"
     />
@@ -390,7 +413,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         <strong>
           「{{ editing?.subject }} {{ editing?.className }}」（{{
             editing ? WEEKDAY_LABELS[editing.weekday] : ''
-          }}· {{ editing ? periodFullTextOf(editing.periodId) : '' }}）
+          }}· {{ editing ? periodFullTextOf(editing.periodId, periods) : '' }}）
         </strong>
         吗？删除后工作台的今日课程与本周课时会同步变化。
       </p>

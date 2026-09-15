@@ -173,16 +173,18 @@ const displayValue = computed(() => {
       :empty="Boolean(emptyReason)"
     />
 
-    <button
-      type="button"
-      class="start-btn"
-      :disabled="rolling"
-      :aria-label="resultStudentId ? '再抽一次' : '开始点名'"
-      @click="start"
-    >
-      <Dices :size="20" :stroke-width="2" aria-hidden="true" />
-      {{ rolling ? '点名中…' : resultStudentId ? '再抽一次' : '开始点名' }}
-    </button>
+    <template #footer>
+      <button
+        type="button"
+        class="start-btn"
+        :disabled="rolling"
+        :aria-label="resultStudentId ? '再抽一次' : '开始点名'"
+        @click="start"
+      >
+        <Dices :size="20" :stroke-width="2" aria-hidden="true" />
+        {{ rolling ? '点名中…' : resultStudentId ? '再抽一次' : '开始点名' }}
+      </button>
+    </template>
   </ToolCard>
 </template>
 
@@ -227,10 +229,13 @@ const displayValue = computed(() => {
   cursor: not-allowed;
 }
 
+/* 候选信息缩小（v3.3.0）：它是「这一池有多少人」的说明，不是主角——
+   主角是下面那行大字。压到 12px / 三级色，教师扫一眼有数即可，不跟结果抢注意力。 */
 .pool-line {
   margin: 0;
   font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-faint, var(--color-text-tertiary));
+  text-align: center;
 }
 
 .start-btn {

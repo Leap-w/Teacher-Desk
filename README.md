@@ -40,7 +40,7 @@
 > **Phase 10 / 11 已取消（2026-09-12 需求方拍板）**：理由是同一条——**这个工具是工作台，不是记录系统**。班级事务记录、三级通知落档、把待办扩成带截止时间 / 优先级 / 分类的「工作安排」，做的都是「把发生过的事记下来」，而 TeacherDesk 要解决的是「今天 / 这周要做什么」。加进来会让它向「教务系统」滑，而真正的记录系统学校里已经有了。将来若「今日待办」确不够用，**作为既有模块的增量并入**（例如卡片上加一个截止时间），不新开模块。**Phase 12（macOS Widget）已废弃（2026-09-14 需求方拍板）**：不再开发 macOS Widget，**规划与预留架构一并移除**——`macos/` 工程（35 个文件）、Snapshot 协议与相关规范已从仓库删除（历史版本仍可从 tag `v1.0.0` 取回）。**CloudBase 继续作为唯一的云同步方案。** 决策记录见 `docs/开发手册.md` **§9.55**。
 
 > **下面这段是「按阶段交付」的历史记录**，每条写的是**那个阶段交付时的样子**，不是当前状态。
-> 想知道现在的首页 / 「我的」/ 数据与同步长什么样，看 `docs/CHANGELOG.md` 最新一条（v3.0.5-rc）。
+> 想知道现在的首页 / 「我的」/ 数据与同步长什么样，看 `docs/CHANGELOG.md` 最新一条（v3.3.0）。
 > 特别提醒：**工作台的「今日待办」模块已在 v3.0.3-rc 整体移除**（数据层一并删除），下面 Phase 4 / 8 / 9A / 9B / 9C 里提到它，都属于历史。
 
 学生档案已完成：搜索与筛选、重名学生区分、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）。
@@ -49,7 +49,7 @@
 
 拖拽换座（Phase 3B）已完成：Pointer Events 原生拖拽（交换 / 移入空位，63 号尾座可手动拖入，落回原位不动作，双视角即时同步）、换座日志 SeatChangeLog（交换 2 条 / 移动 1 条，姓名快照 + 位置短文案）、「保存本次调整」归档并自动生成「本次调整」摘要、长按（0.4s）信息卡（查看详情 / 开始换座，详情复用学生模块弹窗）、删除学生自动释放其全部座位。
 
-教室工具（Phase 3C）已完成：一键导出座位图（PNG 老师 / 学生视角；PDF 老师视角单页 / 双视角同页，A4 打印尺寸，标题自动附方案名与导出日期）、学生定位（姓名 / 学号后四位搜索 → 滚动 + 座位闪烁 + 信息卡，重名列出候选）、教室固定标识（讲台 / 前门 / 后门 / 窗户随视角自动翻转）、Constraint Checker 约束检查（不能同桌 / 不能相邻冲突、高个坐前排、班委集中，只检查不自动调整，逐行点击定位）、座位约束基础版（长按座位信息卡添加，管理弹窗启停 / 删除）、方案对比（A/B 方案差异清单 + 变化学生黄色描边只读查看 + 3 页对比 PDF）。
+教室工具（Phase 3C）已完成：一键导出座位图（PNG 老师 / 学生视角；PDF 老师视角单页 / 双视角同页，A4 打印尺寸，标题自动附方案名与导出日期）、学生定位（姓名 / 学号后四位搜索 → 滚动 + 座位闪烁 + 信息卡，重名列出候选）、教室固定标识（讲台 / 前门 / 后门 / 窗户随视角自动翻转；**v3.2.0 起座位图按参考图重做**：老师视角讲台在下、学生视角讲台在上，窗在对墙，顶部另有列号行。**v3.3.0 起两个视角之间「只镜像列，不镜像行」**——`Row7Col1` 在学生视角是 `Row7Col9`，「第 N 排」两个视角指着同一排人）、Constraint Checker 约束检查（不能同桌 / 不能相邻冲突、高个坐前排、班委集中，只检查不自动调整，逐行点击定位）、座位约束基础版（长按座位信息卡添加，管理弹窗启停 / 删除）、方案对比（A/B 方案差异清单 + 变化学生黄色描边只读查看 + 3 页对比 PDF）。
 
 工作台（Phase 4）已完成：首页升级为班主任每天打开的**默认工作台**（手机优先，PC 自适应最大宽度约 960px 居中）。**今日课程**（新增 `stores/timetable.ts`，自动识别今天星期几、只显示今天的课、按节次升序显示「第N节 + 科目 + 班级 + 地点」，右上角「今天 星期X」，无课显示「今天暂无课程」）、**今日待办**（点击即完成 / 取消、完成划线、刷新后保持，右上角「已完成 N / M」，种子 班会准备 / 检查卫生 / 批改作业）、**快捷入口**（学生档案 / 座位管理 / 家校沟通（规划中）/ 我的课表，图标统一 Ionicons，手机 2×2、PC 4 列）、**本周课时统计**（从课表自动统计，「较上周 ——」为占位）、**今日日期头部**（不写死日期，30 秒刷新）。
 
@@ -110,7 +110,7 @@ npm run dev         # 开发服务器
 npm run type-check  # TypeScript 类型检查（vue-tsc --noEmit）
 npm run lint        # ESLint 检查并自动修复
 npm run format      # Prettier 格式化
-npm run test        # 回归测试（24 个文件 559 项，离线可跑，不需要云环境）
+npm run test        # 回归测试（27 个文件 612 项，离线可跑，不需要云环境）
 npm run test:watch  # 同上，改一处跑一次
 npm run build       # 类型检查 + 生产构建
 npm run deploy      # 构建并发布到 CloudBase 静态网站托管（需先 tcb login，v1.0.0）
@@ -189,7 +189,7 @@ TeacherDesk/
 │   │   │               #   / SettingsEntryButton（各模块页右上角 ⚙，直达对应二级设置页）
 │   │   ├── dashboard/  # DashboardHero（首页 Hero 大背景图）/ DashboardSection / QuickActionGrid / ActivityTimeline
 │   │   └── flow/       # RegisterPointModal / RegisterStatusLine（「日期 + 上午 / 下午」公共流程件，Phase 7A）
-│   ├── composables/    # useToast / useToday（useNow 共享时钟 + 日期问候）/ useTheme（浅色 / 深色 / 跟随系统）
+│   ├── composables/    # useToast / useToday（useNow 共享时钟 + 日期问候）/ useTheme（浅色 / 深色两档）
 │   │                   #   / useCloudSync（同步状态与动作，顶栏与数据与同步页共用）/ useLoginModal（全局登录弹窗开关）
 │   │                   #   / useBackup / useSyncEngine / useSyncDiagnostics / useCloudActions / useOperationLock
 │   ├── config/         # appConfig（存储键前缀 / 云环境 ID / 集合名）
@@ -201,20 +201,20 @@ TeacherDesk/
 │   ├── stores/         # 十个领域 store，全部落 localStorage：
 │   │                   #   student（学生）/ seat（排座）/ constraint（座位约束）/ timetable（课表 + 增删改）
 │   │                   #   / leave（请假 + 离校登记）/ duty（值日组 + 轮换设置）/ weekend（周末返家登记）
-│   │                   #   / work（工作清单）/ user（教师个人资料）/ appSettings（Hero 与工作时光共用的设置）
+│   │                   #   / work（工作清单）/ user（教师个人资料）/ appSettings（Hero 与时光中心共用的设置）
 │   ├── styles/         # theme.css 设计变量（CDL 令牌 + 深色模式覆盖）+ 全局样式
 │   ├── types/          # classroom / seat / constraint / timetable（唯一课程模型）/ leave / duty / weekend / work / user
-│   │                   #   / appSettings（Hero 背景与文案、学期起止、支教开始、默认首页）/ point + index
+│   │                   #   / appSettings（Hero 背景与文案、timeCenter：学期起止 / 支教开始 / 自定义倒计时）/ point + index
 │   ├── utils/          # date / id / object（isPlainObject 唯一来源）/ student（含批量与查询）/ studentViewPrefs
 │   │                   #   / seat（含方案对比变化文案）/ constraint（检查器）/ seatArrange（自动排座）/ seatPlanConstraint / seatView / seatExport
 │   │                   #   / timetable（星期 / 节次 / 班级标识 / 时段冲突 / 周末列）/ scheduleNow（当前课 / 下一节判定唯一实现）
 │   │                   #   / leave / duty（轮换推进 / 说明文案 / 记录健壮化）/ weekend / point
 │   │                   #   / classroom（课堂工具元信息）/ work / backup（备份导出 / 校验 / 合并 / 清空）
-│   ├── __tests__/      # 常驻回归自检（24 个测试文件 559 项，随仓库长期存在）
+│   ├── __tests__/      # 常驻回归自检（27 个测试文件 612 项，随仓库长期存在）
 │   │                   #   / helpers/env.ts（假浏览器底座：内存存储 / 假广播通道 / 假时钟 / 断网开关）
 │   ├── views/          # Home（工作台）/ Students / Seats / Schedule / Leave / Duty / Weekend / Works（工作清单）
 │   │                   #   / My（我的：个人信息 / 工作时光 / 设置入口 / 关于）
-│   │                   #   / My/settings（二级设置页：显示 / 教学 / 班级 / 学期与倒计时）
+│   │                   #   / My/settings（二级设置页：教学 / 班级 / 时光中心；深色模式已改为卡内开关行）
 │   │                   #   / Toolbox（数据与同步）/ Classroom（课堂工具）
 │   ├── App.vue
 │   └── main.ts

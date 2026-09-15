@@ -7,14 +7,18 @@
 /** 讲台方位（固定：前方中央） */
 export type PodiumPosition = 'front-center'
 
-/** 前门方位（固定：右前） */
-export type FrontDoorPosition = 'right-front'
+/** 前门方位（固定：左前） */
+export type FrontDoorPosition = 'left-front'
 
 /**
- * 后门方位（V1.1.2 Phase 1：固定右后——与需求给定的真实教室布局一致，
- * 前门 / 后门同在右墙，学生视角下随 180° 旋转镜像到左墙）。
+ * 后门方位（v3.2.0：固定左后——与座位图参考图一致，前门 / 后门同在**左墙**，
+ * 学生视角下随 180° 旋转镜像到右墙）。
+ *
+ * 注：v1.1.2–v3.1.0 曾把两门标在右墙。v3.2.0 的座位图参考图里门窗是对墙的
+ * （窗在右、两门在左），按「参考图是唯一标准」改到左墙；**只动了这两条方位常量，
+ * 座位数据与方案结构一行未改**，两个视角因此仍严格互为 180°。
  */
-export type BackDoorPosition = 'right-back'
+export type BackDoorPosition = 'left-back'
 
 /** 窗户方位（固定：右侧） */
 export type WindowSide = 'right'
@@ -48,7 +52,7 @@ export const DEFAULT_CLASSROOM_CONFIG = {
   totalSeats: 63,
   occupiedSeats: 62,
   podium: 'front-center',
-  frontDoor: 'right-front',
-  backDoor: 'right-back',
+  frontDoor: 'left-front',
+  backDoor: 'left-back',
   windows: 'right',
 } as const satisfies ClassroomConfig

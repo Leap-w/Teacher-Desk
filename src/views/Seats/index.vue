@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { AppButton, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { useStudentStore } from '@/stores/student'
 import { useSeatStore } from '@/stores/seat'
 import { useConstraintStore } from '@/stores/constraint'
@@ -34,12 +35,13 @@ import SeatStatusBar from './components/SeatStatusBar.vue'
 import SeatToolbar from './components/SeatToolbar.vue'
 import SeatPlanPanel from './components/SeatPlanPanel.vue'
 import SeatSearch from './components/SeatSearch.vue'
-import ConstraintPanel from './components/ConstraintPanel.vue'
 import ConstraintEditModal from './components/ConstraintEditModal.vue'
 import ConstraintManageModal from './components/ConstraintManageModal.vue'
 import SeatExportGraphic from './components/SeatExportGraphic.vue'
 import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
+import SeatMoreMenu from './components/SeatMoreMenu.vue'
+import type { SeatMoreAction } from './components/SeatMoreMenu.vue'
 import SeatArrangeModal from './components/SeatArrangeModal.vue'
 import SeatImportModal from './components/SeatImportModal.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
@@ -57,17 +59,25 @@ const ACCENT_LEGEND = [
 const seatStore = useSeatStore()
 const studentStore = useStudentStore()
 const constraintStore = useConstraintStore()
+const appSettings = useAppSettingsStore()
 const toast = useToast()
 
 /** 教室参数唯一来源：store.config（即 DEFAULT_CLASSROOM_CONFIG），页面不另写教室数字 */
 const config = seatStore.config
 
-const view = ref<SeatView>('teacher')
+/**
+ * 视角（v3.3.0）：**开局取「教学设置 → 座位图默认视角」**，进来就是教师要的那一面，
+ * 不必每次进门再切一次。进门之后在页内的切换是临时的、不写盘——
+ * 临时看一眼学生视角不等于改了默认偏好（改默认偏好去设置页）。
+ */
+const view = ref<SeatView>(appSettings.seatDefaultView)
 const selectedSeatId = ref<string | undefined>(undefined)
 
 const plans = computed(() => seatStore.plans)
 const removingPlan = ref<SeatPlan | undefined>(undefined)
 const confirmOpen = ref(false)
+/** v3.2.0：方案管理弹窗（原右侧「座位方案」卡片的内容；入口在方案下拉的「管理方案」） */
+const planManageOpen = ref(false)
 
 /** 学生查询表：座位图按 id 找学生（颜色 / 姓名 / 档案信息展示用） */
 const studentMap = computed(
@@ -593,6 +603,15 @@ function clearFlash() {
 }
 
 /** 打开自动排座弹窗：清掉上一次的冲突结论 */
+/**
+ * 「更多」菜单（v3.3.0）：两个动作各自打开原有的弹窗，逻辑零改动——
+ * 菜单只负责把它们从常驻一排收进一次点击。
+ */
+function onMoreAction(action: SeatMoreAction): void {
+  if (action === 'arrange') openArrange()
+  else compareOpen.value = true
+}
+
 function openArrange() {
   arrangeConflicts.value = []
   arrangeOpen.value = true
@@ -811,26 +830,24 @@ async function runCompareExport() {
 
 <template>
   <div class="seats-page">
-    <!-- ========== Layer 1：浮动工具栏（方案 / 双视角 / 工具；视觉权重低于画布） ========== -->
+    <!--
+      ========== Layer 1：页头（v3.3.0 三层结构） ==========
+      ① 方案 + 人数 / 状态 + 视角   ② 搜索独占一行   ③ 工具 | 导入导出
+      业务动作仍在本页编排，组件只负责分层摆放（见 SeatToolbar 的文件头）。
+    -->
     <SeatToolbar
       v-model:view="view"
       v-model:scheme-id="currentPlanId"
-      :plan-name="seatStore.currentPlan?.name ?? '—'"
       :occupancy="`${seatStore.occupiedCount}/${config.occupiedSeats}`"
       :pending-count="seatStore.pendingLogsCount"
       :view-note="VIEW_NOTES[view]"
       :scheme-options="schemeOptions"
       :scheme-disabled="!plans.length"
       @scheme-create="createPlan"
+      @scheme-manage="planManageOpen = true"
     >
-      <template #actions>
-        <!-- Phase 3C：学生定位（姓名 / 学号后四位） -->
-        <SeatSearch
-          :students="studentStore.activeStudents"
-          :position-of="searchPositionOf"
-          @locate="locateStudent"
-        />
-        <SettingsEntryButton module="seats" />
+      <!-- 第一层：与「已保存 / 编辑中」同处一行的状态动作 -->
+      <template #state>
         <AppButton
           v-if="hasPending"
           variant="secondary"
@@ -839,23 +856,43 @@ async function runCompareExport() {
         >
           保存调整（{{ seatStore.pendingLogsCount }}）
         </AppButton>
+      </template>
+
+      <!-- 第二层：学生定位（姓名 / 学号后四位），独占一行 -->
+      <template #search>
+        <SeatSearch
+          :students="studentStore.activeStudents"
+          :position-of="searchPositionOf"
+          @locate="locateStudent"
+        />
+      </template>
+
+      <!-- 第三层左：对这个班做什么 -->
+      <template #tools>
+        <SettingsEntryButton module="seats" />
+        <AppButton
+          variant="secondary"
+          :disabled="!seatStore.currentPlan"
+          title="不能同桌 / 三人不能相邻 / 前排后排标记"
+          @click="constraintOpen = true"
+        >
+          约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
+        </AppButton>
+        <!--
+          自动排座与方案对比**都已实现**（Phase 3D / Phase 3C，各有弹窗与撤销），
+          按「未实现才删」的原则保留；收进「更多」只是不再让它们常驻占一排。
+        -->
+        <SeatMoreMenu
+          v-if="!compareActive"
+          :arrange-disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
+          :compare-disabled="plans.length < 2"
+          @choose="onMoreAction"
+        />
+      </template>
+
+      <!-- 第三层右：数据进出 -->
+      <template #actions>
         <template v-if="!compareActive">
-          <AppButton
-            variant="secondary"
-            :disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
-            title="按约束与规则自动生成一份新方案"
-            @click="openArrange"
-          >
-            自动排座
-          </AppButton>
-          <AppButton
-            variant="secondary"
-            :disabled="plans.length < 2"
-            title="对比两份方案的座位差异（只读查看）"
-            @click="compareOpen = true"
-          >
-            方案对比
-          </AppButton>
           <AppButton
             variant="secondary"
             :disabled="!seatStore.currentPlan"
@@ -863,14 +900,6 @@ async function runCompareExport() {
             @click="importOpen = true"
           >
             导入
-          </AppButton>
-          <AppButton
-            variant="secondary"
-            :disabled="!seatStore.currentPlan"
-            title="不能同桌 / 三人不能相邻 / 前排后排标记"
-            @click="constraintOpen = true"
-          >
-            约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
           </AppButton>
           <SeatExportMenu
             :disabled="!seatStore.currentPlan"
@@ -950,56 +979,42 @@ async function runCompareExport() {
       </span>
     </div>
 
-    <div class="seats-layout">
-      <!-- ========== Layer 2：教室画布（页面视觉中心） ========== -->
-      <SeatCanvas class="room-canvas">
-        <SeatClassroom
-          v-if="seatStore.currentPlan"
-          ref="classroomRef"
-          :config="config"
-          :seats="displaySeats"
-          :students="studentMap"
-          :view="view"
-          :selected-id="selectedSeatId"
-          :pick-source-id="pickerFrom"
-          :flash-seat-ids="flashSeatIds"
-          :changed-student-ids="changedStudentIds"
-          :interactive="!compareActive"
-          @select="handleSeatClick"
-          @change="applySeatChange"
-          @quick-detail="openStudentDetail"
-          @quick-swap="startPicker"
-          @quick-constraint="openConstraintForSeat"
-        />
-        <EmptyState
-          v-else
-          :icon="Armchair"
-          title="暂无座位方案"
-          description="在上方方案切换器里选择「新建方案」，创建第一份排座方案。"
-        >
-          <AppButton size="sm" @click="createPlan">新建方案</AppButton>
-        </EmptyState>
-      </SeatCanvas>
-
-      <aside class="side-col">
-        <ConstraintPanel
-          :issues="constraintIssues"
-          :total-constraints="constraintStore.items.length"
-          @locate="locateIssue"
-          @add="openAddConstraint"
-          @manage="manageConstraintOpen = true"
-        />
-        <SeatPlanPanel
-          class="plan-panel"
-          :plans="plans"
-          :occupied-seats="config.occupiedSeats"
-          @create="createPlan"
-          @select="currentPlanId = $event"
-          @rename="handleRename"
-          @remove="askRemove"
-        />
-      </aside>
-    </div>
+    <!--
+      ========== Layer 2：教室画布（页面视觉中心） ==========
+      v3.2.0：右侧的「约束检查」与「座位方案」两张卡片整体撤下——座位图从
+      「减掉 272px 侧栏的主区域」变回整页主体（参考图口径：一页只有一张图）。
+      两卡的功能一个都没丢，只是各归其位：
+      · 约束检查 → 顶部「约束」按钮打开的排座约束弹窗（结论在弹窗顶部，可定位）；
+      · 座位方案 → 方案切换器下拉里的「管理方案」（重命名 / 删除 / 新建）。
+    -->
+    <SeatCanvas class="room-canvas">
+      <SeatClassroom
+        v-if="seatStore.currentPlan"
+        ref="classroomRef"
+        :config="config"
+        :seats="displaySeats"
+        :students="studentMap"
+        :view="view"
+        :selected-id="selectedSeatId"
+        :pick-source-id="pickerFrom"
+        :flash-seat-ids="flashSeatIds"
+        :changed-student-ids="changedStudentIds"
+        :interactive="!compareActive"
+        @select="handleSeatClick"
+        @change="applySeatChange"
+        @quick-detail="openStudentDetail"
+        @quick-swap="startPicker"
+        @quick-constraint="openConstraintForSeat"
+      />
+      <EmptyState
+        v-else
+        :icon="Armchair"
+        title="暂无座位方案"
+        description="在上方方案切换器里选择「新建方案」，创建第一份排座方案。"
+      >
+        <AppButton size="sm" @click="createPlan">新建方案</AppButton>
+      </EmptyState>
+    </SeatCanvas>
 
     <!-- ========== Layer 3：底部状态栏（最低视觉权重；右侧放座位标记图例） ========== -->
     <SeatStatusBar
@@ -1090,6 +1105,22 @@ async function runCompareExport() {
       @apply="applyCompare"
     />
 
+    <!--
+      v3.2.0：右侧「座位方案」卡片撤下后，这里接住它的全部能力——
+      SeatPlanPanel 组件一行未改，只是从常驻侧栏改成弹窗内展示，
+      入口在工具栏方案下拉的「管理方案（重命名 / 删除）」。
+    -->
+    <AppModal v-model="planManageOpen" title="管理座位方案" :width="520">
+      <SeatPlanPanel
+        :plans="plans"
+        :occupied-seats="config.occupiedSeats"
+        @create="createPlan"
+        @select="currentPlanId = $event"
+        @rename="handleRename"
+        @remove="askRemove"
+      />
+    </AppModal>
+
     <AppModal v-model="confirmOpen" title="删除座位方案" :width="380">
       <p class="confirm-text">
         确定删除座位方案
@@ -1156,13 +1187,40 @@ async function runCompareExport() {
 
     <!-- V1.1.2 Phase 1：Excel 座位导入 + 方案级排座约束 -->
     <SeatImportModal v-model="importOpen" />
-    <SeatConstraintModal v-model="constraintOpen" @locate="locateConstraintSeats" />
+    <!-- v3.2.0：本弹窗是排座约束的**唯一**入口——方案规则（上面）与座位约束检查
+         （v3.2.0 从右侧卡片并入）同屏，检查行可定位，添加 / 管理都从这里进。 -->
+    <SeatConstraintModal
+      v-model="constraintOpen"
+      :issues="constraintIssues"
+      :total-constraints="constraintStore.items.length"
+      @locate="locateConstraintSeats"
+      @locate-issue="locateIssue"
+      @add="openAddConstraint"
+      @manage="manageConstraintOpen = true"
+    />
   </div>
 </template>
 
 <style scoped>
 .seats-page {
   max-width: var(--page-max-width);
+  /*
+    v3.3.0：本页页边距按需求收窄到 24px（全站是 32px）。
+    不直接改 `--page-pad-x`——那是全局令牌，座位页单独要窄一点，
+    不能让其余每一页跟着变。这里用负外边距抵消 .app-content 的 32px 再补回 24px，
+    影响范围严格限在本页：+16px 可用宽度，座位图跟着宽一点。
+  */
+  margin-inline: calc(24px - var(--page-pad-x));
+
+  /* 页头三层 + 画布 + 状态栏之间的间距 */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* 页头自带下边距（sticky 元素不参与 flex gap 时可预期地留白） */
+.seats-page > .seat-bar {
+  margin-bottom: 0;
 }
 
 /* 图例（放在 SeatStatusBar 右侧插槽，最低视觉权重） */
@@ -1267,12 +1325,6 @@ async function runCompareExport() {
   gap: var(--space-2);
 }
 
-.seats-layout {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-5);
-}
-
 /* 方案级排座约束结果条（V1.1.2 Phase 1）：默认琥珀（提醒），有冲突转红 */
 .plan-constraint-hint {
   display: flex;
@@ -1314,23 +1366,10 @@ async function runCompareExport() {
   gap: var(--space-2);
 }
 
-/* 教室画布（视觉中心）：占据除侧栏外的全部宽度 */
+/* 教室画布（视觉中心）：独占整个主体区域，不再与右侧栏分宽 */
 .room-canvas {
-  flex: 1;
-  min-width: 0;
-}
-
-/* 右侧栏：约束检查 + 方案列表（Phase 3C 起） */
-.side-col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  width: 272px;
-  flex-shrink: 0;
-}
-
-.plan-panel {
   width: 100%;
+  min-width: 0;
 }
 
 /* 离屏导出渲染区：常驻但不占位 / 不产生滚动条（左上极远负坐标），供 html-to-image 抓取 */
@@ -1348,19 +1387,6 @@ async function runCompareExport() {
 }
 
 @media (max-width: 960px) {
-  .seats-layout {
-    flex-direction: column;
-  }
-
-  /* 纵向排布时画布不再由 flex 拉伸约束：显式全宽，内部 room-scroll 负责横向滚动 */
-  .room-canvas {
-    width: 100%;
-  }
-
-  .side-col {
-    width: 100%;
-  }
-
   .legend {
     margin-left: 0;
   }

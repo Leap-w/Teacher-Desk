@@ -1,4 +1,10 @@
-import { COURSE_PERIODS, EVENING_PERIOD_IDS, LEGACY_PERIOD_MIGRATION } from '@/types/timetable'
+import {
+  COURSE_PERIODS,
+  COURSE_PERIOD_IDS,
+  EVENING_PERIOD_IDS,
+  LEGACY_PERIOD_MIGRATION,
+} from '@/types/timetable'
+import type { PeriodTimes } from '@/types/appSettings'
 import type { CoursePeriod, CoursePeriodId, Lesson, LessonType, Weekday } from '@/types/timetable'
 
 /** 星期中文标签（课程卡片、周视图表头、删除确认文案等共用一处） */
@@ -35,7 +41,41 @@ export const WEEKDAY_COLUMNS: Weekday[] = [1, 2, 3, 4, 5]
 
 /* ========== 时间段（读的是 types/timetable.ts 的 COURSE_PERIODS，本处只做查表） ========== */
 
-/** id → 时段定义；找不到返回 undefined（调用方给降级文案） */
+/**
+ * 生效的时段表（v3.3.0）：把「教学设置 → 课程时间」里的覆盖叠到默认作息上。
+ *
+ * **这是「现在到底几点上课」的唯一答案**，页面与状态机都得从这里取——
+ * 直接读 `COURSE_PERIODS` 的地方就会在教师改完时间后继续用旧时间，
+ * 表现为「设置里明明写着 08:00，课表还是按 07:40 判当前课」。
+ *
+ * 覆盖只动 `startTime` / `endTime`：`id / label / order / group` 恒定，
+ * 所以返回的仍是同一套 10 个时段，顺序、分组、导入模板全都不受影响。
+ * 传空对象（或省略）就是默认作息本身。
+ */
+export function resolvePeriods(overrides: PeriodTimes = {}): CoursePeriod[] {
+  return COURSE_PERIODS.map((period) => {
+    const override = overrides[period.id]
+    return override ? { ...period, startTime: override.start, endTime: override.end } : period
+  })
+}
+
+/** 与默认作息相比真正被改过的时段数（设置页显示「已改 N 节」） */
+export function countPeriodOverrides(overrides: PeriodTimes = {}): number {
+  return COURSE_PERIOD_IDS.filter((id) => Boolean(overrides[id])).length
+}
+
+/**
+ * 在**指定时段表**里查一条：`periodById` 的带表版本。
+ * 生效表不是全局量的地方（store 派生值、纯函数入参）用这个，别去读模块级的 `COURSE_PERIODS`。
+ */
+export function periodByIdIn(
+  periods: readonly CoursePeriod[],
+  id: CoursePeriodId | string,
+): CoursePeriod | undefined {
+  return periods.find((period) => period.id === id)
+}
+
+/** id → 时段定义；找不到返回 undefined（调用方给降级文案）。**读的是默认作息**。 */
 export function periodById(id: CoursePeriodId | string): CoursePeriod | undefined {
   return COURSE_PERIODS.find((period) => period.id === id)
 }
@@ -55,15 +95,26 @@ export function periodOrderOf(id: CoursePeriodId | string): number {
   return periodById(id)?.order ?? Number.MAX_SAFE_INTEGER
 }
 
-/** 时间文案：`07:40–09:05` */
-export function periodTimeTextOf(id: CoursePeriodId | string): string {
-  const period = periodById(id)
+/**
+ * 时间文案：`07:40–09:05`。
+ *
+ * **带时间的两兄弟都收 `periods`**（v3.3.0）：`label` / `order` 恒定，读默认表无所谓；
+ * 但时间是教师能改的，显示时间的地方必须传生效表，否则课表上印的是旧作息。
+ */
+export function periodTimeTextOf(
+  id: CoursePeriodId | string,
+  periods: readonly CoursePeriod[] = COURSE_PERIODS,
+): string {
+  const period = periods.find((item) => item.id === id)
   return period ? `${period.startTime}–${period.endTime}` : ''
 }
 
 /** 「第2节 · 09:20–10:00」：需要同时说清节次与时间的地方（编辑抽屉选完后提示、详情页） */
-export function periodFullTextOf(id: CoursePeriodId | string): string {
-  const period = periodById(id)
+export function periodFullTextOf(
+  id: CoursePeriodId | string,
+  periods: readonly CoursePeriod[] = COURSE_PERIODS,
+): string {
+  const period = periods.find((item) => item.id === id)
   return period ? `${period.label} · ${period.startTime}–${period.endTime}` : '—'
 }
 

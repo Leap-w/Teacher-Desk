@@ -1,19 +1,33 @@
 /**
- * 应用设置仓储（v3.0.4-rc）。
+ * 应用设置仓储（v3.0.4-rc · **v3.1.0 结构收敛到 `timeCenter`**）。
  *
  * 数据源：`teacherdesk:settings`（**单元素数组**，对齐备份模块「一个键 = 一个数组」
  * 的硬约束，与个人资料同一处置）。
  *
- * **一次性迁移**：旧键 `teacherdesk:countdown`（V1.3.1 的 Hero 倒计时设置）里的
- * 背景 / 文案 / 起止日期会映射进新结构，教师不必重填；旧键不删（它不再被读取，
- * 留着是对「原来的值是什么」的一份退路）。
+ * **一次性迁移**（两条路，都在读的时候做、都不写盘）：
+ * ① 旧键 `teacherdesk:countdown`（V1.3.1 的 Hero 倒计时设置）→ 映射进新结构；
+ * ② **同键里 v3.0.x 的扁平字段** → 折叠进 `timeCenter`。教师升级后打开应用，
+ *    学期日期、支教日期、Hero 背景与文案、选中的倒计时原样还在，不必重填。
+ *    旧键不删（它不再被读取，留着是对「原来的值是什么」的一份退路）。
  *
  * 设置是**本机偏好**，不进备份模块与云端同步（与 `teacherdesk:theme` 同一口径）——
  * 备份覆盖的是教师录入的业务数据，不是这台设备的外观与学期口径。
  */
 import { appConfig } from '@/config'
-import { COUNTDOWN_TARGETS, HERO_BACKGROUNDS } from '@/types/appSettings'
-import type { AppSettings, CountdownTargetKey } from '@/types/appSettings'
+import {
+  BUILTIN_COUNTDOWNS,
+  DATE_PATTERN,
+  DEFAULT_HERO_COUNTDOWN_ID,
+  HERO_BACKGROUNDS,
+  TIME_PATTERN,
+  type AppSettings,
+  type CustomCountdown,
+  type PeriodTimes,
+  type TeachingSettings,
+  type TimeCenter,
+} from '@/types/appSettings'
+import { COURSE_PERIOD_IDS } from '@/types/timetable'
+import type { SeatView } from '@/types/seat'
 
 import { localStorageAdapter } from '../adapters/LocalStorageAdapter'
 import { createCollectionRepository } from '../base/createCollectionRepository'
@@ -28,22 +42,31 @@ const LEGACY_COUNTDOWN_KEY = `${appConfig.storageKeyPrefix}:countdown`
  */
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   heroBackground: HERO_BACKGROUNDS[0]!.url,
-  heroTitle: '距离期末考试',
   // 空 = Hero 上不显示副标题这一行（默认不替教师写「支教一年的高原记录」这种话）
   heroSubtitle: '',
-  semesterStart: '2026-09-01',
-  semesterEnd: '2027-01-24',
-  serviceStart: '2026-09-01',
-  countdownTarget: 'semesterEnd',
-  defaultHomeView: '/',
+  timeCenter: {
+    serviceStart: '2026-09-01',
+    semesterStart: '2026-09-01',
+    semesterEnd: '2027-01-24',
+    // 内置三项不在这里——它们由上面三个日期派生（见 `utils/timeCenter.ts`）
+    countdowns: [],
+    heroCountdownId: DEFAULT_HERO_COUNTDOWN_ID,
+  },
   showProgress: true,
+  teaching: {
+    // 老师视角是最常用的那个（教师站在讲台后面看），也是打开座位表的原默认
+    seatDefaultView: 'teacher',
+    // 空 = 十个时段全部走 `COURSE_PERIODS` 的原值（学校作息没改过就不必存任何东西）
+    periodTimes: {},
+  },
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+/** 自定义倒计时的数量上限：给列表一个边界，也防盘上被写进一长串东西 */
+const MAX_CUSTOM_COUNTDOWNS = 20
 
 /** 日期字段：形状不对一律回默认值（不臆造日期） */
 function dateOf(value: unknown, fallback: string): string {
-  return typeof value === 'string' && DATE_RE.test(value) ? value : fallback
+  return typeof value === 'string' && DATE_PATTERN.test(value) ? value : fallback
 }
 
 function textOf(value: unknown, fallback: string): string {
@@ -58,32 +81,129 @@ function optionalTextOf(value: unknown, fallback: string): string {
   return typeof value === 'string' ? value.trim() : fallback
 }
 
-/** 倒计时目标：只认选项里的三个值，认不出回默认（不许盘上出现第四个日期键） */
-function targetOf(value: unknown, fallback: CountdownTargetKey): CountdownTargetKey {
-  return COUNTDOWN_TARGETS.some((item) => item.value === value)
-    ? (value as CountdownTargetKey)
-    : fallback
+/** 自定义倒计时列表：逐项健壮化，坏的整项丢掉（宁可少一项，不留半条记录） */
+function countdownsOf(value: unknown): CustomCountdown[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const result: CustomCountdown[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const source = item as Record<string, unknown>
+    const id = typeof source.id === 'string' ? source.id.trim() : ''
+    const name = typeof source.name === 'string' ? source.name.trim() : ''
+    const date = typeof source.date === 'string' ? source.date : ''
+    // id 与名称缺一不可：没有 id 就无法被「首页显示」指认，没有名称列表上就是一行空白
+    if (!id || !name || !DATE_PATTERN.test(date) || seen.has(id)) continue
+    seen.add(id)
+    result.push({ id, name, date })
+    if (result.length >= MAX_CUSTOM_COUNTDOWNS) break
+  }
+  return result
+}
+
+/**
+ * `heroCountdownId`：认不出（自定义项被删了、盘上是 v3.0.x 的 `countdownTarget` 旧值
+ * 又对不上）就回内置第一项。**必须指向一个真实存在的项**——悬空的选择会让首页
+ * 倒计时卡变成空白，那看起来像是坏了。
+ */
+function heroIdOf(value: unknown, countdowns: CustomCountdown[], fallback: string): string {
+  const id = typeof value === 'string' ? value : ''
+  if (BUILTIN_COUNTDOWNS.some((item) => item.id === id)) return id
+  if (countdowns.some((item) => item.id === id)) return id
+  return fallback
+}
+
+/**
+ * 时光中心：三个日期 + 自定义列表 + 首页选中的那一项。
+ * 传进来的若是 v3.0.x 的扁平结构，由 `normalizeSettings` 先折叠好再交给这里。
+ */
+function timeCenterOf(raw: unknown): TimeCenter {
+  const fallback = DEFAULT_APP_SETTINGS.timeCenter
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Partial<TimeCenter>
+  const countdowns = countdownsOf(source.countdowns)
+  return {
+    serviceStart: dateOf(source.serviceStart, fallback.serviceStart),
+    semesterStart: dateOf(source.semesterStart, fallback.semesterStart),
+    semesterEnd: dateOf(source.semesterEnd, fallback.semesterEnd),
+    countdowns,
+    // 兜底值也要过一遍存在性检查：默认项一定在，但写成同一个函数不容易走岔
+    heroCountdownId: heroIdOf(source.heroCountdownId, countdowns, fallback.heroCountdownId),
+  }
+}
+
+/** 座位图默认视角：只认 `student`，其余一律回 `teacher`（含盘上被写坏的字符串） */
+function seatViewOf(value: unknown): SeatView {
+  return value === 'student' ? 'student' : 'teacher'
+}
+
+/**
+ * 课程时间覆盖（v3.3.0）：**逐个时段校验，坏的整条丢掉**。
+ *
+ * 只有「合法时段 id + 两个合法 `HH:mm` + `start < end`」三条同时成立才收。
+ * 松一格会怎样：存进一条 start 晚于 end 的记录，「当前 / 下一节课」状态机
+ * （`utils/scheduleNow.ts`）在那一段永远既不 ongoing 也不 next，当天剩下的课全部消失。
+ * 宁可退回默认作息，也不要一个静默失灵的课表。
+ */
+function periodTimesOf(raw: unknown): PeriodTimes {
+  if (!raw || typeof raw !== 'object') return {}
+  const source = raw as Record<string, unknown>
+  const result: PeriodTimes = {}
+  for (const id of COURSE_PERIOD_IDS) {
+    const item = source[id]
+    if (!item || typeof item !== 'object') continue
+    const { start, end } = item as Record<string, unknown>
+    if (typeof start !== 'string' || typeof end !== 'string') continue
+    // `HH:mm` 零填充固定两位，字符串比较与时间先后一致
+    if (!TIME_PATTERN.test(start) || !TIME_PATTERN.test(end) || start >= end) continue
+    result[id] = { start, end }
+  }
+  return result
+}
+
+/** 教学设置：视角回退 + 时间覆盖逐条校验（v3.3.0 新增的嵌套块） */
+function teachingOf(raw: unknown): TeachingSettings {
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  return {
+    seatDefaultView: seatViewOf(source.seatDefaultView),
+    periodTimes: periodTimesOf(source.periodTimes),
+  }
 }
 
 /**
  * 单份设置的健壮化（load / 跨标签页同步共用）：
  * 字段认不出回默认值，**绝不写盘**（只影响内存展示）。
+ *
+ * 兼容 v3.0.x 的扁平结构：那时三个日期与 `countdownTarget` / `heroTitle` /
+ * `defaultHomeView` 都摊在最外层。这里把日期与目标**折叠进 `timeCenter`**——
+ * 盘上还没被写回的教学机因此不需要教师重填任何东西。
+ * （`heroTitle` / `defaultHomeView` 直接丢弃：前者已由倒计时名称取代，
+ * 后者整项撤下，见 `types/appSettings.ts` 的说明。）
  */
 function normalizeSettings(raw: unknown): AppSettings {
-  const source = (raw && typeof raw === 'object' ? raw : {}) as Partial<AppSettings>
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+
+  // 新结构优先；没有就按 v3.0.x 的扁平字段拼一个出来（旧的 `countdownTarget` 直接当 heroCountdownId）
+  const timeCenterSource =
+    source.timeCenter && typeof source.timeCenter === 'object'
+      ? source.timeCenter
+      : {
+          serviceStart: source.serviceStart,
+          semesterStart: source.semesterStart,
+          semesterEnd: source.semesterEnd,
+          countdowns: source.countdowns,
+          heroCountdownId: source.heroCountdownId ?? source.countdownTarget,
+        }
+
   return {
     heroBackground: textOf(source.heroBackground, DEFAULT_APP_SETTINGS.heroBackground),
-    heroTitle: textOf(source.heroTitle, DEFAULT_APP_SETTINGS.heroTitle),
     heroSubtitle: optionalTextOf(source.heroSubtitle, DEFAULT_APP_SETTINGS.heroSubtitle),
-    semesterStart: dateOf(source.semesterStart, DEFAULT_APP_SETTINGS.semesterStart),
-    semesterEnd: dateOf(source.semesterEnd, DEFAULT_APP_SETTINGS.semesterEnd),
-    serviceStart: dateOf(source.serviceStart, DEFAULT_APP_SETTINGS.serviceStart),
-    countdownTarget: targetOf(source.countdownTarget, DEFAULT_APP_SETTINGS.countdownTarget),
-    defaultHomeView: textOf(source.defaultHomeView, DEFAULT_APP_SETTINGS.defaultHomeView),
+    timeCenter: timeCenterOf(timeCenterSource),
     showProgress:
       typeof source.showProgress === 'boolean'
         ? source.showProgress
         : DEFAULT_APP_SETTINGS.showProgress,
+    // v3.3.0：盘上没有这一块（老版本写的）就是「没改过教学设置」，全部回默认
+    teaching: teachingOf(source.teaching),
   }
 }
 
@@ -107,7 +227,6 @@ function migrateFromLegacy(): AppSettings | null {
     const source = (parsed && typeof parsed === 'object' ? parsed : {}) as Record<string, unknown>
     const migrated = normalizeSettings({
       heroBackground: source.background,
-      heroTitle: source.title,
       semesterStart: source.startDate,
       semesterEnd: source.targetDate,
       // 旧结构没有单独的「支教开始日期」：用学期起点兜底（两者在旧版本里就是同一个值）

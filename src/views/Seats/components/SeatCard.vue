@@ -57,19 +57,34 @@ withDefaults(
 </template>
 
 <style scoped>
-/* ---- 统一 Seat Card：固定尺寸，不长短不一 ---- */
+/* ---- 统一 Seat Card：同一排里等分，跨排严格等宽 ---- */
+/*
+  v3.3.0：座位改为**等分整行宽度**（`flex: 1 1 0`），不再是固定 64px。
+  固定宽度是「座位图只占中间 60%、两侧大片留白」的根因——窗口多宽，
+  9 列都只吃掉 9×64=576px，剩下的全空着。交给 flex 分配后，
+  同一排三个列块各占 1/3、块内三个座位再各占 1/3，跨排天然对齐
+  （每一排的结构都是 3/3/3，所以等分结果逐列一致）。
+
+  `width` 只在**父级不是 flex 容器**时兜底——那种情况下 flex 属性无效，
+  座位仍按老尺寸渲染，不会塌成 0 宽。
+  `min-width` 是地板：窄窗口下排不下了就让 `.room-scroll` 横向滚动，
+  而不是把姓名挤成一列点。
+*/
 .seat {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
+  flex: 1 1 0;
+  min-width: 48px;
+  max-width: 140px;
   width: clamp(56px, 5.6vw, 64px);
-  height: 72px;
-  padding: 6px 4px;
+  height: clamp(76px, 6.6vw, 100px);
+  padding: 8px 6px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-xs);
   font: inherit;
@@ -80,18 +95,19 @@ withDefaults(
   -webkit-user-select: none;
   touch-action: pan-y; /* 保留页面纵向滚动，拖拽方向判定在父级 pointermove 内完成 */
   transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    background var(--transition-fast),
-    opacity var(--transition-fast),
-    transform var(--transition-fast);
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
-/* Hover：2px 微抬升 + 主色边框高亮 */
+/* Hover：2px 微抬升 + 主色边框 + 一层极浅主色底（「这个座位可以点」的即时回执） */
 @media (hover: hover) {
   .seat:hover:not(.is-empty) {
     transform: translateY(-2px);
     border-color: var(--color-primary);
+    background: var(--color-primary-bg);
     box-shadow: var(--shadow-sm);
   }
 }
@@ -138,8 +154,8 @@ withDefaults(
 }
 
 .seat-empty-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   color: var(--color-text-faint);
   opacity: 0.7;
 }
@@ -160,8 +176,8 @@ withDefaults(
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
@@ -169,9 +185,10 @@ withDefaults(
   font-weight: var(--font-weight-semibold);
 }
 
+/* v3.3.0：座位宽了，姓名跟着升一档（12 → 13px）——「姓名与学号更清晰」 */
 .seat-name {
   width: 100%;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text);
   line-height: 1.3;
@@ -197,7 +214,7 @@ withDefaults(
   left: 0;
   right: 0;
   height: 3px;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .seat.is-cadre::before {
@@ -227,8 +244,9 @@ withDefaults(
   transform: none;
 }
 
-/* 有效落点：松石青边框 + Glow（突然交换被 FLIP / 状态提示取代，不闪跳） */
+/* 有效落点：松石青边框 + Glow + 3% 放大（突然交换被 FLIP / 状态提示取代，不闪跳） */
 .seat.is-drop-target {
+  transform: scale(1.03);
   border-color: var(--color-primary-strong);
   box-shadow:
     0 0 0 4px var(--color-primary-soft-strong),

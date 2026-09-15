@@ -12,7 +12,8 @@ import type { SeatConstraint, SeatConstraintType } from '@/types/constraint'
 
 /**
  * 管理座位约束弹窗：全部约束清单（启用开关 / 删除）。只管理条目本身，
- * 改动立即反映到右侧「约束检查」面板与导出不受影响。
+ * 改动立即反映到「约束」弹窗里的「座位约束检查」（v3.2.0 起检查结论与约束管理同处一个弹窗，
+ * 页面右侧那张卡片已撤下）与导出不受影响。
  */
 
 interface Props {
@@ -62,7 +63,7 @@ function close() {
   >
     <p v-if="constraintStore.items.length === 0" class="manage-empty">
       暂无约束。添加「不能同桌 / 不能相邻」（自动排座的硬约束）或「坐后排 / 坐前排 /
-      同区块」（软规则）后，右侧「约束检查」会实时提示座位冲突与未满足的规则。
+      同区块」（软规则）后，「约束」弹窗里的「座位约束检查」会实时提示座位冲突与未满足的规则。
     </p>
 
     <ul v-else class="manage-list">

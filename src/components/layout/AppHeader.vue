@@ -41,12 +41,21 @@ onBeforeUnmount(() => window.removeEventListener('scroll', onScroll))
 const profile = computed(() => userStore.profile)
 const initial = computed(() => userStore.initial)
 
-/** 一级导航：与路由表的一级模块一一对应（班级 / 工作管理落到各自默认子页） */
+/**
+ * 一级导航：与路由表的一级模块一一对应。
+ *
+ * **「工作管理」指向 `/work` 而不是 `/work/works`**（v3.3.0）：那个模块记住了教师上次停在哪一页
+ * （课程表 / 工作清单，见 `router/routes.ts` 的 `loadWorkTab`），而写死的子路径正是绕过这条记忆的
+ * 唯一一处——常用工作清单的老师每次点一级导航都会被**送回课程表**，而模块自己的「记住上次停留」
+ * 在那一步完全不起作用。指向模块根路径，让路由表那一份记忆决定去哪（`isActive` 认前缀，高亮不受影响）。
+ *
+ * 「班级管理」仍写 `/class/seats`：`/class` 的重定向目标就是它，两条路等价，不另设一层。
+ */
 const NAV_ITEMS = [
   { label: '首页', to: '/' },
   { label: '学生档案', to: '/students' },
   { label: '班级管理', to: '/class/seats' },
-  { label: '工作管理', to: '/work/works' },
+  { label: '工作管理', to: '/work' },
   { label: '我的', to: '/my' },
 ] as const
 

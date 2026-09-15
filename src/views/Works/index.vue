@@ -2,17 +2,14 @@
 import { computed, ref } from 'vue'
 
 import { AppButton, EmptyState } from '@/components/ui'
-import { useNow } from '@/composables/useToday'
 import { useToast } from '@/composables/useToast'
 import { useWorkStore } from '@/stores/work'
 import type { WorkCategory, WorkFilter, WorkItem } from '@/types/work'
-import { formatDateLabel } from '@/utils/date'
 import { filterWorks, sortWorks, weekEndOf } from '@/utils/work'
 import { Plus, Search, Sparkles } from 'lucide-vue-next'
 import TaskGroup from './components/TaskGroup.vue'
 import TaskStats from './components/TaskStats.vue'
 import TaskTimeline from './components/TaskTimeline.vue'
-import TasksHero from './components/TasksHero.vue'
 import TodayTaskList from './components/TodayTaskList.vue'
 import WorkEditDrawer from './components/WorkEditDrawer.vue'
 import WorkImportModal from './components/WorkImportModal.vue'
@@ -20,16 +17,18 @@ import WorkImportModal from './components/WorkImportModal.vue'
 /**
  * 工作清单页面（V2.0.9-alpha · Phase UI-5B · Tasks Hub）。
  *
- * Action First 四层：Hero → 统计 → 今日待完成｜即将到来（桌面双列）→ 已完成时间轴。
+ * Action First 分层：统计 → 今日待完成｜即将到来（桌面双列）→ 已完成时间轴。
  * 分组沿用 store 口径：todayList（≤ 今天未完成，含逾期）/ weekList（本周剩余）/
  * laterList（本周日之后）/ 已完成（时间轴倒序）。
  * 增删改 / 完成 / 导入逻辑全部原样保留。
+ *
+ * v3.1.0：**顶部那张「日期 + 今日 N 项待完成 + Excel 导入」的大卡片整块删除**——
+ * 日期在导航栏与系统里到处都有，待办数下面四张统计卡已经说全，它只占地方。
+ * 随之删掉 `dateLabel`（唯一用处就是喂那张卡）与 `useNow` / `formatDateLabel` 两个 import。
+ * Excel 导入按钮没丢，挪到筛选行右侧（见下方 `filter-row`）。
  */
 const toast = useToast()
 const workStore = useWorkStore()
-const now = useNow()
-
-const dateLabel = computed(() => formatDateLabel(now.value))
 
 /* ---------- 状态筛选（保留原四项；「全部」= Action First 分层视图） ---------- */
 
@@ -141,34 +140,30 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
 
 <template>
   <div class="tasks-page">
-    <!-- ===== Action First · Layer 1：Today Hero ===== -->
-    <TasksHero
-      :date-label="dateLabel"
-      :today-open="workStore.summary.todayOpen"
-      :today-done="workStore.summary.todayDone"
-      :overdue="workStore.summary.overdue"
-    >
-      <template #actions>
-        <AppButton variant="secondary" size="sm" @click="importOpen = true">Excel 导入</AppButton>
-      </template>
-    </TasksHero>
-
-    <!-- ===== Layer 2：今日概览统计 ===== -->
+    <!-- ===== 今日概览统计 ===== -->
     <TaskStats :summary="workStore.summary" />
 
-    <!-- 状态筛选：保留原四项，切换 200ms；「全部」= 分层视图 -->
-    <nav class="filter-chips" aria-label="筛选状态">
-      <button
-        v-for="option in FILTER_OPTIONS"
-        :key="option.value"
-        type="button"
-        class="filter-chip"
-        :class="{ 'is-active': filter === option.value }"
-        @click="filter = option.value"
-      >
-        {{ option.label }}
-      </button>
-    </nav>
+    <!--
+      筛选行（v3.1.0）：状态筛选靠左、Excel 导入靠右，同一行。
+      导入是低频次操作，用次按钮、压在右端，不和「新建工作」抢主视觉。
+      此前它挂在那张已删除的大卡片右槽里，且 <640px 整块 display:none——
+      挪到这一行后小屏也真的能用了。
+    -->
+    <div class="filter-row">
+      <nav class="filter-chips" aria-label="筛选状态">
+        <button
+          v-for="option in FILTER_OPTIONS"
+          :key="option.value"
+          type="button"
+          class="filter-chip"
+          :class="{ 'is-active': filter === option.value }"
+          @click="filter = option.value"
+        >
+          {{ option.label }}
+        </button>
+      </nav>
+      <AppButton variant="secondary" size="sm" @click="importOpen = true">Excel 导入</AppButton>
+    </div>
 
     <!-- ===== 「全部」：Action First 分层视图 ===== -->
     <template v-if="filter === 'all'">
@@ -286,10 +281,18 @@ function onImportApplied(outcome: { added: number; skipped: number }): void {
   gap: var(--space-4);
 }
 
+/* 筛选行：Chips 靠左、Excel 导入靠右（v3.1.0；此前 Chips 是 inline-flex 独占一行） */
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
 /* 状态筛选 Chips（iOS 风，切换 200ms） */
 .filter-chips {
   display: inline-flex;
-  align-self: flex-start;
   gap: var(--space-1);
   padding: 3px;
   border-radius: var(--radius-full);

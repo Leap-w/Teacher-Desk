@@ -11,7 +11,7 @@ import { AppButton } from '@/components/ui'
  * （对照表在 `router/routes.ts` 的 `SETTINGS_MODULE_GROUP`），因此各功能页的 ⚙ 仍然直达。
  */
 interface Props {
-  /** 目标模块 id（work / seats / leave / duty / weekend / time / appearance） */
+  /** 目标模块 id（work / seats / leave / duty / weekend / time） */
   module: string
 }
 

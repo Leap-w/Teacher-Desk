@@ -139,12 +139,16 @@ function goBack(): void {
   color: var(--color-text-secondary);
 }
 
-/* 桌面三卡横排 / 平板两列 / 手机单列 —— 不出现横向滚动 */
+/*
+  桌面三卡横排 / 平板两列 / 手机单列 —— 不出现横向滚动。
+  v3.3.0：`align-items: stretch`（默认值）——三张卡**拉成同一高度**。
+  此前是 `start`，每张卡各按自己的内容收着，于是计时器比抽签高出小半张，
+  三个主按钮也落在三条不同的水平线上。
+*/
 .tool-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
-  align-items: start;
 }
 
 @media (max-width: 1100px) {

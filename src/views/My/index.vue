@@ -5,6 +5,7 @@ import { CalendarClock, CalendarRange, Cloud, Palette, UsersRound } from 'lucide
 
 import { AppButton, AppDrawer, AppField, AppInput } from '@/components/ui'
 import { useLoginModal } from '@/composables/useLoginModal'
+import { useTheme } from '@/composables/useTheme'
 import { useToast } from '@/composables/useToast'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useUserStore } from '@/stores/user'
@@ -21,7 +22,7 @@ import type { UserProfileInput } from '@/types/user'
  * **页面骨架与昌都记忆「我的档案」一一对应**（不再自己排版）：
  * `div.profile` → `div.profile__header`（大标题 + 说明 + 底部细线）
  * → `div.profile__grid`（`grid-template-areas` 排布，桌面 `4fr 8fr` 两列）
- * → 四张卡：Hero / 工作时光 / 功能入口 / 关于。
+ * → 四张卡：Hero / 工作时光 / 系统设置 / 关于。
  *
  * 桌面排布（照参考版把左列卡片与右列卡片的底边对齐）：
  * ```
@@ -29,10 +30,12 @@ import type { UserProfileInput } from '@/types/user'
  * 'hero  menu'
  * 'about menu'
  * ```
- * 移动端单列，顺序就是需求里的 ① Hero → ② 工作时光 → ③ 功能入口 → ④ 关于。
+ * 移动端单列，顺序就是需求里的 ① Hero → ② 工作时光 → ③ 系统设置 → ④ 关于。
  *
- * **设置不再就地展开**：所有开关与日期都在各自的二级页里（显示 / 教学 / 班级 /
- * 学期与倒计时 / 数据与同步），这一页只负责把它们摆成入口。
+ * **设置不再就地展开**：开关与日期各归其位，这一页只负责把它们摆成入口——
+ * 教学 / 班级 / 时光中心 / 数据与同步仍是各自的二级页；
+ * **深色模式是唯一例外（v3.2.0）**：它是个开 / 关，就地切成开关行，
+ * 不再进二级页（`/my/settings/display` 已删，旧书签由路由重定向回本页）。
  *
  * 未登录时页面**不换成另一张卡**：Hero 还是那张深色卡，只是卡里放
  * 默认头像 / 尚未登录 / 登录按钮（点它唤起全局登录弹窗，不跳空页面）。
@@ -44,17 +47,40 @@ const { signedIn } = useCloudSync()
 const loginModal = useLoginModal()
 
 const profile = computed(() => userStore.profile)
-const appVersion = import.meta.env.APP_VERSION
+// v3.3.0：版本号只在 AboutCard 里读一次。本页此前也留了一份，只服务于那个假「检查更新」，
+// 按钮删掉后它就成了没人用的第二份来源——同一件事读两处，迟早只有一处被更新。
 
-/** 功能入口（每一项 → 一个独立页面，卡内一行） */
-const menuItems: ProfileMenuItem[] = [
+/* ---------- 深色模式开关（卡内就地切换，不跳页） ---------- */
+
+const { theme, setTheme } = useTheme()
+const darkMode = computed(() => theme.value === 'dark')
+
+/** 开关行被点（整行或开关本体都算）：写主题——setTheme 同步落盘 + 应用，下一次渲染开关就在新位置 */
+function onMenuToggle(item: ProfileMenuItem): void {
+  if (!item.switch) return
+  const next = !darkMode.value
+  setTheme(next ? 'dark' : 'light')
+  toast.success(next ? '已切换为深色模式' : '已切换为浅色模式')
+}
+
+/**
+ * 系统设置（v3.1.0 由「功能入口」改名；每一项 → 一个独立页面，卡内一行）。
+ *
+ * **computed 而非常量数组**：v3.2.0 起「深色模式」是就地开关行，它的 `checked`
+ * 必须跟着主题走——写成常量数组的话，点了开关主题变了、开关自己却停在原位。
+ */
+const menuItems = computed<ProfileMenuItem[]>(() => [
   {
     key: 'display',
-    label: '显示设置',
-    desc: '深色模式 · 默认首页',
+    // v3.2.0：深色模式由**二级页**改成**卡内开关行**——它本来就是个开 / 关，
+    // 让教师「点进去再点一下」白搭一次跳转；`/my/settings/display` 页已删，
+    // 旧书签在路由里重定向回本页。写入仍走 useTheme().setTheme（主题只有 ThemeStore 一份）。
+    label: '深色模式',
+    desc: darkMode.value ? '已开启' : '已关闭',
     icon: Palette,
     tone: 'display',
-    to: '/my/settings/display',
+    switch: true,
+    checked: darkMode.value,
   },
   {
     key: 'teaching',
@@ -74,8 +100,10 @@ const menuItems: ProfileMenuItem[] = [
   },
   {
     key: 'term',
-    label: '学期与倒计时',
-    desc: '日期 · Hero 背景与文案',
+    // v3.1.0：「学期与倒计时」改名「时光中心」（路径不动，旧书签不失效）。
+    // 图标仍是时间主题的 CalendarRange——名字变了，语义没变。
+    label: '时光中心',
+    desc: '学期 · 支教 · 自定义倒计时',
     icon: CalendarRange,
     tone: 'term',
     to: '/my/settings/term',
@@ -88,10 +116,10 @@ const menuItems: ProfileMenuItem[] = [
     tone: 'data',
     to: '/my/tools',
   },
-]
+])
 
 function onMenuSelect(item: ProfileMenuItem): void {
-  void router.push(item.to)
+  if (item.to) void router.push(item.to)
 }
 
 /* ---------- 头像（仅登录后可见入口） ---------- */
@@ -168,9 +196,8 @@ function openLogin(): void {
 
 /* ---------- 关于 ---------- */
 
-function checkUpdate(): void {
-  toast.info(`当前已是最新版本 ${appVersion}`)
-}
+// v3.3.0：`checkUpdate`（只弹一句「已是最新版本」的假检查）已删除。
+// 本应用没有更新服务端，关于卡上只留真正能到新版本的 GitHub 链接。
 </script>
 
 <template>
@@ -210,16 +237,18 @@ function checkUpdate(): void {
       <!-- ② 工作时光（与首页 Hero 同一份数据） -->
       <WorkTimeCard class="time-area" />
 
-      <!-- ③ 功能入口（每一项进独立页面，卡内一行） -->
+      <!-- ③ 系统设置（v3.1.0 由「功能入口」改名；卡片样式、行结构一律不动）
+           v3.2.0：深色模式改成就地开关行——`toggle` 写主题，`select` 仍是跳页 -->
       <ProfileMenuCard
         class="menu-area"
-        title="功能入口"
+        title="系统设置"
         :items="menuItems"
         @select="onMenuSelect"
+        @toggle="onMenuToggle"
       />
 
       <!-- ④ 关于（页面最底部：当前版本 / GitHub / 检查更新） -->
-      <AboutCard class="about-area" @check-update="checkUpdate" />
+      <AboutCard class="about-area" />
     </div>
 
     <!-- 编辑资料抽屉（登录后） -->
@@ -294,7 +323,7 @@ function checkUpdate(): void {
   display: grid;
   grid-template-columns: 1fr;
   gap: var(--spacing-xl);
-  /* 移动端（默认）卡片顺序：Hero → 工作时光 → 功能入口 → 关于
+  /* 移动端（默认）卡片顺序：Hero → 工作时光 → 系统设置 → 关于
      用 grid-template-areas 而非 display:contents，兼容性更好（移动浏览器 / 内置 WebView 也生效） */
   grid-template-areas:
     'hero'
@@ -321,8 +350,8 @@ function checkUpdate(): void {
 
 @media (min-width: 1024px) {
   .profile__grid {
-    /* 左列（4fr）：Hero + 关于；右列（8fr）：工作时光 + 功能入口
-       hero 跨 1-2 行、menu 跨 2-3 行，让「关于」的底边与「功能入口」的底边对齐
+    /* 左列（4fr）：Hero + 关于；右列（8fr）：工作时光 + 系统设置
+       hero 跨 1-2 行、menu 跨 2-3 行，让「关于」的底边与「系统设置」的底边对齐
        （参考版是 'about features'，同一个手法） */
     grid-template-columns: 4fr 8fr;
     grid-template-areas:

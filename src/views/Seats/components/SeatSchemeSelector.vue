@@ -10,12 +10,17 @@ export interface SeatSchemeOption {
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Check, ChevronDown, Plus } from 'lucide-vue-next'
+import { Check, ChevronDown, Plus, SlidersHorizontal } from 'lucide-vue-next'
 
 /**
  * SeatSchemeSelector — 方案切换器（V2.0.4-alpha · Phase UI-4B）：
  * 胶囊 Dropdown（非传统 Select）：当前方案名 + 创建时间 + 「当前」标记 + 新建入口。
  * 切换 / 新建语义由父级处理（emits），组件不碰 Store。
+ *
+ * v3.2.0：页面右侧的「座位方案」卡片撤下（座位图要占满主体区域），
+ * 但**重命名 / 删除方案不能跟着消失**——入口挪到本下拉的末行「管理方案」，
+ * 打开的是原来那张方案卡的内容（`SeatPlanPanel`，组件本身一行未改）。
+ * 方案的全部操作因此仍在一处，不需要在两个地方找。
  */
 const props = defineProps<{
   options: SeatSchemeOption[]
@@ -26,6 +31,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [id: string]
   create: []
+  manage: []
 }>()
 
 const open = ref(false)
@@ -51,6 +57,11 @@ function choose(id: string) {
 function onCreate() {
   open.value = false
   emit('create')
+}
+
+function onManage() {
+  open.value = false
+  emit('manage')
 }
 
 function onDocumentClick(event: MouseEvent) {
@@ -108,6 +119,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         <button type="button" class="scheme-item scheme-item--create" @click="onCreate">
           <Plus :size="14" :stroke-width="2" aria-hidden="true" />
           新建方案
+        </button>
+        <button type="button" class="scheme-item scheme-item--manage" @click="onManage">
+          <SlidersHorizontal :size="14" :stroke-width="2" aria-hidden="true" />
+          管理方案（重命名 / 删除）
         </button>
       </div>
     </Transition>
@@ -241,10 +256,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   margin-top: 3px;
   padding-top: var(--space-2);
   border-top: var(--border-hairline-width) solid var(--color-border-divider);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  border-radius: 0;
   color: var(--color-primary-dark);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
+}
+
+/* 末行：与「新建方案」同一条分隔线之下，收尾行贴住弹层圆角 */
+.scheme-item--manage {
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
 }
 
 .scheme-pop-enter-active,

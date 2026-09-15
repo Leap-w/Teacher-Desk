@@ -58,21 +58,19 @@ export function formatWeekendLabel(weekendKey: string): string {
 }
 
 /**
- * 相对「本周末」的说法（周末页页头与工作台卡片用）：本周末 / 下周末 / 上周末 / 下下周末 / 上上周末。
- * 超出前后两周返回空串——由调用方决定不显示，而不是硬造一个「3 周后」的说法。
- * 相邻周末恒差 7 天，因此直接与「本周末 ± 7 / ± 14 天」比，不做日期相减（§9.11 的十进制算术教训）。
+ * 相对「本周末」的说法（周末页页头与工作台卡片用）。
+ *
+ * v3.2.0 起**只说得出三个词**：本周末 / 下周末 / 上周末；再远的周末一律改用
+ * 它自己的日期，如「8月16日周末」「7月26日周末」——「上上周末」这种叠加说法
+ * 教师要在脑子里做两次减法才知道是哪天，而日期不用算。
+ * 相邻周末恒差 7 天，因此直接与「本周末 ± 7 天」比，不做日期相减（§9.11 的十进制算术教训）。
  */
 export function describeWeekend(weekendKey: string, todayKey: string): string {
   const base = currentWeekendKey(todayKey)
-  const named: [number, string][] = [
-    [0, '本周末'],
-    [7, '下周末'],
-    [-7, '上周末'],
-    [14, '下下周末'],
-    [-14, '上上周末'],
-  ]
-  const hit = named.find(([days]) => addDaysToDateKey(base, days) === weekendKey)
-  return hit ? hit[1] : ''
+  if (weekendKey === base) return '本周末'
+  if (weekendKey === addDaysToDateKey(base, 7)) return '下周末'
+  if (weekendKey === addDaysToDateKey(base, -7)) return '上周末'
+  return `${formatMonthDay(weekendKey)}周末`
 }
 
 /**

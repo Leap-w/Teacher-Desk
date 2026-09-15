@@ -110,25 +110,34 @@ onBeforeUnmount(clearTimers)
       </button>
     </div>
 
-    <button type="button" class="draw-btn" :disabled="!hasGroups || rolling" @click="draw">
-      {{ rolling ? '抽签中…' : '随机抽一组' }}
-    </button>
+    <template #footer>
+      <button type="button" class="draw-btn" :disabled="!hasGroups || rolling" @click="draw">
+        {{ rolling ? '抽签中…' : '随机抽一组' }}
+      </button>
+    </template>
   </ToolCard>
 </template>
 
 <style scoped>
+/*
+  值日组按钮：可换行，但**限高内滚**（v3.3.0）。
+  组多的时候（十几个组）任它长会把整张卡撑高，三张卡立刻不等高、底部按钮错位——
+  这里是「换一个组看结果」的快捷入口，不是主内容，限高滚动是它该有的分量。
+*/
 .group-row {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  max-height: 104px;
+  overflow-y: auto;
 }
 
 .group-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 48px;
-  padding: 0 var(--space-4);
+  min-height: 44px;
+  padding: 0 var(--space-3);
   border: var(--border-hairline-width) solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--bg-card);

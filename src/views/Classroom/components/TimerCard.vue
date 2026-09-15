@@ -151,7 +151,13 @@ onBeforeUnmount(() => {
 
 <template>
   <ToolCard title="课堂计时器" description="1 / 3 / 5 / 10 分钟或自定义，秒级刷新" :icon="Timer">
-    <div class="preset-row" role="group" aria-label="预设时间">
+    <!--
+      预设两行（v3.3.0）：`1 3 5` / `10 自定义`。
+      以前是 flex-wrap 自动折行，四个预设 + 自定义挤成「3 + 2」还是「4 + 1」要看卡片宽度，
+      窄一点就变成两行、宽一点又回到一行——同一台电脑上改个窗口大小，这一排就换个排法。
+      固定三列两行，谁看都是同一张卡。
+    -->
+    <div class="preset-grid" role="group" aria-label="预设时间">
       <button
         v-for="preset in TIMER_PRESETS_MIN"
         :key="preset"
@@ -168,13 +174,23 @@ onBeforeUnmount(() => {
         class="preset-btn is-custom"
         :class="{ 'is-active': customOpen }"
         :disabled="phase === 'running'"
+        :aria-expanded="customOpen ? 'true' : 'false'"
         @click="customOpen = !customOpen"
       >
         自定义
       </button>
     </div>
 
-    <div v-if="customOpen" class="custom-row">
+    <!--
+      自定义输入行**常驻占位**（关闭时不可见但保留高度）。
+      按需插入的话，一展开就把下面的大数字整体往下推——投影上那行数字跳一下，
+      全班都会跟着看那一下跳动，而教师只是刚点开输入框。
+    -->
+    <div
+      class="custom-row"
+      :class="{ 'is-muted': !customOpen }"
+      :aria-hidden="customOpen ? 'false' : 'true'"
+    >
       <input
         v-model="customValue"
         class="custom-input"
@@ -184,9 +200,17 @@ onBeforeUnmount(() => {
         :max="TIMER_MAX_MINUTES"
         placeholder="分钟数"
         aria-label="自定义分钟数"
+        :tabindex="customOpen ? 0 : -1"
         @keydown.enter="applyCustom"
       />
-      <button type="button" class="custom-apply" @click="applyCustom">确定</button>
+      <button
+        type="button"
+        class="custom-apply"
+        :tabindex="customOpen ? 0 : -1"
+        @click="applyCustom"
+      >
+        确定
+      </button>
     </div>
 
     <ResultDisplay
@@ -201,17 +225,19 @@ onBeforeUnmount(() => {
       <div class="progress-fill" :style="{ width: `${progress * 100}%` }"></div>
     </div>
 
-    <div class="control-row">
-      <button type="button" class="ctrl-btn is-primary" @click="onStart">
-        <Play v-if="phase !== 'running'" :size="20" stroke-width="2" aria-hidden="true" />
-        <Pause v-else :size="20" stroke-width="2" aria-hidden="true" />
-        {{ phase === 'running' ? '暂停' : phase === 'paused' ? '继续' : '开始' }}
-      </button>
-      <button type="button" class="ctrl-btn" @click="onReset">
-        <RotateCcw :size="20" stroke-width="2" aria-hidden="true" />
-        重置
-      </button>
-    </div>
+    <template #footer>
+      <div class="control-row">
+        <button type="button" class="ctrl-btn is-primary" @click="onStart">
+          <Play v-if="phase !== 'running'" :size="20" stroke-width="2" aria-hidden="true" />
+          <Pause v-else :size="20" stroke-width="2" aria-hidden="true" />
+          {{ phase === 'running' ? '暂停' : phase === 'paused' ? '继续' : '开始' }}
+        </button>
+        <button type="button" class="ctrl-btn" @click="onReset">
+          <RotateCcw :size="20" stroke-width="2" aria-hidden="true" />
+          重置
+        </button>
+      </div>
+    </template>
 
     <p class="timer-hint">
       <template v-if="finished">时间到（{{ minutes }} 分钟），已提示</template>
@@ -223,15 +249,20 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.preset-row {
-  display: flex;
-  flex-wrap: wrap;
+/* 固定三列两行：`1 3 5` / `10 自定义`（自定义横跨两格） */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
+/* 「自定义」横跨第二行剩下的两格：与「10 分钟」拼成 `10 自定义` 那一行 */
+.preset-btn.is-custom {
+  grid-column: span 2;
+}
+
 .preset-btn {
-  flex: 1 1 96px;
-  min-height: 48px;
+  min-height: 44px;
   border: var(--border-hairline-width) solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -262,14 +293,21 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+/* 占位行：关闭时仍占高度（见模板注释），只是不可见、不可聚焦 */
 .custom-row {
   display: flex;
   gap: var(--space-2);
 }
 
+.custom-row.is-muted {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .custom-input {
   flex: 1;
-  min-height: 48px;
+  min-width: 0;
+  min-height: 44px;
   padding: 0 var(--space-3);
   border: var(--border-hairline-width) solid var(--color-border);
   border-radius: var(--radius-md);
@@ -281,7 +319,7 @@ onBeforeUnmount(() => {
 }
 
 .custom-apply {
-  min-height: 48px;
+  min-height: 44px;
   padding: 0 var(--space-5);
   border: none;
   border-radius: var(--radius-md);

@@ -629,6 +629,44 @@ function scheduleSync(delay = SYNC_DEBOUNCE_MS): void {
 }
 
 /**
+ * 只问一句「现在是谁登录着」——**不拉、不推、不记账**（v3.3.0）。
+ *
+ * 为什么非有它不可：界面（顶栏同步按钮 / 工具箱云同步行 / 「我的」页）读的是**本模块**的
+ * `cloudSyncState`，而应用启动只启动了同步引擎那条链路（`sync/autoSync.ts`）。引擎不认识
+ * 这份状态，跑完一轮也不会把 `checked` 置真——于是每次冷启动界面都停在「正在检查登录状态…」，
+ * 工具箱那一行点了没反应（`Toolbox/index.vue` 的 `onCloudRow` 头一句就是 `if (!checked) return`），
+ * 顶栏同步按钮也整块不出现。已登录的教师必须手动再登录一次，界面才活过来。
+ *
+ * **不拿 `syncNow()` 来补这一位**：那会让两条链路在启动时各跑一轮全量对账、把同一批键
+ * 来回推。数据对齐仍然只有引擎一条路径（Sync Engine First）；这里只补界面缺的那两个事实
+ * ——「问过没有」与「谁登录着」。
+ *
+ * 状态给 `idle` 的含义是「已登录、通道可用」，**不是**「刚同步成功」：
+ * `lastSyncedAt` 保持不动，界面据此说「已登录」而不是「已同步」（见 `useCloudSync` 的 statusView）。
+ */
+export async function probeCloudSession(): Promise<void> {
+  if (!isCloudConfigured()) {
+    setState({ status: 'disabled', checked: true })
+    return
+  }
+  try {
+    const user = await currentUser()
+    setState({
+      checked: true,
+      account: user ? (user.username ?? user.email ?? user.uid) : null,
+      status: user ? 'idle' : 'signedOut',
+      error: null,
+      // 上一个账号留下的待裁决冲突到这里为止：这轮没跟云端对过账，没有「冲突」可言
+      conflicts: [],
+    })
+  } catch (error) {
+    // 问不出来（断网、SDK 初始化失败）：如实报，并且**照样置 checked**——
+    // 永远停在「检查中」比报一个错更让人无从下手
+    setState({ checked: true, status: statusOfError(error), error: errorText(error) })
+  }
+}
+
+/**
  * 启动云端同步（应用入口 `main.ts` 调用一次）。
  *
  * 触发时机就是「可能不一致」的全部时刻：

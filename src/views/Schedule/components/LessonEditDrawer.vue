@@ -2,8 +2,8 @@
 import { computed, reactive, watch } from 'vue'
 
 import { AppButton, AppDrawer, AppField, AppInput, AppSelect } from '@/components/ui'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { useTimetableStore } from '@/stores/timetable'
-import { COURSE_PERIODS } from '@/types/timetable'
 import type { CoursePeriodId, Lesson, LessonInput, LessonType, Weekday } from '@/types/timetable'
 import { WEEKDAYS, WEEKDAY_LABELS, classIdOf, periodFullTextOf } from '@/utils/timetable'
 import type { SelectOption } from '@/types'
@@ -38,6 +38,7 @@ const emit = defineEmits<{
 }>()
 
 const timetableStore = useTimetableStore()
+const appSettings = useAppSettingsStore()
 
 /** 「其他（手动输入）」选项的哨兵值：与真实班级名不会撞（班级名不会以此开头） */
 const CUSTOM_CLASS = '__custom__'
@@ -47,11 +48,16 @@ const WEEKDAY_OPTIONS: SelectOption<Weekday>[] = WEEKDAYS.map((weekday) => ({
   value: weekday,
 }))
 
-/** 时段选项带上起止时间——教师按时间找课比按序号快（时间定义来自唯一配置） */
-const PERIOD_OPTIONS: SelectOption<CoursePeriodId>[] = COURSE_PERIODS.map((period) => ({
-  label: `${period.label}（${period.startTime}–${period.endTime}）`,
-  value: period.id,
-}))
+/**
+ * 时段选项带上起止时间——教师按时间找课比按序号快。
+ * v3.3.0：时间取生效表（教学设置可改），所以这里从 store 的 `periods` 派生而不是常量。
+ */
+const periodOptions = computed<SelectOption<CoursePeriodId>[]>(() =>
+  appSettings.periods.map((period) => ({
+    label: `${period.label}（${period.startTime}–${period.endTime}）`,
+    value: period.id,
+  })),
+)
 
 const TYPE_OPTIONS: SelectOption<LessonType>[] = [
   { label: '正常课程', value: 'normal' },
@@ -119,7 +125,15 @@ watch(
         ? lesson.className
         : CUSTOM_CLASS
       form.customClassName = lesson.className
-      form.type = lesson.type === 'adjusted' ? 'normal' : lesson.type
+      // v3.3.0：`presetType` 显式给成 `substitute` 时**优先于课程原有类型**——
+      // 「详情 → 代课」打开的就是一节普通课，不覆盖的话它会回填成「正常」，
+      // 这个入口承诺的「类型预置为代课」等于没做（审计 B 类第 2 条）。
+      form.type =
+        props.presetType === 'substitute'
+          ? 'substitute'
+          : lesson.type === 'adjusted'
+            ? 'normal'
+            : lesson.type
       form.originalTeacher = lesson.originalTeacher ?? ''
     } else {
       form.weekday = props.defaultWeekday
@@ -192,11 +206,13 @@ function close() {
         </AppField>
 
         <AppField label="时段" required :error="errors.period">
-          <AppSelect v-model="form.periodId" :options="PERIOD_OPTIONS" :error="!!errors.period" />
+          <AppSelect v-model="form.periodId" :options="periodOptions" :error="!!errors.period" />
         </AppField>
       </div>
 
-      <p class="period-hint">当前选择：{{ periodFullTextOf(form.periodId) }}</p>
+      <p class="period-hint">
+        当前选择：{{ periodFullTextOf(form.periodId, appSettings.periods) }}
+      </p>
 
       <AppField label="科目" required :error="errors.subject" :hint="subjectHint">
         <AppInput v-model="form.subject" :error="!!errors.subject" placeholder="如 数学" />

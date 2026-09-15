@@ -4,8 +4,9 @@
  * 路由：/class 下四个子模块、旧路径（/seats /leave /duty /weekend）重定向兼容。
  * 请假：记录口径（无审批）——状态标签、旧数据归一、筛选、排序、store 行为。
  */
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { installFakeBrowser } from './helpers/env'
 import { routes } from '@/router/routes'
 import {
   LEAVE_STATUS_LABELS,
@@ -29,10 +30,19 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect(index?.redirect).toBe('/class/seats')
   })
 
-  it('「工作管理」空路径 redirect 到工作清单', () => {
+  it('「工作管理」空路径 redirect 是函数：默认进课程表，记过则回上次那一页（v3.1.0）', () => {
     const workRoute = routes.find((route) => route.path === '/work')
     const index = workRoute?.children?.find((child) => child.path === '')
-    expect(index?.redirect).toBe('/work/works')
+    // 写死路径改成函数后，redirect 不再等于某个字符串——默认落点由 utils/workTab 决定
+    expect(typeof index?.redirect).toBe('function')
+    // 没记过（测试环境没有 localStorage）→ 课程表；v3.1.0 前这里是工作清单
+    expect((index?.redirect as () => string)()).toBe('/work/schedule')
+  })
+
+  it('「工作管理」的两个子页顺序是 课程表 → 工作清单（决定二级导航先后）', () => {
+    const workRoute = routes.find((route) => route.path === '/work')
+    const children = (workRoute?.children ?? []).filter((child) => child.path !== '')
+    expect(children.map((child) => child.path)).toEqual(['schedule', 'works'])
   })
 
   it('「班级管理」下挂四个子模块', () => {
@@ -65,6 +75,60 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     for (const child of children) {
       expect(child.meta?.title).toBeTruthy()
     }
+  })
+})
+
+/* ========== 工作管理的「上次看的 Tab」（v3.1.0） ========== */
+
+describe('utils/workTab：记住工作管理里停留的那一页', () => {
+  beforeEach(() => {
+    installFakeBrowser()
+    window.localStorage.clear()
+    vi.resetModules()
+  })
+
+  const load = async () => {
+    const mod = await import('@/utils/workTab')
+    return mod
+  }
+
+  it('没记过 → 课程表（v3.1.0 的新默认，此前是工作清单）', async () => {
+    const { loadWorkTab, DEFAULT_WORK_TAB } = await load()
+    expect(DEFAULT_WORK_TAB).toBe('/work/schedule')
+    expect(loadWorkTab()).toBe('/work/schedule')
+  })
+
+  it('记过 → 回到上次那一页', async () => {
+    const { loadWorkTab, rememberWorkTab } = await load()
+    rememberWorkTab('/work/works')
+    expect(loadWorkTab()).toBe('/work/works')
+    rememberWorkTab('/work/schedule')
+    expect(loadWorkTab()).toBe('/work/schedule')
+  })
+
+  it('只认 /work 下的两个子页——别的路径一律忽略（首页、学生档案划过不留痕）', async () => {
+    const { loadWorkTab, rememberWorkTab } = await load()
+    rememberWorkTab('/')
+    rememberWorkTab('/students')
+    rememberWorkTab('/work')
+    rememberWorkTab('/work/schedule/extra')
+    expect(loadWorkTab()).toBe('/work/schedule')
+    expect(window.localStorage.getItem('teacherdesk:workTab')).toBeNull()
+  })
+
+  it('盘上坏值 / 认不出的值一律回默认（记忆坏掉不该让 /work 打不开）', async () => {
+    const { loadWorkTab } = await load()
+    window.localStorage.setItem('teacherdesk:workTab', '{broken json')
+    expect(loadWorkTab()).toBe('/work/schedule')
+
+    window.localStorage.setItem('teacherdesk:workTab', JSON.stringify('/class/seats'))
+    expect(loadWorkTab()).toBe('/work/schedule')
+  })
+
+  it('也认 { tab } 这种对象写法（容忍将来换成结构化存储）', async () => {
+    const { loadWorkTab } = await load()
+    window.localStorage.setItem('teacherdesk:workTab', JSON.stringify({ tab: '/work/works' }))
+    expect(loadWorkTab()).toBe('/work/works')
   })
 })
 

@@ -142,6 +142,11 @@
   --font-weight-semibold: 600;
   /* UI-1 规范：字重只用 400 / 500 / 600。bold 令牌重定义为 600，历史引用自动收敛 */
   --font-weight-bold: 600;
+  /* v3.1.0 补定义：首页 Hero 主标题 / 巨幅天数、「我的」Hero 姓名与工作时光数字
+     一直写着 var(--font-weight-extrabold)，但这个令牌从未定义过——未定义的 var()
+     会让整条 font-weight 声明失效、字重回退到继承值（≈400），那正是「主标题偏细」
+     的根因。取值 800 与昌都记忆 HeroSection.vue 的主标题 / 巨幅数字逐字一致。 */
+  --font-weight-extrabold: 800;
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.7;

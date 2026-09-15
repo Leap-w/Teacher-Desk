@@ -3,8 +3,8 @@ import { computed } from 'vue'
 import { BookOpen, CheckCircle2, MoonStar } from 'lucide-vue-next'
 
 import { useNow } from '@/composables/useToday'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { useTimetableStore } from '@/stores/timetable'
-import { COURSE_PERIODS } from '@/types/timetable'
 import type { Lesson } from '@/types/timetable'
 import { scheduleNowOf, sortLessonsByPeriod } from '@/utils/scheduleNow'
 
@@ -17,21 +17,25 @@ import { scheduleNowOf, sortLessonsByPeriod } from '@/utils/scheduleNow'
  * 课程多时列表**内部滚动**，不撑破首页；判定规则复用 `utils/scheduleNow.ts`（唯一实现）。
  */
 const timetableStore = useTimetableStore()
+const appSettings = useAppSettingsStore()
 const now = useNow()
+
+/** 生效时段表：行内时间与「当前 / 下一节」判定都按教师在设置里改过的那份走 */
+const periods = computed(() => appSettings.periods)
 
 const lessons = computed<Lesson[]>(() => timetableStore.todayLessons)
 const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
 
 /** 全天课程（按时段顺序）；行内补上时段的时间信息 */
 const rows = computed(() => {
-  const sorted = sortLessonsByPeriod(lessons.value)
+  const sorted = sortLessonsByPeriod(lessons.value, periods.value)
   return sorted.map((lesson) => {
-    const period = COURSE_PERIODS.find((item) => item.id === lesson.periodId)
+    const period = periods.value.find((item) => item.id === lesson.periodId)
     return { lesson, period }
   })
 })
 
-const state = computed(() => scheduleNowOf(lessons.value, now.value))
+const state = computed(() => scheduleNowOf(lessons.value, now.value, periods.value))
 
 /** 当前时刻 hh:mm（行状态判定用） */
 const hhmm = computed(() => {
@@ -46,7 +50,7 @@ function rowTone(periodId: Lesson['periodId']): 'current' | 'next' | 'past' | 'i
   if (nowState.state === 'next' && nowState.lesson?.periodId === periodId) return 'next'
   if (nowState.state === 'done') return 'past'
   // 课间 / 未开始：已结束的时段灰化
-  const period = COURSE_PERIODS.find((item) => item.id === periodId)
+  const period = periods.value.find((item) => item.id === periodId)
   return period && period.endTime <= hhmm.value ? 'past' : 'idle'
 }
 

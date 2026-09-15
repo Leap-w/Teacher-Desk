@@ -11,13 +11,15 @@ import { useAppSettingsStore } from '@/stores/appSettings'
  * 头部（标题 + 阶段徽标）→ 三格统计（支教第 N 天 / 已经过 N 个月 / 剩余 N 天）→
  * 渐变进度条 → 底部三个日期节点。只替换内容来源，卡片骨架一字未改。
  *
- * **数据与首页 Hero 同源**（`useAppSettingsStore`）：
- * - 支教天数 ← `serviceStart`（首页「第 X 天」是同一个值）
- * - 学期进度 ← `semesterStart` → `semesterEnd`（首页进度条同源）
+ * **数据与首页 Hero 同源**（`useAppSettingsStore` → `timeCenter`）：
+ * - 支教天数 ← `timeCenter.serviceStart`（首页「第 X 天」是同一个值）
+ * - 学期进度 ← `timeCenter.semesterStart` → `semesterEnd`（首页进度条同源）
  * - 轴上的日期 ← 学期起止
  *
  * 改任一处日期，这里与首页同时更新；本组件不再有自己的设置读取
  * （旧 `useCountdownSettings` 已并入 store）。
+ * v3.1.0：日期从 `settings.semesterStart` 挪到了 `settings.timeCenter.semesterStart`——
+ * 只是取值路径变了，派生值一个没动。
  */
 const appSettings = useAppSettingsStore()
 
@@ -25,8 +27,11 @@ const daysWorked = computed(() => appSettings.daysWorked)
 const termProgress = computed(() => appSettings.termProgress)
 const termDaysRemaining = computed(() => appSettings.termDaysRemaining)
 const termIsOver = computed(() => appSettings.termIsOver)
-const termStart = computed(() => appSettings.settings.semesterStart)
-const termEnd = computed(() => appSettings.settings.semesterEnd)
+const termStart = computed(() => appSettings.timeCenter.semesterStart)
+const termEnd = computed(() => appSettings.timeCenter.semesterEnd)
+
+/** 进度条与百分比开关：与首页 Hero 读的是同一个字段（v3.3.0 起两处一致） */
+const showProgress = computed(() => appSettings.settings.showProgress)
 
 /** 已经过的整月数（按天折算，约 30.44 天/月，与昌都记忆同一算法） */
 const monthsPassed = computed(() => Math.floor(daysWorked.value / 30.44))
@@ -70,8 +75,13 @@ const fmtMonth = (iso: string): string =>
       </div>
     </div>
 
-    <!-- 柔和进度条（学期进度，与首页 Hero 同一条） -->
-    <div class="time-capsule__progress">
+    <!--
+      柔和进度条（学期进度，与首页 Hero 同一条）。
+      v3.3.0：**跟着「时光中心 → Hero 外观 → 显示进度条」开关走**。
+      在这个开关存在之前，首页 Hero 会隐藏进度条、这一张却照画不误——
+      同一个开关在两个页面给出两种结果，教师会以为开关坏了。
+    -->
+    <div v-if="showProgress" class="time-capsule__progress">
       <div class="time-capsule__progress-track">
         <div class="time-capsule__progress-fill" :style="{ width: termProgress + '%' }" />
       </div>
@@ -79,7 +89,7 @@ const fmtMonth = (iso: string): string =>
 
     <div class="time-capsule__dates">
       <span>{{ fmtMonth(termStart) }} 开学</span>
-      <span>今天 {{ termProgress }}%</span>
+      <span>{{ showProgress ? `今天 ${termProgress}%` : '今天' }}</span>
       <span>{{ fmtMonth(termEnd) }} 期末</span>
     </div>
   </section>

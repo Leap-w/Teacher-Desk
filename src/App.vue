@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-
 import AppHeader from '@/components/layout/AppHeader.vue'
 import LoginModal from '@/components/layout/LoginModal.vue'
 import { AppToast } from '@/components/ui'
-import { useAppSettingsStore } from '@/stores/appSettings'
 
 /**
  * App Shell（v3.0.4-rc · 全宽版）：
@@ -21,21 +17,12 @@ import { useAppSettingsStore } from '@/stores/appSettings'
  * CDL v6.0 · UI-5B · 未登录」既重复了「关于」里的版本与 GitHub，又把本机状态摆在每一页底部，
  * 现在这些信息只在「我的 → 关于」里出现一次。
  *
- * **默认首页**（显示设置里可选）：只在**应用启动**且落在首页时按设置改道——
- * 之后教师自己点「首页」不会被弹走（App 只挂载一次，这里也就只判断一次）。
+ * **启动改道已删除**（v3.1.0）：此前这里在挂载时读 `defaultHomeView` 把首页替换成别的页面。
+ * 「默认首页」整项连同字段一起撤下（规格第四节），本组件因此不再需要 route / router
+ * 与 appSettings store——壳层回到它该做的事：挂导航、挂弹窗、换页面。
  *
  * 页面切换：进入 Fade + 轻微上滑，退出更轻。
  */
-const route = useRoute()
-const router = useRouter()
-const appSettings = useAppSettingsStore()
-
-onMounted(() => {
-  const target = appSettings.settings.defaultHomeView
-  if (route.path === '/' && target && target !== '/') {
-    void router.replace(target)
-  }
-})
 </script>
 
 <template>

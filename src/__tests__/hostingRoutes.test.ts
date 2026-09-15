@@ -39,7 +39,7 @@ describe('hosting routes（SPA 深链占位）', () => {
     expect(hostingRoutes.parseStaticPaths(source)).toEqual(flatten(appRoutes))
   })
 
-  it('解析覆盖全部 23 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
+  it('解析覆盖全部 24 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
     const source = readFileSync(path.resolve(process.cwd(), 'src/router/routes.ts'), 'utf8')
     expect(hostingRoutes.parseStaticPaths(source)).toEqual([
       '/class',
@@ -56,6 +56,7 @@ describe('hosting routes（SPA 深链占位）', () => {
       '/my/settings/class',
       '/my/settings/display',
       '/my/settings/teaching',
+      '/my/settings/teaching/periods',
       '/my/settings/term',
       '/my/tools',
       '/seats',
@@ -66,6 +67,13 @@ describe('hosting routes（SPA 深链占位）', () => {
       '/work/schedule',
       '/work/works',
     ])
+  })
+
+  it('v3.2.0：/my/settings/display 仍是静态路径，但已改为重定向回「我的」', () => {
+    const source = readFileSync(path.resolve(process.cwd(), 'src/router/routes.ts'), 'utf8')
+    // 路径必须留在表里（旧书签不 404），但不再挂组件页
+    expect(source).toContain("path: '/my/settings/display', redirect: '/my'")
+    expect(source).not.toContain("import('@/views/My/settings/DisplaySettings.vue')")
   })
 
   it('跳过空段、动态段与根路径；函数体里的 path: 不误匹配', () => {

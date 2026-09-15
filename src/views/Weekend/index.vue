@@ -207,7 +207,7 @@ function confirmRemove() {
 
     <!-- ===== Layer 1：返校状态 Hero（Return First 视觉中心） ===== -->
     <WeekendHero
-      :relative-label="selectedRelative || '本周末'"
+      :relative-label="selectedRelative"
       :period-label="selectedLabel"
       :returned-count="returnedCount"
       :stay-count="stayCount"
@@ -226,7 +226,7 @@ function confirmRemove() {
         @click="selected = key"
       >
         <span class="chip-name">
-          {{ describeWeekend(key, weekendStore.todayKey) || formatWeekendLabel(key) }}
+          {{ describeWeekend(key, weekendStore.todayKey) }}
         </span>
         <span class="chip-count">{{ weekendStore.returnedCountOf(key) }} 人</span>
       </button>

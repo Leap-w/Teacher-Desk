@@ -319,10 +319,12 @@ function clearFilters() {
           <AppButton :disabled="!selectedIds.size" @click="batchOpen = true">批量修改</AppButton>
           <AppButton variant="secondary" @click="exitBatch">退出批量管理</AppButton>
         </template>
+        <!-- v3.1.0：顺序改为 批量导入 → 批量管理 → 新增学生（主按钮仍在最后、仍带底色）；
+             两个次按钮是一对「批量」操作，挨着放，主按钮单独收尾 -->
         <template v-else>
           <AppButton variant="secondary" @click="importOpen = true">批量导入</AppButton>
-          <AppButton @click="openCreate">＋ 新增学生</AppButton>
           <AppButton variant="secondary" @click="batchMode = true">批量管理</AppButton>
+          <AppButton @click="openCreate">＋ 新增学生</AppButton>
         </template>
       </div>
     </header>

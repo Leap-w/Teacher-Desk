@@ -31,7 +31,13 @@ withDefaults(
 </template>
 
 <style scoped>
+/*
+  v3.3.0：结果区**吃掉卡片内容区的剩余高度**（`flex: 1`）。
+  三张卡等高之后，靠它把「结果大字」推到三张卡里完全相同的位置——
+  此前每张卡各按自己的内容排版，三行大字一高一低，横排看过去像没对齐。
+*/
 .result {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -60,8 +66,10 @@ withDefaults(
   transition: opacity var(--duration-base) var(--ease-out);
 }
 
+/* 点名结果放大（v3.3.0）：与抽签组名同一档 48px——两者都是「全班看的那一行字」，
+   一个 40 一个 48 只是历史原因，并排放在一起只会显得一个是次等的 */
 .is-name .result-value {
-  font-size: var(--font-num-2xl);
+  font-size: 48px;
 }
 
 .is-timer .result-value {

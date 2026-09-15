@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { COURSE_PERIODS } from '@/types/timetable'
+import { useAppSettingsStore } from '@/stores/appSettings'
 import { WEEKDAY_SHORT_LABELS, periodLabelOf, periodTimeTextOf } from '@/utils/timetable'
 import type { CourseExchange, CoursePeriodId, Lesson, Weekday } from '@/types/timetable'
 import ScheduleLessonCard from './ScheduleLessonCard.vue'
@@ -19,6 +19,14 @@ interface Props {
   /** 当前 / 下一节的课程 id（UI-5A：松石青描边呼吸强调；纯视觉，不改交互） */
   currentLessonId?: string
 }
+
+const appSettings = useAppSettingsStore()
+
+/**
+ * 生效的时段表（v3.3.0）：行头的时间与行数都来自「教学设置 → 课程时间」。
+ * 行**数量与顺序**与默认作息一致，变的只有每行印的时间。
+ */
+const periods = computed(() => appSettings.periods)
 
 const props = withDefaults(defineProps<Props>(), {
   today: undefined,
@@ -76,10 +84,10 @@ function swapAt(weekday: Weekday, periodId: CoursePeriodId): CourseExchange | un
       </span>
     </div>
 
-    <div v-for="period in COURSE_PERIODS" :key="period.id" class="grid-row">
+    <div v-for="period in periods" :key="period.id" class="grid-row">
       <span class="grid-period">
         <span class="grid-period-name">{{ period.label }}</span>
-        <span class="grid-period-time">{{ periodTimeTextOf(period.id) }}</span>
+        <span class="grid-period-time">{{ periodTimeTextOf(period.id, periods) }}</span>
       </span>
 
       <div

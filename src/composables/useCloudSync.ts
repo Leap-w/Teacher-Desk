@@ -67,7 +67,13 @@ export function useCloudSync() {
       case 'syncing':
         return { text: '正在同步…', tone: 'muted' }
       case 'idle':
-        return { text: '已同步', tone: 'ok' }
+        // v3.3.0：`idle` 只说明「已登录、通道可用」，**不等于本次打开同步过**。
+        // 冷启动时 `probeCloudSession()` 刚问完「谁登录着」，一轮对账可能还在路上；
+        // 这时说「已同步」是替云端下结论。`lastSyncedAt` 为空就说「已登录」——
+        // 它同时是「本次打开还没有同步过」的那一位（见 `lastSyncedText`）。
+        return state.value.lastSyncedAt === null
+          ? { text: '已登录', tone: 'muted' }
+          : { text: '已同步', tone: 'ok' }
       case 'offline':
         return { text: '连不上云端', tone: 'warn' }
       case 'error':

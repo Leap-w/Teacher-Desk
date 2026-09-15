@@ -19,9 +19,14 @@
   min-width: 0;
 }
 
-/* 画布纸面：纯白 + hairline + 极浅阴影，四周留白明显放大 */
+/*
+  画布纸面：纯白 + hairline + 极浅阴影。
+  v3.3.0：左右留白由 24px 收到 16px——这一圈padding 直接从座位图宽度里扣，
+  需求要的是「座位图占满页面」，纸面内部的留白就不该再吃掉十几像素。
+  上下仍然宽松（视觉呼吸），左右只留够贴边的量。
+*/
 .seat-canvas__paper {
-  padding: var(--spacing-xl) var(--spacing-lg) var(--spacing-lg);
+  padding: var(--spacing-lg) var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-xl);
@@ -30,7 +35,7 @@
 
 @media (max-width: 900px) {
   .seat-canvas__paper {
-    padding: var(--spacing-card) var(--space-3) var(--spacing-card);
+    padding: var(--space-4) var(--space-2);
   }
 }
 </style>

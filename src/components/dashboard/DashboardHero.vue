@@ -3,8 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Check, ChevronDown } from 'lucide-vue-next'
 
 import { useAppSettingsStore } from '@/stores/appSettings'
-import { COUNTDOWN_TARGETS } from '@/types/appSettings'
-import type { CountdownTargetKey } from '@/types/appSettings'
+import type { CountdownEntry } from '@/utils/timeCenter'
 
 /**
  * DashboardHero — 首页 Hero（v3.0.4-rc · 对齐 Changdu-Memory `HeroSection.vue`）。
@@ -13,15 +12,19 @@ import type { CountdownTargetKey } from '@/types/appSettings'
  * `section.hero > img.hero__bg + div.hero__overlay + div.hero__content`
  * → `div.hero__text`（h1 标题 / p 副标题 / 巨幅「第 X 天」）+ `div.hero__countdown`（玻璃倒计时卡）。
  *
- * **数据全部来自 `useAppSettingsStore`（v3.0.4-rc 统一 / v3.0.5-rc 加倒计时选择器）**：
- * 背景图、Hero 标题与副标题、支教第 X 天、倒计时天数与进度读的是同一份设置——
- * 「我的 → 工作时光」读的也是它，改一处两边同步。这里不再有第二份倒计时状态
- * （旧 `useCountdownSettings` 已并入 store）。
+ * **数据全部来自 `useAppSettingsStore`（v3.0.4-rc 统一）**：背景图、Hero 副标题、
+ * 支教第 X 天、倒计时天数与进度读的是同一份设置——「我的 → 工作时光」读的也是它，
+ * 改一处两边同步。这里没有第二份倒计时状态（旧 `useCountdownSettings` 已并入 store）。
  *
- * **倒计时选择器（v3.0.5-rc）**对齐昌都记忆 `HeroSection.vue` 的 `.hero__countdown-picker`：
- * 卡片左上角的标题是个下拉按钮，选中哪一项就倒数到哪个日期，选择**立刻写盘**
- * （`appSettings.update()` → `teacherdesk:settings`），刷新后保持——
- * 与「学期与倒计时」设置页里那个下拉是**同一个字段**，两处互相同步。
+ * **倒计时卡显示的哪一项（v3.1.0）**：由「时光中心」里的 `timeCenter.heroCountdownId`
+ * 决定——内置三项（距离期末 / 距离开学 / 距离出发）或教师自建的任意一项。
+ * 卡片标题 = **那一项自己的名称**（v3.1.0 起不再有单独的 `heroTitle` 字段，
+ * 否则同一行字会有两个来源）；角标与天数也全部来自它。
+ *
+ * **卡片上的下拉（v3.0.5-rc 起，v3.1.0 改为写 `heroCountdownId`）**对齐昌都记忆
+ * `HeroSection.vue` 的 `.hero__countdown-picker`：选中哪一项就倒数到哪个日期，
+ * 选择**立刻写盘**（`teacherdesk:settings`），刷新后保持——与时光中心列表里那个
+ * 「首页显示」单选是**同一个字段**，两处互相同步，不产生第二份选择。
  * 下拉向上展开（`.hero__countdown-list` 是 `bottom: calc(100% + 6px)`），
  * 免得被 Hero 的 `overflow: hidden` 圆角裁掉——这一句是参考版的原设计，照搬。
  */
@@ -37,29 +40,31 @@ defineProps<{
 const appSettings = useAppSettingsStore()
 
 const background = computed(() => appSettings.settings.heroBackground)
-/** Hero 标题 = 倒计时卡的标题（如「距离期末考试」），同时也是选择器按钮上的文字 */
-const heroTitle = computed(() => appSettings.settings.heroTitle)
 /** Hero 副标题：空字符串 = 这一行整个不渲染（默认就是空的） */
 const heroSubtitle = computed(() => appSettings.settings.heroSubtitle)
 const showProgress = computed(() => appSettings.settings.showProgress)
 /** 工作时光：支教第 X 天 */
 const daysWorked = computed(() => appSettings.daysWorked)
 
-/* ---- 倒计时卡（数字跟目标走，进度条跟学期走，口径见 store） ---- */
+/* ---- 倒计时卡（数字跟所选那一项走，进度条跟学期走，口径见 store） ---- */
 const countdownMagnitude = computed(() => appSettings.countdownMagnitude)
 const countdownLabel = computed(() => appSettings.countdownLabel)
-const countdownTitle = computed(() => appSettings.countdownTarget.label)
+/** 卡片标题 = 所选倒计时自己的名称（内置项名称固定，自定义项由教师在时光中心填） */
+const countdownTitle = computed(() => appSettings.countdownTitle)
 const progress = computed(() => appSettings.countdownProgress)
 
 /** 下拉开关（参考版是点开卡片里的按钮，不持久化——开合状态不属于设置） */
 const pickerOpen = ref(false)
 
-/** 下拉里的三个目标（与「学期与倒计时」设置页同一份来源） */
-const countdownOptions = COUNTDOWN_TARGETS
+/** 下拉列表：内置三项 + 自定义项（与时光中心的列表同一份来源） */
+const countdownOptions = computed(() => appSettings.countdownEntries)
 
-/** 选中一个倒计时目标：写盘后 store 立刻重算，首页与「我的」两处同帧跟上 */
-function selectCountdown(value: CountdownTargetKey): void {
-  appSettings.update({ countdownTarget: value })
+/** 选中哪一项当前生效（用来给下拉打勾） */
+const activeCountdownId = computed(() => appSettings.timeCenter.heroCountdownId)
+
+/** 选中一项：写盘后 store 立刻重算，首页与「我的」两处同帧跟上 */
+function selectCountdown(entry: CountdownEntry): void {
+  appSettings.setHeroCountdown(entry.id)
   pickerOpen.value = false
 }
 
@@ -74,7 +79,7 @@ onMounted(() => {
 <template>
   <!-- 点卡片以外的地方收起下拉（参考版同款：section 上收，卡片内 stop） -->
   <section class="hero" :class="{ 'is-entered': entered }" @click="pickerOpen = false">
-    <!-- 高原雪山大图背景（学期与倒计时设置里可换预设 / 自定义 URL） -->
+    <!-- 高原雪山大图背景（时光中心里可换预设 / 自定义 URL） -->
     <img class="hero__bg" :src="background" alt="" />
     <!-- 天幕遮罩与底栏沉浸渐变 -->
     <div class="hero__overlay" />
@@ -89,7 +94,7 @@ onMounted(() => {
       <div class="hero__text">
         <h1 class="hero__title">{{ greeting }}</h1>
         <p class="hero__subtitle">{{ dateLine }}</p>
-        <!-- Hero 副标题（「学期与倒计时」里填，默认空 = 这一行不出现） -->
+        <!-- Hero 副标题（时光中心里填，默认空 = 这一行不出现） -->
         <p v-if="heroSubtitle" class="hero__subtitle hero__subtitle--custom">{{ heroSubtitle }}</p>
 
         <!-- 视觉中心：工作时光 · 第 X 天 -->
@@ -110,7 +115,7 @@ onMounted(() => {
             :title="countdownTitle"
             @click.stop="pickerOpen = !pickerOpen"
           >
-            <span class="hero__countdown-picker-label">{{ heroTitle }}</span>
+            <span class="hero__countdown-picker-label">{{ countdownTitle }}</span>
             <ChevronDown
               class="hero__countdown-caret"
               :class="{ 'hero__countdown-caret--open': pickerOpen }"
@@ -123,11 +128,16 @@ onMounted(() => {
         </div>
 
         <div class="hero__countdown-body">
-          <span class="hero__countdown-num">{{ countdownMagnitude }}</span>
+          <!-- v3.1.0：天数变化时旧值上滚出、新值下滚入（key 变了才触发过渡） -->
+          <Transition name="roll" mode="out-in">
+            <span :key="countdownMagnitude" class="hero__countdown-num">
+              {{ countdownMagnitude }}
+            </span>
+          </Transition>
           <span class="hero__countdown-unit">天</span>
         </div>
 
-        <!-- 柔和进度条（可在显示设置中关闭） -->
+        <!-- 柔和进度条（可在时光中心里关闭） -->
         <template v-if="showProgress">
           <div class="hero__progress-track">
             <div class="hero__progress-fill" :style="{ width: progress + '%' }" />
@@ -142,17 +152,15 @@ onMounted(() => {
           <div v-if="pickerOpen" class="hero__countdown-list">
             <button
               v-for="opt in countdownOptions"
-              :key="opt.value"
+              :key="opt.id"
               class="hero__countdown-opt"
-              :class="{
-                'hero__countdown-opt--active': opt.value === appSettings.settings.countdownTarget,
-              }"
+              :class="{ 'hero__countdown-opt--active': opt.id === activeCountdownId }"
               type="button"
-              @click.stop="selectCountdown(opt.value)"
+              @click.stop="selectCountdown(opt)"
             >
-              <span class="hero__countdown-opt-text">{{ opt.label }}</span>
+              <span class="hero__countdown-opt-text">{{ opt.name }}</span>
               <Check
-                v-if="opt.value === appSettings.settings.countdownTarget"
+                v-if="opt.id === activeCountdownId"
                 class="hero__countdown-opt-check"
                 :size="12"
                 :stroke-width="2.5"
@@ -292,10 +300,24 @@ onMounted(() => {
 .hero__title {
   margin: 0;
   font-size: var(--font-hero-title);
-  line-height: 1.15;
+  /* v3.1.0：行高 1.15 → 1.1，收紧一档让标题更有分量（字号不动，保持参考版比例） */
+  line-height: 1.1;
   font-weight: var(--font-weight-extrabold);
   letter-spacing: -0.02em;
   color: #ffffff;
+  /* v3.1.0 新增：标题淡入（延迟 60ms，等 Hero 容器的位移先走完） */
+  animation: heroTitleIn var(--duration-slow) var(--ease-out) 60ms both;
+}
+
+@keyframes heroTitleIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hero__subtitle {
@@ -335,6 +357,11 @@ onMounted(() => {
 }
 
 /* ---- 右侧：玻璃拟态倒计时卡片 ---- */
+/*
+ * v3.1.0 放大：整卡约 +17%（240 → 280 宽、内边距 24 → 28、数字 36 → 42），
+ * 圆角同比例 20 → 24，玻璃拟态（底色 / 模糊 / 描边 / 阴影）一字未动。
+ * 需求方口径是「与左侧形成更平衡的视觉比例」，比参考版的 240px 更宽一点是有意为之。
+ */
 .hero__countdown {
   /* 下拉以卡片为定位基准（参考版同款） */
   position: relative;
@@ -342,15 +369,26 @@ onMounted(() => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  padding: var(--spacing-card);
-  width: 240px;
-  max-width: 240px;
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  width: 280px;
+  max-width: 280px;
   flex-shrink: 0;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+/* v3.1.0 新增：hover 轻微上浮 + 阴影增强（180ms ease-out） */
+@media (hover: hover) {
+  .hero__countdown:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22);
+  }
 }
 
 @media (max-width: 760px) {
@@ -365,7 +403,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  font-size: var(--font-caption);
+  font-size: 13px;
   color: rgba(226, 232, 240, 0.9);
 }
 
@@ -380,7 +418,7 @@ onMounted(() => {
   background: transparent;
   color: rgba(226, 232, 240, 0.9);
   font-family: inherit;
-  font-size: var(--font-caption);
+  font-size: 13px;
   font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: color var(--duration-fast) var(--ease-out);
@@ -419,7 +457,8 @@ onMounted(() => {
 }
 
 .hero__countdown-num {
-  font-size: 36px;
+  /* v3.1.0：36 → 42px，与整卡同比例放大；数字变化时的滚动由 .roll-* 过渡承担 */
+  font-size: 42px;
   line-height: 1;
   font-weight: 900;
   color: #ffffff;
@@ -427,15 +466,38 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * v3.1.0 新增：倒计时数字滚动更新。
+ * 天数一变（换目标、跨零点）就让旧数字向上滚出、新数字从下方滚入——
+ * 用 <Transition mode="out-in"> 的进出场而不是逐位数字滚动：
+ * 天数是个整体，「换一天」比「逐位翻」更符合它的语义，也不会在 100→99 时抖动。
+ */
+.roll-enter-active,
+.roll-leave-active {
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.roll-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.roll-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
 .hero__countdown-unit {
-  font-size: var(--font-caption);
+  font-size: 13px;
   color: rgba(226, 232, 240, 0.9);
   font-weight: var(--font-weight-medium);
 }
 
 .hero__progress-track {
   width: 100%;
-  height: 6px;
+  height: 7px;
   background: rgba(0, 0, 0, 0.4);
   border-radius: var(--radius-full);
   overflow: hidden;
@@ -453,7 +515,7 @@ onMounted(() => {
 }
 
 .hero__progress-pct {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(203, 213, 225, 0.9);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

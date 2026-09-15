@@ -4,6 +4,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { startAutoSync } from './sync/autoSync'
+import { probeCloudSession } from './services/cloudSync'
 import { onSyncReload } from './services/sync'
 
 import 'virtual:uno.css'
@@ -33,6 +34,18 @@ onSyncReload(() => window.location.reload())
  * 没配环境 ID 时什么都不注册，本地模式照常工作（引擎保持 LocalOnly）。
  */
 startAutoSync()
+
+/**
+ * 再把「现在是谁登录着」问一次（v3.3.0）。
+ *
+ * 界面读的登录状态在 `services/cloudSync.ts` 那一份里，引擎那条链路不认识它——
+ * 不补这一句，冷启动时工具箱的云同步行会永远停在「检查中…」且点了没反应，
+ * 顶栏的同步按钮也不会出现（见 `probeCloudSession` 的说明）。
+ * 它只查会话、不传数据，所以与上面的引擎不会互相打架。
+ *
+ * 不 await：它是一次网络往返，不该挡住首屏；界面在它回来之前显示「检查中…」是对的。
+ */
+void probeCloudSession()
 
 const app = createApp(App)
 

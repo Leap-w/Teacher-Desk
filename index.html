@@ -2,16 +2,18 @@
 <html lang="zh-CN">
   <head>
     <script>
-      // 防白闪：应用挂载前按盘上偏好置 data-theme（与 useTheme/themeRepository 同一口径）
+      // 防白闪：应用挂载前按盘上偏好置 data-theme（与 useTheme/themeRepository 同一口径）。
+      // v3.1.0：只剩浅色 / 深色两档，「跟随系统」已撤下——盘上残留的旧值 'system'
+      // 按本机当前系统的深浅折算一次（与 themeRepository.foldLegacySystem 同一规则），
+      // 否则一位深色手机的教师打开应用会先闪一下白底。
       ;(function () {
         try {
           var raw = localStorage.getItem('teacherdesk:theme')
-          var pref = raw ? JSON.parse(raw) : 'system'
-          if (pref !== 'light' && pref !== 'dark' && pref !== 'system') pref = 'system'
-          var dark =
-            pref === 'dark' ||
-            (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          var pref = raw ? JSON.parse(raw) : 'light'
+          if (pref !== 'light' && pref !== 'dark') {
+            pref = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          }
+          document.documentElement.dataset.theme = pref
         } catch (e) {
           /* 隐私模式等读不到就交给 useTheme 兜底 */
         }

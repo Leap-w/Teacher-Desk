@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Check, TriangleAlert } from 'lucide-vue-next'
 
 import { AppButton, AppModal, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useSeatStore } from '@/stores/seat'
 import { useStudentStore } from '@/stores/student'
+import { CONSTRAINT_OK_LINES } from '@/utils/constraint'
+import type { ConstraintGroup, ConstraintIssue } from '@/utils/constraint'
 import { ADJACENT_RULE_NOTE, SAME_DESK_RULE_NOTE, seatPositionLong } from '@/utils/seat'
 import { PLAN_CONSTRAINT_LABELS, rowRuleNote } from '@/utils/seatPlanConstraint'
 import { formatStudentShortName } from '@/utils/student'
@@ -21,17 +24,40 @@ import { formatStudentShortName } from '@/utils/student'
 
 interface Props {
   modelValue: boolean
+  /**
+   * v3.2.0：本班座位约束的实时检查结论（原右侧「约束检查」卡片的内容）。
+   * 页面右侧那两张卡片已撤下，检查结论随约束管理一起进本弹窗——
+   * 「约束」按钮因此是**唯一**入口，教师不必在两个地方各看一半。
+   */
+  issues: ConstraintIssue[]
+  /** 手工约束总数（含停用；展示用） */
+  totalConstraints: number
 }
 
-// 只声明不接收：模板里直接用 `modelValue`（与 AppModal 的 v-model 对接），
-// 本组件内部不需要读它——assigned-but-unused 会被 lint 拦下
 defineProps<Props>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   /** 定位：把涉及座位交给页面滚动 + 闪烁 */
   locate: [seatIds: string[]]
+  /** 检查行定位（与上面同义，但按 issue 粒度；页面按涉及座位闪烁 + 滚到第一个） */
+  locateIssue: [issue: ConstraintIssue]
+  /** ＋ 添加约束 / 管理约束（本班座位约束，走 ConstraintEditModal / ConstraintManageModal） */
+  add: []
+  manage: []
 }>()
+
+/** 检查分组渲染顺序与各自的无问题文案（原 ConstraintPanel 的口径，一字未改） */
+const GROUPS: Array<{ key: ConstraintGroup; ok: string }> = [
+  { key: 'relation', ok: CONSTRAINT_OK_LINES.relation },
+  { key: 'rules', ok: CONSTRAINT_OK_LINES.rules },
+  { key: 'tall', ok: CONSTRAINT_OK_LINES.tall },
+  { key: 'cadre', ok: CONSTRAINT_OK_LINES.cadre },
+]
+
+function issuesOf(group: ConstraintGroup, issues: ConstraintIssue[]): ConstraintIssue[] {
+  return issues.filter((issue) => issue.group === group)
+}
 
 type Tab = 'desk' | 'adjacent' | 'rows'
 
@@ -179,7 +205,55 @@ function close(): void {
       约束属于<strong>当前方案</strong>：换方案即换一套；本阶段只做标记与检查，不会自动移动学生。
     </p>
 
-    <!-- 实时检查结论：错误（红）与提醒（琥珀）都在这里，点「定位」直接找到座位 -->
+    <!-- 座位约束检查（v3.2.0）：原页面右侧「约束检查」卡片并入本弹窗，
+         封面层级的冲突 / 提醒全在这里，任一行点击即定位到涉及座位。 -->
+    <section class="check">
+      <header class="check-head">
+        <h3 class="check-title">座位约束检查</h3>
+        <span class="check-sub">实时检查 · 只读不自动调整</span>
+      </header>
+
+      <ul class="check-list">
+        <template v-for="group in GROUPS" :key="group.key">
+          <li v-if="issuesOf(group.key, issues).length === 0" class="check-ok">
+            <span class="check-mark is-ok" aria-hidden="true">
+              <Check :size="14" :stroke-width="2.5" />
+            </span>
+            {{ group.ok }}
+          </li>
+          <li v-else>
+            <button
+              v-for="issue in issuesOf(group.key, issues)"
+              :key="issue.key"
+              type="button"
+              class="check-row"
+              :class="`is-${issue.severity}`"
+              :title="`定位：${issue.studentIds.length} 名学生`"
+              @click="emit('locateIssue', issue)"
+            >
+              <span class="check-mark" aria-hidden="true">
+                <TriangleAlert :size="14" :stroke-width="2.5" />
+              </span>
+              <span class="check-text">{{ issue.message }}</span>
+            </button>
+          </li>
+        </template>
+      </ul>
+
+      <p v-if="totalConstraints === 0" class="check-tip">
+        还没有座位约束。长按已就座座位 →「＋ 座位约束」添加「不能同桌 /
+        不能相邻」（自动排座的硬约束）或「坐后排 / 坐前排 / 同区块」（软规则）。
+      </p>
+
+      <div class="check-actions">
+        <AppButton size="sm" variant="ghost" @click="emit('add')">＋ 添加约束</AppButton>
+        <AppButton size="sm" variant="secondary" @click="emit('manage')">
+          管理约束（{{ totalConstraints }}）
+        </AppButton>
+      </div>
+    </section>
+
+    <!-- 方案规则检查：错误（红）与提醒（琥珀）都在这里，点「定位」直接找到座位 -->
     <div class="report" :class="{ 'is-ok': report.issues.length === 0 }">
       <p v-if="report.issues.length === 0" class="report-ok">
         当前方案未发现违反约束的座位（{{ constraints.sameDeskForbidden.length }} 组不能同桌、{{
@@ -336,7 +410,117 @@ function close(): void {
   color: var(--color-text);
 }
 
-/* ---- 检查结论 ---- */
+/* ---- 座位约束检查（原 ConstraintPanel 的样式，类名改前缀避免与本文件冲突） ---- */
+.check {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.check-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.check-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.check-sub {
+  font-size: var(--font-caption);
+  color: var(--color-text-faint);
+}
+
+.check-list {
+  display: grid;
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.check-ok {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-soft);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-success-strong);
+}
+
+.check-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  line-height: 1.5;
+}
+
+.check-ok .check-mark.is-ok {
+  color: var(--color-success);
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.check-row:hover {
+  background: var(--color-fill-disabled);
+}
+
+.check-row.is-conflict .check-mark {
+  color: var(--color-danger);
+}
+
+.check-row.is-conflict .check-text {
+  color: var(--color-danger-strong);
+}
+
+.check-row.is-warn .check-mark {
+  color: var(--color-warning-strong);
+}
+
+.check-row.is-warn .check-text {
+  color: var(--color-warning-strong);
+}
+
+.check-tip {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--color-text-faint);
+}
+
+.check-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* ---- 检查结论（当前方案的规则） ---- */
 .report {
   display: flex;
   flex-direction: column;
