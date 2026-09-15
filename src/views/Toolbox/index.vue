@@ -10,7 +10,6 @@ import { appConfig } from '@/config'
 import type { ConflictChoice } from '@/composables/useCloudSync'
 import { useBackup } from '@/composables/useBackup'
 import {
-  LAST_BACKUP_KEY,
   applyWrites,
   createBackup,
   downloadJson,
@@ -21,7 +20,7 @@ import {
   type CommitOutcome,
   type MergeStat,
 } from '@/utils/backup'
-import { formatClock, formatDateKey, formatDateOnly } from '@/utils/date'
+import { formatDateKey } from '@/utils/date'
 import SettingsCell from '@/views/My/components/SettingsCell.vue'
 import SettingsSection from '@/views/My/components/SettingsSection.vue'
 
@@ -62,15 +61,16 @@ function refreshSnapshot(): void {
 
 /** 读取异常、无法解析的数据块（绝不写盘，界面上必须说出来） */
 const broken = computed(() => snapshot.value.broken)
-const lastBackupAt = ref<string>(storage.read(LAST_BACKUP_KEY) ?? '')
 
-const lastBackupText = computed(() => {
-  const iso = lastBackupAt.value
-  if (!iso) return '还没有导出过备份。'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '还没有导出过备份。'
-  return `上次导出：${formatDateOnly(date)} ${formatClock(date)}`
-})
+/**
+ * 「导出数据」那一行的小字（v3.0.5-rc）。
+ *
+ * 这里原是**上次导出时间**（读 `teacherdesk:lastBackupAt`），没有记录时写「还没有导出过备份。」。
+ * 需求方 2026-09-15 拍板：导出提示只在按钮下面挂一句小字即可，不要顶部警告、不要常驻提醒，
+ * 所以这一行固定成「这个按钮是干什么的」，不再是「你多久没导出了」——那个键连同提醒条一并删了
+ * （见 `utils/backup.ts` 顶部说明）。
+ */
+const exportHint = '导出 JSON 可用于恢复数据。'
 
 /* ---------- 云同步（Phase 9B / 9C） ---------- */
 
@@ -159,12 +159,6 @@ function exportBackup(): void {
     toast.danger('导出失败：浏览器没能开始下载，请重试')
     console.warn('[data] 导出失败：', error)
     return
-  }
-  try {
-    storage.write(LAST_BACKUP_KEY, now.toISOString())
-    lastBackupAt.value = now.toISOString()
-  } catch {
-    // 只影响「上次导出」提示，不影响备份文件本身，不打断流程
   }
   toast.success('已导出备份文件（浏览器下载目录）')
   if (brokenLabels.length > 0) {
@@ -302,7 +296,7 @@ onMounted(() => {
         :icon="Download"
         icon-tone="neutral"
         title="导出数据"
-        :subtitle="lastBackupText"
+        :subtitle="exportHint"
         :chevron="false"
         @click="exportBackup"
       />
@@ -361,10 +355,9 @@ onMounted(() => {
           同步规则：新设备登录以云端为准；两边都有数据不会自动覆盖，会先请你确认保留哪一份；
           之后同一项两边都改过，以写得晚的一方为准。
         </p>
-        <p class="footnote">
-          本机数据保存在这台设备的浏览器里，清理浏览器缓存、换设备或换浏览器都会全部丢失，
-          建议定期导出备份。
-        </p>
+        <!-- 这里原有第二段常驻小字「本机数据保存在这台设备的浏览器里…建议定期导出备份。」，
+             v3.0.5-rc 删除：它是全页最后一句话，长期占位、观感差；导出这件事的提示
+             只留在上面「导出数据」那一行小字里 -->
       </div>
     </AppCard>
 

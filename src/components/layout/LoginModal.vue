@@ -17,6 +17,12 @@ import { AppButton, AppField, AppInput, AppModal } from '@/components/ui'
  * 控制台建的账号是「用户名」类型，写 `type="email"` 时浏览器会在提交前用原生校验挡下
  * （提示「请输入邮箱」），请求根本发不出去——界面上只表现为「点了没反应」，云端没有任何错误可查。
  * 同一个坑 2026-09-12 踩过一次（开发手册 §9.20 取舍 ⑪），v3.0.2-rc 又回归了一次，故在此写明。
+ *
+ * ⚠️⚠️ 第二种「点了没反应」：**表单没有 `id`，而按钮用 `form="<id>"` 关联它**。
+ * `form` 属性按 `id` 查表单，查不到就等于这个按钮不属于任何表单——`type="submit"` 也无处可提交，
+ * 表现为**在输入框里回车能提交、用鼠标点按钮毫无反应**。这是 v3.0.4-rc 的实际故障原因
+ * （三个登录入口唤起的是本弹窗，故三处表现一致）。改这一段时，
+ * `src/__tests__/loginEntry.test.ts` 会逐文件核对「有 `form="X"` 就必须有 `id="X"`」，不许再漏。
  */
 const loginModal = useLoginModal()
 const toast = useToast()
@@ -64,7 +70,9 @@ async function submit(): Promise<void> {
     :width="380"
     @update:model-value="close()"
   >
-    <form class="login-form" @submit.prevent="submit">
+    <!-- id 与 footer 的 `form="login-form"` 一一对应：缺了它按钮就不属于任何表单，
+         点下去不会有任何反应（回车提交却正常）——v3.0.4-rc 回归过，见顶部注释 -->
+    <form id="login-form" class="login-form" @submit.prevent="submit">
       <p class="login-form__hint">登录后，本机数据与你的云端账号自动对齐；不登录也能照常使用。</p>
 
       <AppField label="账号" required>

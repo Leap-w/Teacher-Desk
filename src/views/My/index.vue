@@ -1,40 +1,41 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  CalendarClock,
-  CalendarRange,
-  Cloud,
-  Palette,
-  UserRound,
-  UsersRound,
-  type LucideIcon,
-} from 'lucide-vue-next'
+import { CalendarClock, CalendarRange, Cloud, Palette, UsersRound } from 'lucide-vue-next'
 
-import { AppButton, AppDrawer, AppField, AppInput, AppSection } from '@/components/ui'
+import { AppButton, AppDrawer, AppField, AppInput } from '@/components/ui'
 import { useLoginModal } from '@/composables/useLoginModal'
 import { useToast } from '@/composables/useToast'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useUserStore } from '@/stores/user'
 import AboutCard from './components/AboutCard.vue'
 import ProfileHero from './components/ProfileHero.vue'
+import ProfileMenuCard from './components/ProfileMenuCard.vue'
 import WorkTimeCard from './components/WorkTimeCard.vue'
-import SettingsCell from './components/SettingsCell.vue'
-import SettingsSection from './components/SettingsSection.vue'
+import type { ProfileMenuItem } from './components/ProfileMenuCard.vue'
 import type { UserProfileInput } from '@/types/user'
 
 /**
- * 我的（v3.0.4-rc · 对齐 Changdu-Memory `Profile.vue` 的排布）。
+ * 我的（v3.0.4-rc 起；**v3.0.5-rc 按 Changdu-Memory `Profile.vue` 重排**）。
  *
- * **四块，自上而下**：
- * ① 个人信息（登录态驱动：已登录 = Profile Hero + 编辑；未登录 = 默认头像 + 尚未登录 + 登录按钮）
- * ② 工作时光（与首页 Hero 读同一份设置）
- * ③ 设置（**每一项都是一个入口，点进对应的二级设置页**——不再就地展开）
- * ④ 关于（页面底部：当前版本 / GitHub / 检查更新）
+ * **页面骨架与昌都记忆「我的档案」一一对应**（不再自己排版）：
+ * `div.profile` → `div.profile__header`（大标题 + 说明 + 底部细线）
+ * → `div.profile__grid`（`grid-template-areas` 排布，桌面 `4fr 8fr` 两列）
+ * → 四张卡：Hero / 工作时光 / 功能入口 / 关于。
  *
- * 设置分组（v3.0.4-rc）：显示设置 / 教学设置 / 班级设置 / 学期与倒计时；
- * 原有设置项一项未删，只是从「就地展开」改成「一页一组」。
- * 数据与同步仍是单独一块的**一个入口**（云同步 / 导出 / 导入在那一页）。
+ * 桌面排布（照参考版把左列卡片与右列卡片的底边对齐）：
+ * ```
+ * 'hero  time'
+ * 'hero  menu'
+ * 'about menu'
+ * ```
+ * 移动端单列，顺序就是需求里的 ① Hero → ② 工作时光 → ③ 功能入口 → ④ 关于。
+ *
+ * **设置不再就地展开**：所有开关与日期都在各自的二级页里（显示 / 教学 / 班级 /
+ * 学期与倒计时 / 数据与同步），这一页只负责把它们摆成入口。
+ *
+ * 未登录时页面**不换成另一张卡**：Hero 还是那张深色卡，只是卡里放
+ * 默认头像 / 尚未登录 / 登录按钮（点它唤起全局登录弹窗，不跳空页面）。
  */
 const toast = useToast()
 const router = useRouter()
@@ -45,45 +46,53 @@ const loginModal = useLoginModal()
 const profile = computed(() => userStore.profile)
 const appVersion = import.meta.env.APP_VERSION
 
-/** 设置入口（每一项 → 一个二级设置页） */
-interface SettingEntry {
-  key: string
-  icon: LucideIcon
-  title: string
-  subtitle: string
-  to: string
-}
-
-const settingEntries: SettingEntry[] = [
+/** 功能入口（每一项 → 一个独立页面，卡内一行） */
+const menuItems: ProfileMenuItem[] = [
   {
     key: 'display',
+    label: '显示设置',
+    desc: '深色模式 · 默认首页',
     icon: Palette,
-    title: '显示设置',
-    subtitle: '深色模式 · 默认首页',
+    tone: 'display',
     to: '/my/settings/display',
   },
   {
     key: 'teaching',
+    label: '教学设置',
+    desc: '课程时间 · 座位图默认视角',
     icon: CalendarClock,
-    title: '教学设置',
-    subtitle: '课程时间 · 座位图默认视角',
+    tone: 'teaching',
     to: '/my/settings/teaching',
   },
   {
     key: 'class',
+    label: '班级设置',
+    desc: '请假 · 值日 · 周末返校',
     icon: UsersRound,
-    title: '班级设置',
-    subtitle: '请假 · 值日 · 周末返校',
+    tone: 'class',
     to: '/my/settings/class',
   },
   {
     key: 'term',
+    label: '学期与倒计时',
+    desc: '日期 · Hero 背景与文案',
     icon: CalendarRange,
-    title: '学期与倒计时',
-    subtitle: '支教日期 · 学期起止 · Hero 背景与文案',
+    tone: 'term',
     to: '/my/settings/term',
   },
+  {
+    key: 'data',
+    label: '数据与同步',
+    desc: '云同步 · 导出 · 导入',
+    icon: Cloud,
+    tone: 'data',
+    to: '/my/tools',
+  },
 ]
+
+function onMenuSelect(item: ProfileMenuItem): void {
+  void router.push(item.to)
+}
 
 /* ---------- 头像（仅登录后可见入口） ---------- */
 
@@ -151,7 +160,7 @@ function submitProfile(): void {
   toast.success('资料已更新')
 }
 
-/* ---------- 未登录 ---------- */
+/* ---------- 未登录：唤起全局登录弹窗（不跳路由） ---------- */
 
 function openLogin(): void {
   loginModal.show()
@@ -165,21 +174,27 @@ function checkUpdate(): void {
 </script>
 
 <template>
-  <div class="my-page">
-    <header class="page-head">
-      <h1 class="page-head__title">我的</h1>
-      <p class="page-head__sub">班主任的个人工作中心</p>
-    </header>
+  <div class="profile">
+    <!-- ====== 页面头（与昌都记忆 profile__header 同一层级） ====== -->
+    <div class="profile__header">
+      <div class="profile__header-titles">
+        <h1 class="profile__header-title">我的</h1>
+        <p class="profile__header-sub">班主任的个人工作中心</p>
+      </div>
+    </div>
 
-    <!-- ===== ① 个人信息（登录态驱动） ===== -->
-    <AppSection title="个人信息">
+    <!-- ====== 桌面两列 / 移动单列（grid-template-areas） ====== -->
+    <div class="profile__grid">
+      <!-- ① 个人身份 Hero（登录 / 未登录共用这一张深色卡） -->
       <ProfileHero
-        v-if="signedIn"
+        class="profile-hero-area"
+        :signed-in="signedIn"
         :profile="profile"
         :initial="userStore.initial"
         @edit="openProfileEditor"
         @pick-avatar="pickAvatar"
         @remove-avatar="removeAvatar"
+        @login="openLogin"
       >
         <template #avatar-input>
           <input
@@ -192,55 +207,20 @@ function checkUpdate(): void {
         </template>
       </ProfileHero>
 
-      <!-- 未登录：默认头像 + 尚未登录 + 登录按钮（编辑入口全部隐藏） -->
-      <div v-else class="guest-card">
-        <span class="guest-card__avatar" aria-hidden="true">
-          <UserRound :size="30" :stroke-width="1.8" />
-        </span>
-        <div class="guest-card__main">
-          <p class="guest-card__title">尚未登录</p>
-          <p class="guest-card__hint">登录后同步 TeacherDesk 数据</p>
-        </div>
-        <AppButton type="button" @click="openLogin">登录</AppButton>
-      </div>
-    </AppSection>
+      <!-- ② 工作时光（与首页 Hero 同一份数据） -->
+      <WorkTimeCard class="time-area" />
 
-    <!-- ===== ② 工作时光（与首页 Hero 同一份数据） ===== -->
-    <AppSection>
-      <WorkTimeCard />
-    </AppSection>
+      <!-- ③ 功能入口（每一项进独立页面，卡内一行） -->
+      <ProfileMenuCard
+        class="menu-area"
+        title="功能入口"
+        :items="menuItems"
+        @select="onMenuSelect"
+      />
 
-    <!-- ===== ③ 设置（每项一个入口，点进二级设置页） ===== -->
-    <AppSection title="设置">
-      <div class="settings-stack">
-        <SettingsSection title="设置">
-          <SettingsCell
-            v-for="entry in settingEntries"
-            :key="entry.key"
-            :icon="entry.icon"
-            :title="entry.title"
-            :subtitle="entry.subtitle"
-            @click="router.push(entry.to)"
-          />
-        </SettingsSection>
-
-        <!-- 数据与同步：唯一入口（云同步 / 导出 / 导入在那一页） -->
-        <SettingsSection title="数据与同步">
-          <SettingsCell
-            :icon="Cloud"
-            icon-tone="neutral"
-            title="数据与同步"
-            subtitle="云同步 · 导出数据 · 导入数据"
-            @click="router.push('/my/tools')"
-          />
-        </SettingsSection>
-      </div>
-    </AppSection>
-
-    <!-- ===== ④ 关于（页面底部） ===== -->
-    <AppSection title="关于" class="my-page__about">
-      <AboutCard @check-update="checkUpdate" />
-    </AppSection>
+      <!-- ④ 关于（页面最底部：当前版本 / GitHub / 检查更新） -->
+      <AboutCard class="about-area" @check-update="checkUpdate" />
+    </div>
 
     <!-- 编辑资料抽屉（登录后） -->
     <AppDrawer v-model="drawerOpen" title="编辑资料" :width="420">
@@ -267,42 +247,94 @@ function checkUpdate(): void {
 </template>
 
 <style scoped>
-.my-page {
+/* ================================================
+   我的 — 骨架对齐 Changdu-Memory Profile.vue
+   ================================================ */
+.profile {
   max-width: var(--page-max-width);
   margin: 0 auto;
 }
 
-/* ---- 页面头（与昌都记忆 profile__header 同一层级：32px + 分割线） ---- */
-.page-head {
+/* ---- 页面头 ---- */
+.profile__header {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: 0 4px var(--spacing-lg);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 4px 14px;
+  margin-bottom: var(--spacing-xl);
   border-bottom: var(--border-hairline-width) solid var(--color-border);
 }
 
-.page-head__title {
+.profile__header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile__header-title {
+  margin: 0;
   font-size: var(--font-page-title);
-  font-weight: var(--font-weight-bold);
-  line-height: var(--leading-tight);
+  font-weight: var(--font-weight-extrabold);
+  line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--color-text-primary);
 }
 
-.page-head__sub {
-  font-size: var(--font-content);
-  color: var(--color-text-secondary);
+.profile__header-sub {
+  margin: 0;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+}
+
+/* ==========================================
+   Layout grid
+   ========================================== */
+.profile__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-xl);
+  /* 移动端（默认）卡片顺序：Hero → 工作时光 → 功能入口 → 关于
+     用 grid-template-areas 而非 display:contents，兼容性更好（移动浏览器 / 内置 WebView 也生效） */
+  grid-template-areas:
+    'hero'
+    'time'
+    'menu'
+    'about';
+}
+
+.profile-hero-area {
+  grid-area: hero;
+}
+
+.time-area {
+  grid-area: time;
+}
+
+.menu-area {
+  grid-area: menu;
+}
+
+.about-area {
+  grid-area: about;
+}
+
+@media (min-width: 1024px) {
+  .profile__grid {
+    /* 左列（4fr）：Hero + 关于；右列（8fr）：工作时光 + 功能入口
+       hero 跨 1-2 行、menu 跨 2-3 行，让「关于」的底边与「功能入口」的底边对齐
+       （参考版是 'about features'，同一个手法） */
+    grid-template-columns: 4fr 8fr;
+    grid-template-areas:
+      'hero time'
+      'hero menu'
+      'about menu';
+    align-items: stretch;
+  }
 }
 
 .avatar-input {
   display: none;
-}
-
-/* ---- 设置栈：分组之间统一留白（昌都记忆 Settings 列表间距） ---- */
-.settings-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xl);
 }
 
 /* 编辑资料抽屉表单 */
@@ -310,51 +342,5 @@ function checkUpdate(): void {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-card);
-}
-
-/* ---- 未登录空状态卡 ---- */
-.guest-card {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-lg);
-  background: var(--color-bg-white);
-  border: var(--border-hairline-width) solid var(--color-border-light);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-}
-
-.guest-card__avatar {
-  width: 64px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--color-sky-light);
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.guest-card__main {
-  flex: 1;
-  min-width: 0;
-}
-
-.guest-card__title {
-  margin: 0;
-  font-size: var(--font-section-title);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-primary);
-}
-
-.guest-card__hint {
-  margin: 4px 0 0;
-  font-size: var(--font-secondary);
-  color: var(--color-text-tertiary);
-}
-
-.my-page__about {
-  margin-bottom: 0;
 }
 </style>

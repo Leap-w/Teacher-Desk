@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { AppField, AppInput, AppSwitch } from '@/components/ui'
-import { HERO_BACKGROUNDS } from '@/types/appSettings'
+import { AppField, AppInput, AppSelect, AppSwitch } from '@/components/ui'
+import { COUNTDOWN_TARGETS, HERO_BACKGROUNDS } from '@/types/appSettings'
+import type { CountdownTargetKey } from '@/types/appSettings'
 import { useAppSettingsStore } from '@/stores/appSettings'
 import SettingsPage from '../components/SettingsPage.vue'
 import SettingsSection from '../components/SettingsSection.vue'
 import SettingsField from '../components/SettingsField.vue'
 
 /**
- * 学期与倒计时（v3.0.4-rc · 二级页，新增整理而非新增功能）。
+ * 学期与倒计时（v3.0.4-rc · 二级页；v3.0.5-rc 补副标题与倒计时目标）。
  *
  * **统一管理首页 Hero 与「我的 → 工作时光」共用的那一套时间**——此前 Hero 的倒计时
  * 与工作时光各读一份设置，改一处另一处不动。现在这一页是这套时间的唯一入口：
  * - 支教开始日期 → 工作天数（首页「第 X 天」/ 工作时光「支教天数」）
  * - 学期开学日期 → 学期进度（首页进度条 / 工作时光进度条）
- * - 学期期末日期 → 学期倒计时（首页 Hero 倒计时卡）
- * - Hero 文案 / Hero 背景 / 进度开关 → 首页 Hero 外观
+ * - 学期期末日期 → 学期进度的终点（倒计时目标选它时也是倒计时的终点）
+ * - 倒计时目标   → 首页 Hero 倒数到哪一天（**只能从上面三个日期里选**）
+ * - Hero 标题 / Hero 副标题 / Hero 背景 / 进度开关 → 首页 Hero 外观
  *
  * 改动**即时生效、即时落盘**（`teacherdesk:settings`），刷新与重开都不丢；
  * 不做「恢复默认」——设置是教师自己填的事实，不给一个会覆盖它的按钮。
@@ -26,8 +28,12 @@ const settings = computed(() => appSettings.settings)
 
 const daysWorked = computed(() => appSettings.daysWorked)
 const termProgress = computed(() => appSettings.termProgress)
-const termDaysRemaining = computed(() => appSettings.termDaysRemaining)
-const termIsOver = computed(() => appSettings.termIsOver)
+
+/* ---- 倒计时目标（与首页 Hero 卡片的那个下拉同一个字段） ---- */
+const countdownOptions = COUNTDOWN_TARGETS
+const countdownMagnitude = computed(() => appSettings.countdownMagnitude)
+const countdownLabel = computed(() => appSettings.countdownLabel)
+const countdownIsPast = computed(() => appSettings.countdownIsPast)
 
 /** 学期起止倒置时如实提醒（不拦输入，也不悄悄改教师的日期） */
 const termRangeInvalid = computed(() => settings.value.semesterEnd < settings.value.semesterStart)
@@ -73,13 +79,26 @@ function update(patch: Parameters<typeof appSettings.update>[0]): void {
 
       <SettingsField
         label="学期期末日期"
-        hint="首页 Hero 倒计时的终点；期末之后 Hero 显示「学期已结束」。"
+        hint="学期进度的终点；倒计时目标选「期末日期」时，首页 Hero 也倒数到这一天。"
       >
         <template #control>
           <AppInput
             type="date"
             :model-value="settings.semesterEnd"
             @update:model-value="update({ semesterEnd: String($event) })"
+          />
+        </template>
+      </SettingsField>
+
+      <SettingsField
+        label="倒计时目标"
+        hint="首页 Hero 倒计时卡倒数到哪一天。只能从上面三个日期里选——不另填日期，避免多出一份口径。"
+      >
+        <template #control>
+          <AppSelect
+            :model-value="settings.countdownTarget"
+            :options="countdownOptions"
+            @update:model-value="update({ countdownTarget: $event as CountdownTargetKey })"
           />
         </template>
       </SettingsField>
@@ -100,20 +119,32 @@ function update(patch: Parameters<typeof appSettings.update>[0]): void {
           <span class="preview__label">学期进度</span>
         </div>
         <div class="preview__item">
-          <span class="preview__value">{{ termIsOver ? '已结束' : termDaysRemaining }}</span>
-          <span class="preview__label">距期末（天）</span>
+          <span class="preview__value">{{ countdownMagnitude }}</span>
+          <span class="preview__label">
+            {{ countdownIsPast ? '已过（天）' : '还剩（天）' }}· {{ countdownLabel }}
+          </span>
         </div>
       </div>
       <p class="preview__hint">改上面的日期，这里与首页 Hero、工作时光会同时更新。</p>
     </SettingsSection>
 
     <SettingsSection title="首页 Hero">
-      <SettingsField label="Hero 文案" hint="倒计时卡片上的标题，如「距离期末考试」。">
+      <SettingsField label="Hero 标题" hint="倒计时卡片上的标题，也是卡片上那个下拉按钮的文字。">
         <template #control>
           <AppInput
             :model-value="settings.heroTitle"
             placeholder="如 距离期末考试"
             @update:model-value="update({ heroTitle: String($event) })"
+          />
+        </template>
+      </SettingsField>
+
+      <SettingsField label="Hero 副标题" hint="问候与日期下面的一行小字。留空则首页不显示这一行。">
+        <template #control>
+          <AppInput
+            :model-value="settings.heroSubtitle"
+            placeholder="如 支教一年的高原记录 · 昌都"
+            @update:model-value="update({ heroSubtitle: String($event) })"
           />
         </template>
       </SettingsField>

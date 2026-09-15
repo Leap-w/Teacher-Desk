@@ -6,6 +6,52 @@
 
 ---
 
+## v3.0.5-rc —— 登录入口修复 · 「我的」同构昌都记忆 · 倒计时统一配置（2026-09-15，tag `v3.0.5-rc`）
+
+> UI 对齐与口径收敛，**不新增业务模块**；StudentStore / SeatPlan / Repository 基类 / SyncEngine /
+> 存储结构**零改动**。唯一 UI 基准 = 仓库内 `docs/昌都记忆/Changdu Memory` 源码。
+
+### 登录入口（P0）
+
+- **修掉「点登录毫无反应」**：登录弹窗的 `<form>` 缺 `id`，而提交按钮写的是 `form="login-form"`——
+  按钮与表单从未真正关联，点下去不触发 submit。补上 `id="login-form"`，并加**源码级守约测试**
+  （`src/__tests__/loginEntry.test.ts`：凡 `form="X"` 必须有 `id="X"`，防止再犯）。
+- 三个入口全部指向**全局唯一**的登录弹窗：顶栏头像、「我的」Hero 里的「登录」、数据与同步页。
+  未登录点头像 → 开弹窗（**不跳空页面**）；已登录点头像 → 菜单（编辑资料 / 数据与同步 / 退出登录）。
+  「我的」未登录时 Hero 底部按钮即「登录」，走同一个 `LoginModal`。
+
+### 「我的」按 Changdu-Memory 同构重写（P0）
+
+- 页面骨架 = `.profile` + `.profile__grid`，移动端单列 **Hero → 工作时光 → 功能入口 → 关于**，
+  ≥1024px 两列 `4fr 8fr`、网格区 `hero time / hero menu / about menu`（与参考源码逐字一致）。
+- ① `ProfileHero`：**登录与未登录共用同一张深色渐变卡**（此前未登录另有一张 guest-card）。
+  未登录 = 默认头像 + 「尚未登录」+「登录后同步 TeacherDesk 数据」+ 登录按钮；已登录 = 渐变环头像 +
+  昵称 + `班级 · 班主任` + 学校 / 任教学科简徽 + 已认证勾 + 编辑资料。
+- ② `WorkTimeCard`：`支教第 N 天` / `已经过 N 个月` / `剩余 N 天到期末` 三格 + 渐变进度条 +
+  开学 / 今天 / 期末日期行。**删掉 My 页原有的视图层学期常量**，改读 `AppSettingsStore`。
+- ③ `ProfileMenuCard`（新）：功能入口从多张卡改为**一张卡内入口行**，五项各进独立页面——
+  显示设置 / 教学设置 / 班级设置（`/my/settings/*`）、学期与倒计时（`/my/settings/term`）、
+  数据与同步（`/my/tools`）。④ `AboutCard` 保持在最底部（当前版本 / GitHub / 检查更新）。
+
+### 倒计时统一到一个配置中心（P0）
+
+- `AppSettingsStore` 新增 `heroSubtitle` 与 `countdownTarget`（∈ 支教开始 / 开学 / 期末），
+  派生 `countdownDays` / `countdownLabel` / `countdownMagnitude` / `countdownIsPast`。
+- 首页 Hero 的倒计时卡加**目标下拉**（向上展开、金色勾选当前项），与「学期与倒计时」设置页是
+  **同一个字段**——改哪边都立即生效并落盘 `teacherdesk:settings`，刷新与重开都不丢。
+- **天数跟目标走、进度条始终是学期进度**：首页 Hero、「我的 → 工作时光」、设置页预览三处读同一条
+  派生值，不再各算一份。倒计时目标**只能从已有日期里选**，不另填日期（避免多出一份口径）。
+
+### 数据与同步页去警告（P0）
+
+- 删除**永久显示的**「还没有导出过备份，数据只保存在这台设备上。」与顶部提醒条：
+  `views/Home/components/DashboardBackupNotice.vue` 删除，`utils/backup.ts` 的 `backupReminder()`
+  与 `BACKUP_REMINDER_DAYS` 删除，存储键 `teacherdesk:lastBackupAt` 不再读写（旧键留在盘上不清理）。
+- 页面仅保留：数据与同步 / 云同步（状态卡保留，冲突处置入口）/ 导出数据 / 导入数据；
+  导出提示改为按钮下面的一行小字「导出 JSON 可用于恢复数据。」。
+
+---
+
 ## v3.0.4-rc —— 全宽布局 · 设置二级页 · 统一时间数据源（2026-09-14，tag `v3.0.4-rc`）
 
 > 布局与设置结构整理，不新增业务模块；StudentStore / SeatPlan / Repository 基类 / SyncEngine **零改动**。

@@ -25,9 +25,6 @@ export const BACKUP_KIND = 'teacherdesk-backup'
 /** 备份文件结构版本；结构变更时 +1，parseBackup 拒绝高于本值的文件 */
 export const BACKUP_SCHEMA_VERSION = 1
 
-/** 上次导出时间（本机提示用）。它本身不是数据，是这台设备的提示状态，**不在备份范围内** */
-export const LAST_BACKUP_KEY = `${appConfig.storageKeyPrefix}:lastBackupAt`
-
 export interface BackupModule {
   /** localStorage 键名 */
   key: string
@@ -572,7 +569,7 @@ export function applyWrites(
 }
 
 /**
- * 清空全部数据：删掉本应用前缀下的所有键（含 lastBackupAt 与未来的新键）。
+ * 清空全部数据：删掉本应用前缀下的所有键（含未来的新键）。
  * 键名不能写死——用「列出全部键再筛前缀」的方式，才能连本模块不认识的数据一起清干净。
  * 清空后重载，各 store 因键不存在而重新播种，回到首次打开的状态。
  */
@@ -587,53 +584,18 @@ export function clearAllKeys(
   )
 }
 
-/* ---------- 备份提醒（稳定性增量，2026-09-11） ---------- */
-
-/** 距上次导出达到这个天数就在工作台提示（导出后自动消失） */
-export const BACKUP_REMINDER_DAYS = 14
-
-export type BackupReminder =
-  | { level: 'none' }
-  | { level: 'never'; text: string }
-  | { level: 'due'; days: number; text: string }
-
 /**
- * 两个时间相差几个**自然日**（各取本地年月日 → `Date.UTC` 天序号）。
- * 不拿毫秒数直接除：那样「昨天下午导出、今天早上打开」算出来是 0 天，
- * 夏令时切换那天还会差一小时；转成日历天序号后比较，跨月 / 跨年 / 跨时区都正确
- * （与请假时长 `halfDayKey` 同一手法，见开发手册 §9.11 的教训）。
- */
-function daysBetween(from: Date, to: Date): number {
-  const start = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())
-  const end = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate())
-  return Math.round((end - start) / 86_400_000)
-}
-
-/**
- * 备份提醒状态（纯函数，不读存储、不看时间以外的任何状态）：
- * - 从未导出（键不存在 / 值不是合法时间）→ `never`：一直提示，导出后自动消失；
- * - 距上次导出达到 BACKUP_REMINDER_DAYS → `due`：文案带上天数；
- * - 其余 → `none`：不打扰。
+ * **备份提醒已整体移除（v3.0.5-rc）**。
  *
- * **只提醒、不代劳**：不自动导出、不写任何键（稳定性增量拍板口径）。
- * 判定只看「上次导出时间」，不感知数据有没有改过——那需要给各 store 的写盘路径插桩，
- * 收益不抵风险（开发计划 §五 #7）。
+ * 原实现（v0.10.1 起）是工作台顶部一条常驻提示条：从未导出过就**一直**显示
+ * 「还没有导出过备份，数据只保存在这台设备上。」，距上次导出满 14 天转醒目态。
+ * 需求方 2026-09-15 拍板：这条顶部警告长期占位、影响观感，**不要顶部警告 Banner**。
+ *
+ * 连带的 `LAST_BACKUP_KEY`（`teacherdesk:lastBackupAt`）与 `backupReminder` 纯函数
+ * 一并删除——它们的唯一用途就是那条提示条与数据与同步页的「上次导出」副标题，
+ * 两处 UI 都不再需要，留着只是没人读的死键。
+ * 导出 / 导入本身的纪律（原子写盘、读取异常不写盘）不受影响，一字未动。
  */
-export function backupReminder(lastBackupAt: string, now: Date): BackupReminder {
-  const last = lastBackupAt ? new Date(lastBackupAt) : null
-  if (!last || Number.isNaN(last.getTime())) {
-    // 说清后果，不说「本机」「缓存」这类词：数据在哪、丢了会怎样，教师一眼要能读懂
-    return { level: 'never', text: '还没有导出过备份，数据只保存在这台设备上。' }
-  }
-  const days = daysBetween(last, now)
-  if (days < BACKUP_REMINDER_DAYS) return { level: 'none' }
-  // 醒目态也把后果写出来：只说「建议导出」等于只给了个数字，教师不知道不导出会怎样
-  return {
-    level: 'due',
-    days,
-    text: `距上次导出已 ${days} 天，数据仍只在这台设备上，建议导出备份。`,
-  }
-}
 
 /** 触发浏览器下载（与 utils/seatExport.ts 的 downloadPng 同一手法；用 Blob 而非 dataURL，避免大文件撑爆地址栏） */
 export function downloadJson(text: string, filename: string): void {

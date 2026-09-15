@@ -1,23 +1,28 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { PencilLine, User, X } from 'lucide-vue-next'
+import { LogIn, PencilLine, User, X } from 'lucide-vue-next'
 
 import type { UserProfile } from '@/types/user'
 
 /**
- * ProfileHero — 个人身份 Hero（v3.0.3-rc · 对齐 Changdu-Memory `Profile.vue` 的 profile-hero）。
+ * ProfileHero — 个人身份 Hero（v3.0.4-rc 起；**v3.0.5-rc 合并登录 / 未登录两种状态**）。
  *
- * **DOM 与视觉层级与昌都记忆「我的档案」首卡一一对应**：
+ * **DOM 与视觉层级与昌都记忆「我的档案」首卡一一对应**（`Profile.vue` 的 `.profile-hero`）：
  * `div.profile-hero`（夜空渐变卡）→ 雪山线稿纹理 SVG → `div.profile-hero__content`
- * → `div.profile-hero__profile`（渐变环头像 + 姓名 + 身份行 + 签名行）
- * → `div.profile-hero__attrs`（两项属性简徽：学校 / 学科）。
- * 只替换内容来源：姓名 = 昵称，身份行 = 班级 · 班主任，属性 = 学校 / 任教学科。
+ * → `div.profile-hero__top`（留白占位）→ `div.profile-hero__profile`（渐变环头像 + 姓名 + 身份行）
+ * → `div.profile-hero__attrs`（两项属性简徽）。
  *
- * 头像上传 / 删除逻辑仍经事件上抛（与既有版本一致，不碰 Store 与数据结构）；
- * 未登录时本组件不会被渲染（由页面换成登录空状态卡）。
+ * **两种登录状态共用这一张卡**（这是 v3.0.5-rc 的改动）：此前未登录时页面会换成一张白色
+ * 的 `.guest-card`，两张卡长得完全不一样，「我的」页第一眼就不像昌都记忆。现在只是
+ * **卡里的内容换一套**——默认头像 / 尚未登录 / 登录按钮，卡片本身仍是那张深色渐变卡。
+ *
+ * 头像上传 / 删除逻辑仍经事件上抛（不碰 Store 与数据结构）。
  */
 const props = defineProps<{
+  /** 已登录（决定卡里放资料还是放登录按钮） */
+  signedIn: boolean
   profile: UserProfile
+  /** 昵称首字，用于无头像时的字母兜底 */
   initial: string
 }>()
 
@@ -25,6 +30,7 @@ const emit = defineEmits<{
   edit: []
   'pick-avatar': []
   'remove-avatar': []
+  login: []
 }>()
 
 const entered = ref(false)
@@ -63,22 +69,31 @@ const verified = computed(
     </svg>
 
     <div class="profile-hero__content">
+      <!-- 顶部状态标签区（照参考版留白占位，让头像不贴卡片顶边） -->
+      <div class="profile-hero__top" />
+
       <div class="profile-hero__profile">
         <div class="profile-hero__avatar-wrap">
           <button
+            v-if="signedIn"
             type="button"
             class="profile-hero__avatar-ring"
-            :aria-label="props.profile.avatar ? '更换头像' : '上传头像'"
+            :aria-label="profile.avatar ? '更换头像' : '上传头像'"
             @click="emit('pick-avatar')"
           >
-            <img v-if="props.profile.avatar" :src="props.profile.avatar" alt="我的头像" />
-            <span v-else-if="props.initial" class="avatar-fallback" aria-hidden="true">{{
-              props.initial
+            <img v-if="profile.avatar" :src="profile.avatar" alt="我的头像" />
+            <span v-else-if="initial" class="avatar-fallback" aria-hidden="true">{{
+              initial
             }}</span>
             <User v-else class="avatar-guest" :size="34" :stroke-width="1.8" aria-hidden="true" />
           </button>
+          <!-- 未登录：默认头像（不可点，没有可上传的资料） -->
+          <span v-else class="profile-hero__avatar-ring is-static">
+            <User class="avatar-guest" :size="34" :stroke-width="1.8" aria-hidden="true" />
+          </span>
+
           <button
-            v-if="props.profile.avatar"
+            v-if="signedIn && profile.avatar"
             type="button"
             class="profile-hero__avatar-remove"
             aria-label="删除头像"
@@ -86,7 +101,7 @@ const verified = computed(
           >
             <X :size="12" :stroke-width="2" aria-hidden="true" />
           </button>
-          <span v-if="verified" class="profile-hero__verified" aria-hidden="true">
+          <span v-if="signedIn && verified" class="profile-hero__verified" aria-hidden="true">
             <svg
               width="14"
               height="14"
@@ -104,13 +119,13 @@ const verified = computed(
         </div>
 
         <div class="profile-hero__name-wrap">
-          <h2 class="profile-hero__name">{{ displayName }}</h2>
-          <p class="profile-hero__sub">{{ roleLine }}</p>
+          <h2 class="profile-hero__name">{{ signedIn ? displayName : '尚未登录' }}</h2>
+          <p class="profile-hero__sub">{{ signedIn ? roleLine : '登录后同步 TeacherDesk 数据' }}</p>
         </div>
       </div>
 
-      <!-- 个人属性简徽 -->
-      <div class="profile-hero__attrs">
+      <!-- 个人属性简徽（未登录时不渲染：没有资料可显示，不摆两个「待设置」） -->
+      <div v-if="signedIn" class="profile-hero__attrs">
         <div class="profile-hero__attr">
           <span class="profile-hero__attr-label">学校</span>
           <span class="profile-hero__attr-value">{{ school }}</span>
@@ -121,9 +136,13 @@ const verified = computed(
         </div>
       </div>
 
-      <button type="button" class="profile-hero__edit" @click="emit('edit')">
+      <button v-if="signedIn" type="button" class="profile-hero__edit" @click="emit('edit')">
         <PencilLine :size="14" :stroke-width="2" aria-hidden="true" />
         编辑资料
+      </button>
+      <button v-else type="button" class="profile-hero__edit" @click="emit('login')">
+        <LogIn :size="14" :stroke-width="2" aria-hidden="true" />
+        登录
       </button>
     </div>
   </section>
@@ -178,6 +197,14 @@ const verified = computed(
   }
 }
 
+/* ---- 顶部状态标签区（照参考版留白占位） ---- */
+.profile-hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* ---- 头像与姓名信息 ---- */
 .profile-hero__profile {
   display: flex;
@@ -205,8 +232,13 @@ const verified = computed(
   transition: transform var(--duration-base) var(--ease-out);
 }
 
+/* 未登录：同一个环，只是不可点（不是按钮，避免读屏把它当操作） */
+.profile-hero__avatar-ring.is-static {
+  cursor: default;
+}
+
 @media (hover: hover) {
-  .profile-hero__avatar-ring:hover {
+  .profile-hero__avatar-ring:not(.is-static):hover {
     transform: scale(1.04);
   }
 }
@@ -332,7 +364,7 @@ const verified = computed(
   white-space: nowrap;
 }
 
-/* ---- 编辑资料 ---- */
+/* ---- 底部按钮：已登录 = 编辑资料；未登录 = 登录（同一个样式，同一行位置） ---- */
 .profile-hero__edit {
   align-self: center;
   display: inline-flex;

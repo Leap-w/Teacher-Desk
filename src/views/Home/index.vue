@@ -22,7 +22,6 @@ import { useTimetableStore } from '@/stores/timetable'
 import { useUserStore } from '@/stores/user'
 import { useWeekendStore } from '@/stores/weekend'
 import { isLeaveToday } from '@/utils/leave'
-import DashboardBackupNotice from './components/DashboardBackupNotice.vue'
 import TodayScheduleCard from './components/TodayScheduleCard.vue'
 import SyncHintBar from './components/SyncHintBar.vue'
 import ClassroomEntryCard from '@/views/Toolbox/components/ClassroomEntryCard.vue'
@@ -152,7 +151,8 @@ const quickActions: QuickAction[] = [
 
 <template>
   <div class="home-page">
-    <DashboardBackupNotice />
+    <!-- 顶部不再有任何常驻提示条（v3.0.5-rc）：原「还没有导出过备份…」提醒条已整体移除，
+         页面第一眼就是 Hero。导出提示只在「我的 → 数据与同步 → 导出数据」那一行小字里 -->
 
     <!-- ===== Layer 1：Hero（大背景图 + 工作时光） ===== -->
     <DashboardHero :greeting="greeting" :date-line="dateLine" :badges="heroBadges" />

@@ -12,8 +12,8 @@
  * 备份覆盖的是教师录入的业务数据，不是这台设备的外观与学期口径。
  */
 import { appConfig } from '@/config'
-import { HERO_BACKGROUNDS } from '@/types/appSettings'
-import type { AppSettings } from '@/types/appSettings'
+import { COUNTDOWN_TARGETS, HERO_BACKGROUNDS } from '@/types/appSettings'
+import type { AppSettings, CountdownTargetKey } from '@/types/appSettings'
 
 import { localStorageAdapter } from '../adapters/LocalStorageAdapter'
 import { createCollectionRepository } from '../base/createCollectionRepository'
@@ -29,9 +29,12 @@ const LEGACY_COUNTDOWN_KEY = `${appConfig.storageKeyPrefix}:countdown`
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   heroBackground: HERO_BACKGROUNDS[0]!.url,
   heroTitle: '距离期末考试',
+  // 空 = Hero 上不显示副标题这一行（默认不替教师写「支教一年的高原记录」这种话）
+  heroSubtitle: '',
   semesterStart: '2026-09-01',
   semesterEnd: '2027-01-24',
   serviceStart: '2026-09-01',
+  countdownTarget: 'semesterEnd',
   defaultHomeView: '/',
   showProgress: true,
 }
@@ -48,6 +51,21 @@ function textOf(value: unknown, fallback: string): string {
 }
 
 /**
+ * 副标题：**空字符串是合法值**（= 不显示这一行），不能用 `textOf`——那样空值会被
+ * 顶回默认值，教师清空副标题后再刷新又冒出来。
+ */
+function optionalTextOf(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value.trim() : fallback
+}
+
+/** 倒计时目标：只认选项里的三个值，认不出回默认（不许盘上出现第四个日期键） */
+function targetOf(value: unknown, fallback: CountdownTargetKey): CountdownTargetKey {
+  return COUNTDOWN_TARGETS.some((item) => item.value === value)
+    ? (value as CountdownTargetKey)
+    : fallback
+}
+
+/**
  * 单份设置的健壮化（load / 跨标签页同步共用）：
  * 字段认不出回默认值，**绝不写盘**（只影响内存展示）。
  */
@@ -56,9 +74,11 @@ function normalizeSettings(raw: unknown): AppSettings {
   return {
     heroBackground: textOf(source.heroBackground, DEFAULT_APP_SETTINGS.heroBackground),
     heroTitle: textOf(source.heroTitle, DEFAULT_APP_SETTINGS.heroTitle),
+    heroSubtitle: optionalTextOf(source.heroSubtitle, DEFAULT_APP_SETTINGS.heroSubtitle),
     semesterStart: dateOf(source.semesterStart, DEFAULT_APP_SETTINGS.semesterStart),
     semesterEnd: dateOf(source.semesterEnd, DEFAULT_APP_SETTINGS.semesterEnd),
     serviceStart: dateOf(source.serviceStart, DEFAULT_APP_SETTINGS.serviceStart),
+    countdownTarget: targetOf(source.countdownTarget, DEFAULT_APP_SETTINGS.countdownTarget),
     defaultHomeView: textOf(source.defaultHomeView, DEFAULT_APP_SETTINGS.defaultHomeView),
     showProgress:
       typeof source.showProgress === 'boolean'

@@ -6,6 +6,7 @@ import {
   appSettingsRepository,
   DEFAULT_APP_SETTINGS,
 } from '@/repositories/settings/appSettingsRepository'
+import { COUNTDOWN_TARGETS } from '@/types/appSettings'
 import type { AppSettings } from '@/types/appSettings'
 
 export { DEFAULT_APP_SETTINGS } from '@/repositories/settings/appSettingsRepository'
@@ -82,6 +83,59 @@ export const useAppSettingsStore = defineStore('appSettings', () => {
   /** 学期是否已结束（Hero 倒计时卡据此换文案） */
   const termIsOver = computed(() => termDaysRemaining.value <= 0)
 
+  /* ---------- 倒计时目标（v3.0.5-rc：Hero 卡片倒数到哪一天） ---------- */
+
+  /**
+   * 选中的倒计时目标选项（盘上的值认不出时回第一项，与仓储的兜底同一口径）。
+   * `value` 与日期字段同名，故取日期直接 `settings[value]`。
+   */
+  const countdownTarget = computed(
+    () =>
+      COUNTDOWN_TARGETS.find((item) => item.value === settings.value.countdownTarget) ??
+      COUNTDOWN_TARGETS[0]!,
+  )
+
+  /** 目标日期（`YYYY-MM-DD`） */
+  const countdownDate = computed<string>(() => settings.value[settings.value.countdownTarget])
+
+  /**
+   * 距目标的天数：**正数 = 还剩几天，0 = 就是今天，负数 = 已经过了几天**。
+   *
+   * 用**有符号**而不是像学期倒计时那样收敛到 0：目标可能落在过去（选了「支教开始日期」
+   * 而它早已过去），把负数压成 0 只会显示成「还剩 0 天」，教师看不出是没开始还是早过了。
+   * 卡片上展示 `Math.abs()`，方向由 `countdownLabel` / `countdownIsPast` 说清楚。
+   */
+  const countdownDays = computed(() => {
+    const target = dateKeyOf(countdownDate.value)
+    if (target === null) return 0
+    return Math.ceil((target - dayKeyOf(now.value)) / DAY_MS)
+  })
+
+  /** 目标日已经过去（卡片角标据此换「已过」口径） */
+  const countdownIsPast = computed(() => countdownDays.value < 0)
+
+  /** 卡片上展示的天数（绝对值——方向由文案说，不由负号说） */
+  const countdownMagnitude = computed(() => Math.abs(countdownDays.value))
+
+  /**
+   * 卡片右上角的角标，如「期末 2027-01-24」/「出发 已过 12 天」。
+   * 日期照原样给出（教师自己填的，看得懂），已过则把话说全。
+   */
+  const countdownLabel = computed(() => {
+    const { short } = countdownTarget.value
+    if (countdownIsPast.value) return `${short} 已过 ${countdownMagnitude.value} 天`
+    return `${short} ${countdownDate.value}`
+  })
+
+  /**
+   * 进度条：**始终是学期进度（开学 → 期末）**，不跟着倒计时目标走。
+   *
+   * 「我的 → 工作时光」那张卡片的进度条读的也是这个值，两处必须同口径；
+   * 而倒计时目标可以指向「支教开始」这种学期之外的日期，用它当分母会算出
+   * 一根永远满格（或永远 0）的假进度条。天数看目标、进度看学期，各说各的事实。
+   */
+  const countdownProgress = computed(() => termProgress.value)
+
   /**
    * 更新设置（整对象替换 = 一次写盘 + 一次广播）。
    * 传进来的字段经仓储的 normalize 兜一遍：非法日期不会写进盘。
@@ -98,5 +152,12 @@ export const useAppSettingsStore = defineStore('appSettings', () => {
     termProgress,
     termDaysRemaining,
     termIsOver,
+    countdownTarget,
+    countdownDate,
+    countdownDays,
+    countdownIsPast,
+    countdownMagnitude,
+    countdownLabel,
+    countdownProgress,
   }
 })
