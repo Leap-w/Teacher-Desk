@@ -104,6 +104,10 @@ export function normalizeStudent(raw: Student): Student {
   const normalized: Student & { boarding?: unknown } = {
     ...raw,
     familyAddress: typeof raw.familyAddress === 'string' ? raw.familyAddress : '',
+    // 身份证尾号（v3.3.1）：去首尾空白 + 截到 4 位，**空值一律删除键**。
+    // 留一个 `''` 会让「重名但没填尾号」与「填了个空」在展示层分不开，
+    // 而这两者的界面结果相同（都只显示姓名）——那就干脆只留一种状态。
+    // 不做数字校验：身份证尾号可能是 X，写死数字会把合法值挡在门外（见 Student 类型上的说明）
     familyLocation,
     // 姓名缺失（外部篡改 / 手改缓存）时给空串，理由同学号：座位图与值日卡片在渲染路径上
     // 直接调用 `name.charAt(0)`，undefined 会抛错把整页打断。**不丢弃这条记录**——
@@ -122,6 +126,9 @@ export function normalizeStudent(raw: Student): Student {
   // 旧值同样会被清掉；一次性标记只在升级那一刻生效，之后旧值会重新冒出来且永不再清。
   // 性别不可识别时放宽到全部 8 间：gender 自己有问题，不该连坐宿舍
   if (!isValidDormitory(normalized.dormitory, normalized.gender)) delete normalized.dormitory
+  const suffix = typeof normalized.idCardSuffix === 'string' ? normalized.idCardSuffix.trim() : ''
+  if (suffix) normalized.idCardSuffix = suffix.slice(0, 4)
+  else delete normalized.idCardSuffix
   return normalized
 }
 
@@ -130,36 +137,34 @@ export function familyScopeLabel(location: FamilyLocation | undefined): string |
   return location ? FAMILY_SCOPE_LABELS[location.scope] : undefined
 }
 
-/**
- * 学生展示名：姓名（学号后四位｜座位号）。
- * 同名学生可凭学号后四位与座位号区分，如「旦增卓玛（0101｜1 号）」。
- *
- * **Phase 5A 起只用于座位图与请假模块**（座位格提示 / 换座与删除 toast / 请假抽屉的学生下拉）——
- * 那些场景里座位是当场有效的。**学生档案模块一律走 `formatStudentShortName()`**：
- * 档案从 Phase 5A 起不再维护 `seatNumber`，在档案里摆一个只读不写的座位号，
- * 教师会以为它还在起作用。两个函数刻意都留着，见 §2.3。
- */
-export function formatStudentDisplayName(student: Student): string {
-  const parts: string[] = []
-  const lastFour = student.studentNo.slice(-4)
-  if (lastFour) parts.push(lastFour)
-  if (student.seatNumber !== undefined) parts.push(`${student.seatNumber} 号`)
-  if (parts.length === 0) return student.name
-  return `${student.name}（${parts.join('｜')}）`
+/** 身份证尾号（去空白后的；未填 / 空串 → undefined） */
+export function idCardSuffixOf(student: Pick<Student, 'idCardSuffix'>): string | undefined {
+  const suffix = student.idCardSuffix?.trim()
+  return suffix || undefined
 }
 
 /**
- * 学生短名：姓名（学号后四位），如「旦增卓玛（0101）」。
- * 学号后四位缺失时仅姓名（Phase 5A 起学号可为空，这条路径不再是异常）。
+ * 学生展示名（**全站唯一的一份姓名显示规则**，v3.3.1 重写）。
  *
- * 两处用途，共用同一份重名消歧规则（§2.3「重名靠学号后四位区分」）：
- * ① 换座 / 日志 / 快照——座位号在那里即刻失真，本就不能带（原始理由）；
- * ② 学生档案模块——座位号已退出该模块的界面（Phase 5A）。
- * **不再新写第三个格式化函数**：规则多一份就多一处会漂移的地方（§11.1）。
+ *     不重名                  →  张三
+ *     重名且填了身份证尾号    →  张三（4321）
+ *     重名但没填身份证尾号    →  张三
+ *
+ * `nameCounts` 走 `buildNameCounts(students)`——**它决定「是否重名」**，因此是必填参数：
+ * 让「谁算重名」只有一个判断依据，也逼着每个渲染点明确回答「我看的是哪份名册」
+ * （档案页是全部在读学生、座位图是当前方案里的学生，两者未必相同）。
+ *
+ * v3.3.1 之前这里叫 `formatStudentShortName`，规则是「一律拼上学号后四位」。
+ * 换掉的理由有两条：一是学号自 Phase 5A 起是选填列，真实班级里大面积空缺，
+ * 拼出来是「旦增卓玛（）」或者干脆什么都没拼上；二是**不重名的学生根本不需要消歧**，
+ * 给六十多张卡片里的每一张都挂一个括号，读起来全是噪音（§2.3 重名消歧）。
  */
-export function formatStudentShortName(student: Pick<Student, 'name' | 'studentNo'>): string {
-  const lastFour = student.studentNo.slice(-4)
-  return lastFour ? `${student.name}（${lastFour}）` : student.name
+export function formatStudentShortName(
+  student: Pick<Student, 'name' | 'idCardSuffix'>,
+  nameCounts: ReadonlyMap<string, number>,
+): string {
+  const suffix = disambiguatorOf(student, nameCounts)
+  return suffix ? `${student.name}（${suffix}）` : student.name
 }
 
 /** 带学生姓名快照的记录（请假记录、周末返家记录等，见下方 refreshStudentNames 的说明） */
@@ -184,11 +189,15 @@ export function refreshStudentNames<T extends StudentNamedRecord>(
   students: Student[],
 ): T[] {
   const byId = new Map(students.map((item) => [item.id, item]))
+  // 名册就在这里，重名判断不必再让每个调用方各算一遍（v3.3.1：消歧规则要 counts）。
+  // **软删除的学生不参与计数**——与 store 的 `nameCounts` 口径一致（StudentStore 说明），
+  // 否则删掉一个同名学生后，剩下那个的记录还会一直挂着括号。
+  const nameCounts = buildNameCounts(students.filter((item) => !item.deletedAt))
   let changed = false
   const next: T[] = []
   for (const record of records) {
     const student = byId.get(record.studentId)
-    const name = student ? formatStudentShortName(student) : record.studentName
+    const name = student ? formatStudentShortName(student, nameCounts) : record.studentName
     if (!name) {
       changed = true
       continue
@@ -220,8 +229,11 @@ export function seatAccentOf(student: Student): SeatAccent | undefined {
 
 /* ---------- 重名消歧（Student Hub 与课堂工具共用，Phase Classroom-1 上收） ---------- */
 
-/** 姓名 → 同名人数（含软删除记录吗？调用方传什么就数什么：档案页传全体，课堂工具传在读） */
-export function buildNameCounts(students: Student[]): Map<string, number> {
+/**
+ * 姓名 → 同名人数（含软删除记录吗？调用方传什么就数什么：档案页传在读、日志快照传全体）。
+ * 参数放宽到 `{ name }` 是为了让只拿得到姓名的地方（如座位图里的 `Student` 投影）也能直接用。
+ */
+export function buildNameCounts(students: readonly { name: string }[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const student of students) {
     counts.set(student.name, (counts.get(student.name) ?? 0) + 1)
@@ -229,7 +241,13 @@ export function buildNameCounts(students: Student[]): Map<string, number> {
   return counts
 }
 
-/** 学生 id → 值日组名（同一学生在多个组时取**第一个**，与档案页展示口径一致） */
+/**
+ * 学生 id → 值日组名（同一学生在多个组时取**第一个**，与档案页展示口径一致）。
+ *
+ * v3.3.1 起**只用于展示「这名学生在哪个值日组」**（档案卡的辅助信息行），
+ * 不再参与重名消歧——「第 3 组」是值日轮换的临时产物，拿它当身份后缀，
+ * 下个月学生换组了，卡片上的名字就跟着变了（见 `disambiguatorOf`）。
+ */
 export function buildDutyGroupNameById(
   groups: { name: string; studentIds: string[] }[],
 ): Map<string, string> {
@@ -243,15 +261,18 @@ export function buildDutyGroupNameById(
 }
 
 /**
- * 重名消歧后缀：值日组优先（「旦增卓玛（第3组）」），无组回落学号后四位。
- * **只有重名时才返回**（`nameCounts` 里该姓名 > 1）；单名一律 undefined。
- * 唯一实现：学生档案卡片 / 详情头 / 课堂工具随机点名都调这一份（§11.1）。
+ * 重名消歧后缀：**只有重名时才返回**（`nameCounts` 里该姓名 > 1），且只取身份证尾号。
+ * 单名、或重名但没填尾号 → undefined（界面就只显示姓名）。
+ *
+ * v3.3.1 收敛：此前这里「值日组优先、回落学号后四位」，于是同一个学生在档案页显示
+ * 「旦增卓玛（第3组）」、在座位图上显示「旦增卓玛（0101）」——**两处对不上**，
+ * 而且「第 3 组」是值日轮换的临时产物，下个月就不是了。现在只剩一个来源：
+ * 教师自己填的身份证尾号（§11.1 唯一实现）。
  */
 export function disambiguatorOf(
-  student: Student,
-  nameCounts: Map<string, number>,
-  dutyGroupNameById: Map<string, string>,
+  student: Pick<Student, 'name' | 'idCardSuffix'>,
+  nameCounts: ReadonlyMap<string, number>,
 ): string | undefined {
   if ((nameCounts.get(student.name) ?? 1) <= 1) return undefined
-  return (dutyGroupNameById.get(student.id) ?? student.studentNo.slice(-4)) || undefined
+  return idCardSuffixOf(student)
 }

@@ -240,6 +240,40 @@ describe('合并分流：学号命中更新、没命中新增，被拦的一律�
     expect(result.updated).toBe(0)
   })
 
+  it('身份证尾号列：认得出，且随新增 / 更新两条路径落库（v3.3.1）', () => {
+    const header = [...HEADER, '身份证尾号']
+    const parsed = parseStudentRows([
+      header,
+      ['甲', '女', '0101', '', '', '', '', '', '昌都市区', '3287'],
+    ])
+    if (!parsed.ok) throw new Error(`预期解析成功，实际失败：${parsed.error}`)
+    expect(parsed.rows[0]!.idCardSuffix).toBe('3287')
+    expect(parsed.columns).toContain('身份证尾号')
+
+    // 新增：带进 StudentInput
+    const added = planStudentImport(parsed.rows, [])
+    expect(added.plan.adds[0]!.idCardSuffix).toBe('3287')
+
+    // 更新：同样带上（学号命中）
+    const updated = planStudentImport(parsed.rows, [makeStudent('s1', '甲', '0101')])
+    expect(updated.plan.updates[0]!.patch.idCardSuffix).toBe('3287')
+  })
+
+  it('身份证尾号超过 4 位时截断（Excel 里写成一整串也不会被整段存下）', () => {
+    const parsed = parseStudentRows([
+      [...HEADER, '身份证尾号'],
+      ['甲', '女', '0101', '', '', '', '', '', '昌都市区', '110101199001013287'],
+    ])
+    if (!parsed.ok) throw new Error(`预期解析成功，实际失败：${parsed.error}`)
+    expect(parsed.rows[0]!.idCardSuffix).toBe('1101')
+  })
+
+  it('空格子不覆盖既有尾号（与其它字段同一口径）', () => {
+    const existing = [makeStudent('s1', '甲', '0101', { idCardSuffix: '3287' })]
+    const result = planStudentImport(parseOk(sheet(['甲', '女', '0101'])).rows, existing)
+    expect(result.plan.updates[0]!.patch.idCardSuffix).toBeUndefined()
+  })
+
   it('更新只带这一行确实填了的字段，空格子不覆盖既有值', () => {
     const existing = [
       makeStudent('s1', '甲', '0101', {

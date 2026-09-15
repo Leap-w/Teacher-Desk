@@ -201,7 +201,7 @@ export const useWeekendStore = defineStore('weekend', () => {
       added.push({
         id: createId(),
         studentId: student.id,
-        studentName: formatStudentShortName(student),
+        studentName: formatStudentShortName(student, studentStore.nameCounts),
         weekendDate: weekendKey,
         createdAt,
       })

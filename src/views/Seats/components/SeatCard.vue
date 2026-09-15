@@ -69,6 +69,12 @@ withDefaults(
   座位仍按老尺寸渲染，不会塌成 0 宽。
   `min-width` 是地板：窄窗口下排不下了就让 `.room-scroll` 横向滚动，
   而不是把姓名挤成一列点。
+
+  v3.3.1：**整体缩一号**（宽 140→126、高 100→90，约 −10%），省下的横向空间
+  交给两条过道（12→24px），三组三人因此一眼分得开；座位本身从「大卡片」
+  回到「格子」的比例。`max-width` 必须与 SeatClassroom 里 `.col-no` 的那个值
+  保持一致——列号行与座位行是两条独立的 flex 行，只有约束相同才会逐列对齐。
+  `max-width` 只在宽屏生效（窄窗口下座位本来就排不满，拿不到 126px）。
 */
 .seat {
   position: relative;
@@ -76,13 +82,13 @@ withDefaults(
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   flex: 1 1 0;
   min-width: 48px;
-  max-width: 140px;
-  width: clamp(56px, 5.6vw, 64px);
-  height: clamp(76px, 6.6vw, 100px);
-  padding: 8px 6px;
+  max-width: 126px;
+  width: clamp(52px, 5vw, 58px);
+  height: clamp(68px, 6vw, 90px);
+  padding: 6px 5px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -176,25 +182,31 @@ withDefaults(
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   font-weight: var(--font-weight-semibold);
 }
 
-/* v3.3.0：座位宽了，姓名跟着升一档（12 → 13px）——「姓名与学号更清晰」 */
+/*
+  v3.3.0：座位宽了，姓名跟着升一档（12 → 13px）——「姓名与学号更清晰」。
+  v3.3.1：**姓名必须完整显示**——重名学生带尾号后（「旦增卓玛（3287）」）一行放不下，
+  所以去掉省略号，改成最多折两行（超长姓名仍由 overflow: hidden 兜底，不会顶出卡片）。
+  省略号在座位图上是「这学生叫什么？」的坑：教师看到的是一串「旦增卓…」，
+  而重名区分恰恰要靠括号里那几个字。
+*/
 .seat-name {
-  width: 100%;
+  max-width: 100%;
   font-size: var(--text-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text);
-  line-height: 1.3;
+  line-height: 1.15;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .seat-no {

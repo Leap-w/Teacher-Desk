@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { seatAccentOf } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName, seatAccentOf } from '@/utils/student'
 import { seatOrdinal } from '@/utils/seat'
 import {
   doorSidesOf,
@@ -45,6 +45,19 @@ const seatsById = computed(() => new Map(props.seats.map((seat) => [seat.id, sea
 
 function occupantOf(seat: Seat): Student | undefined {
   return seat.studentId ? props.students.get(seat.studentId) : undefined
+}
+
+/**
+ * 重名消歧计数（v3.3.1）：与页面 SeatClassroom 同一份口径——名册就是本方案里的学生。
+ * 导出图上的姓名必须和屏幕上看到的一模一样，否则教师打印出来对照着念，
+ * 会发现纸上少了一截（「旦增卓玛」有两个，纸上分不出是哪个）。
+ */
+const nameCounts = computed(() => buildNameCounts([...props.students.values()]))
+
+/** 座位格上显示的姓名：不重名只有姓名，重名带身份证尾号 */
+function occupantName(seat: Seat): string {
+  const student = occupantOf(seat)
+  return student ? formatStudentShortName(student, nameCounts.value) : ''
 }
 
 type ExportItem = RoomItem
@@ -103,17 +116,22 @@ function rowUnits(row: number): RowUnit[] {
     <div class="ex-room">
       <span class="ex-windows" :class="`is-${windowsSide}`" aria-hidden="true"><em>窗</em></span>
       <template v-for="item in items" :key="item.key">
-        <div v-if="item.kind === 'podium'" class="ex-podium">讲台</div>
+        <!-- 讲台 + 前门同一行（v3.3.1，与页面同款口径） -->
         <div
-          v-else-if="item.kind === 'door-front'"
-          class="ex-door is-front"
+          v-if="item.kind === 'front-line'"
+          class="ex-front-line"
           :class="`is-${doorSides.front}`"
-        ></div>
+        >
+          <span class="ex-door">前门</span>
+          <div class="ex-podium">讲台</div>
+        </div>
         <div
           v-else-if="item.kind === 'door-back'"
-          class="ex-door is-back"
+          class="ex-back-line"
           :class="`is-${doorSides.back}`"
-        ></div>
+        >
+          <span class="ex-door">后门</span>
+        </div>
         <!-- 顶部列号行（v3.2.0）：与座位行逐列对齐，左侧空出与行号同宽的位置 -->
         <div v-else-if="item.kind === 'cols'" class="ex-row is-cols">
           <span class="ex-row-label"></span>
@@ -132,7 +150,7 @@ function rowUnits(row: number): RowUnit[] {
               <template v-for="seat in unit.seats" :key="seat.id">
                 <div v-if="occupantOf(seat)" class="ex-seat" :class="exSeatClass(seat)">
                   <i class="ex-avatar" aria-hidden="true">{{ occupantOf(seat)?.name.charAt(0) }}</i>
-                  <span class="ex-name">{{ occupantOf(seat)?.name }}</span>
+                  <span class="ex-name">{{ occupantName(seat) }}</span>
                 </div>
                 <div v-else class="ex-seat is-empty">
                   <span class="ex-plus" aria-hidden="true">＋</span>
@@ -264,6 +282,34 @@ function rowUnits(row: number): RowUnit[] {
   color: var(--color-text-secondary);
 }
 
+/*
+  讲台 + 前门（v3.3.1）：同一水平线——前门贴墙、讲台居中。
+  与页面同款修正：前门不再单独占一行骑在第 1 排的分界线上。
+*/
+.ex-front-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+}
+
+.ex-front-line .ex-door {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ex-front-line.is-left .ex-door {
+  left: 2px;
+  border-left-width: 3px;
+}
+
+.ex-front-line.is-right .ex-door {
+  right: 2px;
+  border-right-width: 3px;
+}
+
 .ex-podium {
   display: grid;
   place-items: center;
@@ -278,16 +324,31 @@ function rowUnits(row: number): RowUnit[] {
   color: var(--color-primary-strong);
 }
 
-.ex-door {
+/* 后门：零高单元，标签骑在教室顶部那条分界线上（左上 / 右上） */
+.ex-back-line {
   position: relative;
-  height: 22px;
+  height: 0;
 }
 
-/* 门签：矩形标签 + 描边 + 贴墙侧加粗门轴（2026-09-15 加强，与页面同款） */
-.ex-door::after {
-  content: '';
+.ex-back-line .ex-door {
   position: absolute;
-  top: 1px;
+  top: 0;
+  transform: translateY(-50%);
+}
+
+.ex-back-line.is-left .ex-door {
+  left: 2px;
+  border-left-width: 3px;
+}
+
+.ex-back-line.is-right .ex-door {
+  right: 2px;
+  border-right-width: 3px;
+}
+
+/* 门签：矩形标签 + 描边 + 贴墙侧加粗门轴（2026-09-15 加强，与页面同款）。
+   标签直接写文字（v3.3.1 起，不再是 ::after 伪元素）——挂哪面墙由父级 is-left / is-right 决定 */
+.ex-door {
   padding: 2px 8px;
   border: 1px solid var(--color-primary);
   border-radius: var(--radius-xs);
@@ -296,25 +357,6 @@ function rowUnits(row: number): RowUnit[] {
   font-weight: 600;
   color: var(--color-primary-strong);
   white-space: nowrap;
-}
-
-/* 门签文案与挂墙分开写：文案只看前 / 后，位置只看左 / 右（学生视角镜像） */
-.ex-door.is-front::after {
-  content: '前门';
-}
-
-.ex-door.is-back::after {
-  content: '后门';
-}
-
-.ex-door.is-right::after {
-  right: 2px;
-  border-right-width: 3px;
-}
-
-.ex-door.is-left::after {
-  left: 2px;
-  border-left-width: 3px;
 }
 
 /* ---- 座位排 ---- */
@@ -346,9 +388,9 @@ function rowUnits(row: number): RowUnit[] {
   gap: 6px;
 }
 
-/* 过道：淡青底 + 虚线中线（2026-09-15 加强，与页面同款） */
+/* 过道：淡青底 + 虚线中线（2026-09-15 加强；v3.3.1 加宽一倍，与页面同款口径） */
 .ex-aisle {
-  width: 8px;
+  width: 16px;
   flex-shrink: 0;
   border-radius: var(--radius-full);
   background-color: var(--color-primary-bg);
@@ -362,7 +404,7 @@ function rowUnits(row: number): RowUnit[] {
   background-repeat: no-repeat;
 }
 
-/* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 50px） */
+/* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 54px） */
 .ex-row.is-cols {
   align-items: center;
   padding-bottom: 0;
@@ -372,7 +414,7 @@ function rowUnits(row: number): RowUnit[] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
+  width: 54px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
@@ -385,9 +427,10 @@ function rowUnits(row: number): RowUnit[] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  width: 50px;
-  height: 52px;
+  gap: 2px;
+  width: 54px;
+  height: 56px;
+  padding: 3px 2px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xs);
   background: var(--color-surface);
@@ -408,25 +451,27 @@ function rowUnits(row: number): RowUnit[] {
 .ex-avatar {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 600;
 }
 
+/* 姓名**完整显示**（v3.3.1）：重名带尾号后「旦增卓玛（3287）」一行放不下，
+   去掉省略号改成最多折两行——导出图上被截断的名字等于没导 */
 .ex-name {
   max-width: 100%;
-  padding: 0 2px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1.15;
+  text-align: center;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .ex-plus {

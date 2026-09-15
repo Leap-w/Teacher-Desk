@@ -14,7 +14,6 @@ import {
   sameEveningGroupSiblings,
   sortLessons,
   weekdayOf,
-  weekendWeekdaysOf,
 } from '@/utils/timetable'
 import { EVENING_PERIOD_IDS } from '@/types/timetable'
 import type {
@@ -120,9 +119,6 @@ export const useTimetableStore = defineStore('timetable', () => {
    */
   const weekLessonCount = computed(() => lessons.value.length)
 
-  /** 需要追加到周视图的周末列（都没课则为空 → 保持默认五列） */
-  const weekendWeekdays = computed(() => weekendWeekdaysOf(lessons.value))
-
   /** 已出现过的班级名（升序，供编辑抽屉的下拉候选） */
   const classNames = computed(() =>
     [...new Set(lessons.value.map((lesson) => lesson.className))].sort((a, b) =>
@@ -218,6 +214,23 @@ export const useTimetableStore = defineStore('timetable', () => {
   }
 
   /* ========== V1.1.3：批量导入（一次性写入） ========== */
+
+  /**
+   * 删除全部课程（v3.3.1：教学设置 → 课程 → 删除所有课程）。返回删掉的课程条数。
+   *
+   * **换课记录一并清空**：只清课程会让原时间一直挂着「已调走」的标记，
+   * 教师会以为课还在（与 `removeLesson` 对单节课的口径一致）。
+   * **不动课程时间配置**：作息存在 appSettings（`teaching.periodTimes`），
+   * 与课表数据是两份东西——需求明确要求清空课程后时间设置原样保留。
+   *
+   * 课表与换课记录各只赋值一次 → 各一次写盘 + 一次广播，不产生中间态。
+   */
+  function clearLessons(): number {
+    const removed = lessons.value.length
+    lessons.value = []
+    exchanges.value = []
+    return removed
+  }
 
   /**
    * 批量导入课程（**Excel 导入的唯一落库入口**）：
@@ -405,7 +418,6 @@ export const useTimetableStore = defineStore('timetable', () => {
     todayLabel,
     todayLessons,
     weekLessonCount,
-    weekendWeekdays,
     classNames,
     lessonsOf,
     lessonAt,
@@ -417,6 +429,7 @@ export const useTimetableStore = defineStore('timetable', () => {
     addLesson,
     updateLesson,
     removeLesson,
+    clearLessons,
     applyCourseImport,
     exchangeLesson,
     undoExchange,

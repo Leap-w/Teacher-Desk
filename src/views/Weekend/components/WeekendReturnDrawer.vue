@@ -149,7 +149,9 @@ function submit(): void {
                   :disabled="registeredIds.has(student.id)"
                   @change="toggle(student.id)"
                 />
-                <span class="picker-name">{{ formatStudentShortName(student) }}</span>
+                <span class="picker-name">{{
+                  formatStudentShortName(student, studentStore.nameCounts)
+                }}</span>
                 <AppBadge v-if="registeredIds.has(student.id)" variant="neutral" size="sm">
                   已登记
                 </AppBadge>

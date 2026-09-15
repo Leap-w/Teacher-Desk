@@ -85,7 +85,7 @@ export const useDutyStore = defineStore('duty', () => {
       const student = archived.get(id)
       return {
         id,
-        name: student ? formatStudentShortName(student) : '未知学生',
+        name: student ? formatStudentShortName(student, studentStore.nameCounts) : '未知学生',
         active: active.has(id),
       }
     })

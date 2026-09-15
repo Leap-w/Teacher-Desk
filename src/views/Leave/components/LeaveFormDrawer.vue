@@ -15,7 +15,7 @@ import {
   formatLeaveDuration,
   formatLeavePeriod,
 } from '@/utils/leave'
-import { formatStudentDisplayName } from '@/utils/student'
+import { formatStudentShortName } from '@/utils/student'
 import type { LeaveInput, LeaveRecord, LeaveType } from '@/types/leave'
 import type { HalfDay } from '@/types/point'
 import type { SelectOption } from '@/types'
@@ -77,7 +77,10 @@ const errors = reactive({ studentId: '', type: '', startDate: '', endDate: '', r
 const studentOptions = computed<SelectOption<string>[]>(() => {
   const options: SelectOption<string>[] = [...studentStore.activeStudents]
     .sort((a, b) => a.studentNo.localeCompare(b.studentNo))
-    .map((student) => ({ label: formatStudentDisplayName(student), value: student.id }))
+    .map((student) => ({
+      label: formatStudentShortName(student, studentStore.nameCounts),
+      value: student.id,
+    }))
   const record = props.record
   if (record && !studentStore.activeStudents.some((item) => item.id === record.studentId)) {
     options.unshift({

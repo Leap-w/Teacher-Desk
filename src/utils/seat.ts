@@ -1,5 +1,5 @@
 import { createId } from '@/utils/id'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
 import type {
@@ -461,6 +461,8 @@ export function compareSeatPlans(
   }
   const entries: SeatCompareEntry[] = []
   const changedStudentIds = new Set<string>()
+  // 重名消歧要看整份名册（v3.3.1）：循环外算一次，别在 63 个座位里各算一遍
+  const nameCounts = buildNameCounts([...students.values()])
   for (const seat of planB.seats) {
     if (!seat.studentId) continue
     const from = seatOfA.get(seat.studentId)
@@ -469,7 +471,7 @@ export function compareSeatPlans(
     changedStudentIds.add(seat.studentId)
     entries.push({
       studentId: seat.studentId,
-      name: student ? formatStudentShortName(student) : '已删除学生',
+      name: student ? formatStudentShortName(student, nameCounts) : '已删除学生',
       fromSeat: from,
       toSeat: seat,
     })

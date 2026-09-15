@@ -29,15 +29,15 @@ export const WEEKDAY_SHORT_LABELS: Record<Weekday, string> = {
   7: '周日',
 }
 
-/** 全部星期（升序） */
-export const WEEKDAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 7]
-
 /**
- * 周课表默认显示的列（周一~周五）。
- * 周六 / 周日**不是**不显示，而是「有课才追加列」——见 `weekendWeekdaysOf`，
- * 避免教师录入的周末课程在周视图里彻底隐身（开发手册 §9.7 取舍）。
+ * 全部星期（升序）——**周课表的列就是它**（v3.3.1 起）。
+ *
+ * v1.1.3–v3.3.0 周视图默认只画周一~周五，周六 / 周日靠「有课才追加列」补上
+ * （旧的 `WEEKDAY_COLUMNS` + `weekendWeekdaysOf`）。那套规则让周末的两列
+ * **随课表内容忽隐忽现**：周末没课时教师根本找不到「往周六加一节课」的格子，
+ * 得先在别处造出一节课来。现在七天恒定显示，周末与工作日完全同权。
  */
-export const WEEKDAY_COLUMNS: Weekday[] = [1, 2, 3, 4, 5]
+export const WEEKDAYS: Weekday[] = [1, 2, 3, 4, 5, 6, 7]
 
 /* ========== 时间段（读的是 types/timetable.ts 的 COURSE_PERIODS，本处只做查表） ========== */
 
@@ -195,16 +195,6 @@ export function findSlotConflict(
   return lessons.find(
     (lesson) =>
       lesson.weekday === weekday && lesson.periodId === periodId && lesson.id !== excludeId,
-  )
-}
-
-/**
- * 需要追加到周视图的周末列：只追加**实际有课**的那一天（都没课则为空数组，
- * 周课表保持默认五列）。
- */
-export function weekendWeekdaysOf(lessons: Lesson[]): Weekday[] {
-  return ([6, 7] as Weekday[]).filter((weekday) =>
-    lessons.some((lesson) => lesson.weekday === weekday),
   )
 }
 

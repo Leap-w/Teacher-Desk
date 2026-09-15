@@ -16,6 +16,11 @@ interface Props {
   /** 锚点坐标（长按处指针位置，client 系）；卡片默认落在锚点右下方，贴近视口边缘时自动翻转 */
   anchor: { x: number; y: number }
   student: Student
+  /**
+   * 姓名 → 同名人数（v3.3.1）。**必填**：卡片上的姓名走全站统一的重名规则，
+   * 少传一份计数就会让「哪一个旦增卓玛」在这张卡上失焦，而这正是长按卡片要回答的问题。
+   */
+  nameCounts: ReadonlyMap<string, number>
 }
 
 const props = defineProps<Props>()
@@ -89,7 +94,7 @@ onBeforeUnmount(() => {
       @pointerdown.stop
     >
       <header class="quick-head">
-        <h4 class="quick-name">{{ formatStudentShortName(student) }}</h4>
+        <h4 class="quick-name">{{ formatStudentShortName(student, nameCounts) }}</h4>
         <span v-if="student.cadreRole" class="quick-role">{{ student.cadreRole }}</span>
       </header>
 

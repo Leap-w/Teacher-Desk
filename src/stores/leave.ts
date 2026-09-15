@@ -143,7 +143,7 @@ export const useLeaveStore = defineStore('leave', () => {
     const record: LeaveRecord = {
       id: createId(),
       studentId: student.id,
-      studentName: formatStudentShortName(student),
+      studentName: formatStudentShortName(student, studentStore.nameCounts),
       type: input.type,
       start: { ...input.start },
       end: { ...input.end },
@@ -177,7 +177,7 @@ export const useLeaveStore = defineStore('leave', () => {
     if (next.studentId !== current.studentId) {
       const student = findStudent(next.studentId)
       if (!student) return undefined
-      next.studentName = formatStudentShortName(student)
+      next.studentName = formatStudentShortName(student, studentStore.nameCounts)
     }
     if (!isLeaveInputValid(next)) return undefined
     leaves.value = [...leaves.value.slice(0, index), next, ...leaves.value.slice(index + 1)]

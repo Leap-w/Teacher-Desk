@@ -26,7 +26,6 @@ import { useDutyStore } from '@/stores/duty'
 import { useLeaveStore } from '@/stores/leave'
 import { useStudentStore } from '@/stores/student'
 import {
-  buildNameCounts,
   buildDutyGroupNameById,
   disambiguatorOf as disambiguatorOfShared,
   formatStudentShortName,
@@ -92,8 +91,8 @@ const onLeaveIds = computed(() => {
   return ids
 })
 
-/** 同名计数：姓名 → 出现次数（重名徽章与消歧用）——公共件（`utils/student.ts`） */
-const nameCounts = computed(() => buildNameCounts(activeStudents.value))
+/** 重名计数：**唯一来源是 store**（v3.3.1），本页不再自己数一遍 */
+const nameCounts = computed(() => studentStore.nameCounts)
 
 /** 学生 id → 值日组名（值日 Store 只读派生；一名学生只归一组，取首个命中） */
 const dutyGroupNameById = computed(() => buildDutyGroupNameById(dutyStore.groups))
@@ -106,7 +105,12 @@ function regionOf(student: Student): string | undefined {
 
 /** 重名消歧：公共件（`utils/student.ts`）——课堂工具随机点名共用同一份规则 */
 function disambiguatorOf(student: Student): string | undefined {
-  return disambiguatorOfShared(student, nameCounts.value, dutyGroupNameById.value)
+  return disambiguatorOfShared(student, nameCounts.value)
+}
+
+/** 本页所有「某某学生」的文案（toast / 确认弹窗）走这里，重名规则只有一份 */
+function nameOf(student: Student): string {
+  return formatStudentShortName(student, nameCounts.value)
 }
 
 const chipOptions = computed(() => [
@@ -273,7 +277,7 @@ function handleFormSubmit(payload: StudentInput) {
       toast.danger('新增失败：该学号已存在')
       return
     }
-    toast.success(`已新增学生 ${formatStudentShortName(saved)}`)
+    toast.success(`已新增学生 ${nameOf(saved)}`)
   }
 }
 
@@ -291,9 +295,9 @@ function confirmRemove() {
     toast.danger('删除失败：该学生记录不存在，请刷新后重试')
     return
   }
-  // 同名学生在列表中常见，删除反馈用「姓名（学号后四位）」以便区分。
+  // 同名学生常见，删除反馈带上消歧（重名才有，见 formatStudentShortName）。
   // 不带座位号：档案从 Phase 5A 起已不维护它（§2.3）
-  toast.success(`已从学生列表中移除 ${formatStudentShortName(target)}`)
+  toast.success(`已从学生列表中移除 ${nameOf(target)}`)
 }
 
 function clearFilters() {
@@ -364,7 +368,6 @@ function clearFilters() {
             :student="student"
             :selectable="batchMode"
             :selected="selectedIds.has(student.id)"
-            :duplicate-count="nameCounts.get(student.name)"
             :disambiguator="disambiguatorOf(student)"
             :region="regionOf(student)"
             :duty-group="dutyGroupNameById.get(student.id)"
@@ -412,7 +415,6 @@ function clearFilters() {
     <StudentDetailModal
       v-model="detailOpen"
       :student="detailStudent"
-      :duplicate-count="detailStudent ? nameCounts.get(detailStudent.name) : undefined"
       :disambiguator="detailStudent ? disambiguatorOf(detailStudent) : undefined"
       @edit="openEdit"
       @remove="askRemove"
@@ -421,7 +423,7 @@ function clearFilters() {
     <AppModal v-model="confirmOpen" title="删除学生" :width="380">
       <p class="confirm-text">
         确定从学生列表中移除
-        <strong>{{ removingStudent ? formatStudentShortName(removingStudent) : '' }}</strong>
+        <strong>{{ removingStudent ? nameOf(removingStudent) : '' }}</strong>
         吗？此操作无法撤销。
       </p>
       <template #footer>

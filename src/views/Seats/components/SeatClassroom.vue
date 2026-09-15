@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { seatAccentOf, formatStudentDisplayName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName, seatAccentOf } from '@/utils/student'
 import { seatOrdinal } from '@/utils/seat'
 import {
   doorSidesOf,
@@ -109,8 +109,17 @@ function occupantChar(seat: Seat): string {
   return occupantOf(seat)?.name.charAt(0) ?? ''
 }
 
+/**
+ * 座位格上显示的姓名（v3.3.1）：走**全站唯一**的重名规则——不重名只有姓名，
+ * 重名且填了身份证尾号显示「旦增卓玛（3287）」。座位图是这条规则用得最多的地方：
+ * 教师站在讲台上要找的就是「哪一个旦增卓玛」，格子里不写尾号等于没写。
+ * 计数取自 `props.students`（当前方案里的学生），与导出图同源。
+ */
+const nameCounts = computed(() => buildNameCounts([...props.students.values()]))
+
 function occupantName(seat: Seat): string {
-  return occupantOf(seat)?.name ?? ''
+  const student = occupantOf(seat)
+  return student ? formatStudentShortName(student, nameCounts.value) : ''
 }
 
 function seatClass(seat: Seat): Record<string, boolean> {
@@ -134,9 +143,8 @@ function seatTitle(seat: Seat): string {
   const student = occupantOf(seat)
   if (!student) return '空位'
   const extra = [student.cadreRole, ...(student.tags ?? [])].filter(Boolean).join(' · ')
-  return extra
-    ? `${formatStudentDisplayName(student)} · ${extra}`
-    : formatStudentDisplayName(student)
+  const name = formatStudentShortName(student, nameCounts.value)
+  return extra ? `${name} · ${extra}` : name
 }
 
 /* ========== Phase 3B：拖拽换座（Pointer Events，无第三方库） ========== */
@@ -252,7 +260,8 @@ function onPointerMove(event: PointerEvent) {
       }
       drag.value = {
         fromId: seat.id,
-        name: student.name,
+        // 拖拽幽灵上的姓名也走重名规则（跟着手指走的那个名字和格子里必须一致）
+        name: formatStudentShortName(student, nameCounts.value),
         char: student.name.charAt(0),
         x: event.clientX,
         y: event.clientY,
@@ -361,17 +370,20 @@ defineExpose({ revealSeat, openQuickCard })
 
         <TransitionGroup tag="div" name="room-flip" class="room-flip">
           <div v-for="item in roomItems" :key="item.key" class="room-item">
-            <div v-if="item.kind === 'podium'" class="podium">
-              <span class="podium-name">讲台</span>
-              <span class="podium-sub">前方中央</span>
-            </div>
-
+            <!--
+              讲台 + 前门（v3.3.1）：**同一水平线**——前门贴墙、讲台居中。
+              此前前门是独立的零高单元、标签骑在两块之间，正好压住第 1 排。
+            -->
             <div
-              v-else-if="item.kind === 'door-front'"
-              class="doorline is-front"
+              v-if="item.kind === 'front-line'"
+              class="front-line"
               :class="`is-${doorSides.front}`"
             >
               <span class="door">前门</span>
+              <div class="podium">
+                <span class="podium-name">讲台</span>
+                <span class="podium-sub">前方中央</span>
+              </div>
             </div>
 
             <div
@@ -439,6 +451,7 @@ defineExpose({ revealSeat, openQuickCard })
       :seat-id="quickSeat.seatId"
       :anchor="{ x: quickSeat.x, y: quickSeat.y }"
       :student="quickStudent"
+      :name-counts="nameCounts"
       @close="closeQuickCard"
       @detail="onQuickDetail"
       @swap="onQuickSwap"
@@ -532,6 +545,31 @@ defineExpose({ revealSeat, openQuickCard })
   width: 100%;
 }
 
+/*
+  讲台 + 前门（v3.3.1）：同一行——前门贴墙、讲台居中。
+  这一行的高度就是讲台的高度，门签靠 `top: 50%` 与它对齐（沿用 .door 的
+  translateY(-50%)，所以门签中心正好落在这一行的中线上）。
+*/
+.front-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+}
+
+.front-line .door {
+  top: 50%;
+}
+
+.front-line.is-left .door {
+  left: 0;
+}
+
+.front-line.is-right .door {
+  right: 0;
+}
+
 /* 讲台 */
 .podium {
   display: flex;
@@ -560,7 +598,8 @@ defineExpose({ revealSeat, openQuickCard })
   color: var(--color-primary);
 }
 
-/* 前 / 后门：零高单元（is-front / is-back）随排布顺序 FLIP 平移，门签挂在对应墙侧。
+/* 后门：零高单元（is-back）随排布顺序 FLIP 平移，门签骑在教室顶部那条分界线上（左上 / 右上）。
+   前门自 v3.3.1 起不再走这套——它挪到 .front-line 里与讲台同行（见上）。
    门签仍是**矩形标签**（v3.2.0 参考图口径，不是胶囊），但 2026-09-15 起描边 + 着色，
    并在**贴墙那一侧**描一道粗边当门轴，与浅色座位卡片明确区分开。 */
 .doorline {
@@ -630,16 +669,19 @@ defineExpose({ revealSeat, openQuickCard })
 .seat-block {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex: 1 1 0;
   min-width: 0;
 }
 
 /* 过道：**淡青底 + 一条虚线中线**（2026-09-15 加强）。
    宽度与列号行的同名单元一致，两侧座位因此严格分块；
-   中线是虚线，与「座位之间那道窄缝」区分开——过道是一条能走人的通道。 */
+   中线是虚线，与「座位之间那道窄缝」区分开——过道是一条能走人的通道。
+   v3.3.1：12 → 24px（**加宽一倍**，需求点名的一条）。两条过道把 9 列切成
+   3 组三人之后，组与组之间要「看得出是一条路」，而不是两排座位挨得紧一点。
+   腾出来的宽度靠座位缩一号（见 SeatCard 的 max-width）——总宽不变。 */
 .aisle {
-  width: var(--space-3);
+  width: var(--space-6);
   flex-shrink: 0;
   border-radius: var(--radius-full);
   background-color: var(--color-primary-bg);
@@ -670,6 +712,8 @@ defineExpose({ revealSeat, openQuickCard })
   justify-content: center;
   flex: 1 1 0;
   min-width: 48px;
+  /* 必须与 SeatCard 里 .seat 的 max-width 相同（v3.3.1：126px）——见该文件说明 */
+  max-width: 126px;
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);

@@ -4,6 +4,7 @@ import { defineStore } from 'pinia'
 import { studentRepository } from '@/repositories'
 import type { StudentImportPlan } from '@/services/studentImport'
 import { createId } from '@/utils/id'
+import { buildNameCounts } from '@/utils/student'
 import { buildBatchPatch } from '@/utils/studentBatch'
 import type { StudentBatchChanges } from '@/utils/studentBatch'
 import { queryStudents } from '@/utils/studentQuery'
@@ -28,6 +29,14 @@ export const useStudentStore = defineStore('student', () => {
 
   /** 未删除学生 */
   const activeStudents = computed(() => students.value.filter((item) => !item.deletedAt))
+
+  /**
+   * 姓名 → 同名人数（重名消歧的唯一来源，v3.3.1）。
+   * 放进 store 而不是让每个页面各算一遍：`formatStudentShortName` 的必填参数就是它，
+   * 「谁算重名」因此只有一个答案——**在读学生**。软删除的学生不再参与计数，
+   * 否则删掉一个同名学生之后，剩下那个还会一直挂着括号显示尾号。
+   */
+  const nameCounts = computed(() => buildNameCounts(activeStudents.value))
 
   // 写盘 + 跨标签页同步（Phase 9A）：本页改动写盘后广播键名，别的入口改了则重读并规范化。
   // 写盘是幂等的（见 services/storage.ts），所以「收到远端更新 → 替换内存 → 触发写盘」
@@ -171,6 +180,7 @@ export const useStudentStore = defineStore('student', () => {
   return {
     students,
     activeStudents,
+    nameCounts,
     searchStudents,
     addStudent,
     updateStudent,

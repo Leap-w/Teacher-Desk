@@ -38,6 +38,8 @@ const GENDER_OPTIONS: SelectOption<Gender>[] = [
 interface FormState {
   name: string
   studentNo: string
+  /** 身份证尾号（选填，最多 4 位）；重名时显示成「姓名（尾号）」 */
+  idCardSuffix: string
   gender: Gender
   dormitory: string
   cadreRole: string
@@ -57,6 +59,7 @@ function blankForm(): FormState {
   return {
     name: '',
     studentNo: '',
+    idCardSuffix: '',
     gender: 'female',
     dormitory: '',
     cadreRole: '',
@@ -111,6 +114,7 @@ watch(
     Object.assign(form, {
       name: props.student.name,
       studentNo: props.student.studentNo,
+      idCardSuffix: props.student.idCardSuffix ?? '',
       gender: props.student.gender,
       dormitory: props.student.dormitory ?? '',
       cadreRole: cadreIsCustom ? CADRE_CUSTOM : cadre,
@@ -159,6 +163,7 @@ function submit() {
   const payload: StudentInput = {
     name: form.name.trim(),
     studentNo: form.studentNo.trim(),
+    idCardSuffix: form.idCardSuffix.trim() || undefined,
     gender: form.gender,
     dormitory: form.dormitory || undefined,
     cadreRole: cadreRoleValue(),
@@ -200,6 +205,10 @@ function close() {
             :error="!!errors.studentNo"
             placeholder="如 20230109"
           />
+        </AppField>
+
+        <AppField label="身份证尾号" hint="选填，最多 4 位；只在重名时显示，用来区分同名学生">
+          <AppInput v-model="form.idCardSuffix" :maxlength="4" placeholder="如 4321" />
         </AppField>
 
         <AppField label="性别">

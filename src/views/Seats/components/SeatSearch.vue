@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { X } from 'lucide-vue-next'
 
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 
 /**
@@ -31,6 +31,9 @@ const emit = defineEmits<{
 
 const query = ref('')
 const open = ref(false)
+
+/** 重名消歧计数：候选名单就是这份 `students`（v3.3.1） */
+const nameCounts = computed(() => buildNameCounts(props.students))
 
 /** 候选项：姓名全名匹配 或 学号后四位匹配（输入非空时） */
 const candidates = computed<Student[]>(() => {
@@ -117,7 +120,7 @@ function onBlur() {
           @pointerdown.prevent
           @click="choose(student)"
         >
-          <span class="search-item-name">{{ formatStudentShortName(student) }}</span>
+          <span class="search-item-name">{{ formatStudentShortName(student, nameCounts) }}</span>
           <span class="search-item-meta">
             {{ positionOf ? (positionOf(student.id) ?? '未就座') : '' }}
           </span>

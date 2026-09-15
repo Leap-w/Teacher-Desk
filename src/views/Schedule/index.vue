@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
@@ -7,9 +7,9 @@ import { useNow } from '@/composables/useToday'
 import { useAppSettingsStore } from '@/stores/appSettings'
 import { useTimetableStore } from '@/stores/timetable'
 import {
-  WEEKDAY_COLUMNS,
   WEEKDAY_LABELS,
   WEEKDAY_SHORT_LABELS,
+  WEEKDAYS,
   periodFullTextOf,
   periodLabelOf,
 } from '@/utils/timetable'
@@ -67,17 +67,16 @@ const stats = computed(() => ({
 
 const weekdayLabel = computed(() => WEEKDAY_LABELS[timetableStore.todayWeekday] ?? '')
 
-/** 周视图列：默认周一~周五；有周末课时自动追加，避免已录入的课在周视图里隐身 */
-const columns = computed<Weekday[]>(() => [...WEEKDAY_COLUMNS, ...timetableStore.weekendWeekdays])
+/**
+ * 周视图列：**恒定周一~周日**（v3.3.1 起）。
+ * v1.1.3–v3.3.0 是「周一~周五 + 有课的周末追加一列」，周末列随课表内容忽隐忽现，
+ * 周末空着时根本没有格子可以点「＋」——现在七天同权，周末照常增删改。
+ * 列多了靠 `.week-scroll` 横向滚动（窄窗口下每列不再被压成一条）。
+ */
+const columns: readonly Weekday[] = WEEKDAYS
 
-/** 手机分日视图当前选中的星期：默认落在今天（周末且当天无课时回到周一） */
-const activeWeekday = ref<Weekday>(
-  columns.value.includes(timetableStore.todayWeekday) ? timetableStore.todayWeekday : 1,
-)
-
-watch(columns, (value) => {
-  if (!value.includes(activeWeekday.value)) activeWeekday.value = value[0] ?? 1
-})
+/** 手机分日视图当前选中的星期：默认落在今天 */
+const activeWeekday = ref<Weekday>(timetableStore.todayWeekday)
 
 const dayLessons = computed(() => timetableStore.lessonsOf(activeWeekday.value))
 
@@ -136,7 +135,7 @@ function onSubmit(payload: LessonInput): void {
   }
   drawerOpen.value = false
   toast.success(`已新增「${created.subject} ${created.className}」`)
-  if (columns.value.includes(created.weekday)) activeWeekday.value = created.weekday
+  activeWeekday.value = created.weekday
 }
 
 /* ---------- 删除（二次确认） ---------- */

@@ -11,7 +11,7 @@ import {
   FRONT_ROW_LIMIT,
   SAME_DESK_RULE_NOTE,
 } from '@/utils/seat'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { Student } from '@/types'
 import type { SeatConstraintType } from '@/types/constraint'
@@ -65,11 +65,14 @@ const constraintType = ref<SeatConstraintType>('no-deskmate')
 const studentAId = ref('')
 const studentBId = ref('')
 
-/** 学生下拉项：姓名（学号后四位），重复姓名可凭后四位区分 */
+/** 重名消歧计数：候选名单就是这份 `students`（v3.3.1） */
+const nameCounts = computed(() => buildNameCounts(props.students))
+
+/** 学生下拉项：默认姓名；重名且填了身份证尾号的显示「姓名（尾号）」 */
 const studentOptions = computed(() =>
   props.students.map((student) => ({
     value: student.id,
-    label: formatStudentShortName(student),
+    label: formatStudentShortName(student, nameCounts.value),
   })),
 )
 
@@ -79,7 +82,7 @@ const studentBOptions = computed(() =>
 )
 
 const presetName = computed(() =>
-  props.presetStudent ? formatStudentShortName(props.presetStudent) : '',
+  props.presetStudent ? formatStudentShortName(props.presetStudent, nameCounts.value) : '',
 )
 
 /** 打开时重置为默认值 */

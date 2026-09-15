@@ -121,24 +121,27 @@ function toneBg(tone?: string): string {
   min-width: 0;
 }
 
+/* v3.3.1 §五：卡片标题 +2px */
 .timeline__title {
-  font-size: var(--font-secondary);
+  font-size: calc(var(--font-secondary) + 2px);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
 }
 
+/* v3.3.1 §五：副标题 +1px */
 .timeline__desc {
   margin-top: 2px;
-  font-size: var(--font-caption);
+  font-size: calc(var(--font-caption) + 1px);
   color: var(--color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* 时间与说明同一档，跟着 +1（同一行里两个 12px 只放大一个会显得没对齐） */
 .timeline__time {
   flex-shrink: 0;
-  font-size: var(--font-caption);
+  font-size: calc(var(--font-caption) + 1px);
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
 }

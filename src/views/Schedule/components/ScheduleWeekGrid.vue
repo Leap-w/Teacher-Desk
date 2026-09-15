@@ -12,8 +12,8 @@ interface Props {
   lessons: Lesson[]
   /** 换课记录：原时段渲染「调课 → …」标记 */
   exchanges: CourseExchange[]
-  /** 显示的列（默认周一~周五；有周末课时由页面追加） */
-  weekdays: Weekday[]
+  /** 显示的列（v3.3.1 起恒定周一~周日；窄窗口下由外层 .week-scroll 横向滚动） */
+  weekdays: readonly Weekday[]
   /** 今天的星期，用于高亮当列 */
   today?: Weekday
   /** 当前 / 下一节的课程 id（UI-5A：松石青描边呼吸强调；纯视觉，不改交互） */
@@ -131,6 +131,11 @@ function swapAt(weekday: Weekday, periodId: CoursePeriodId): CourseExchange | un
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* v3.3.1：七列之后加一条地板线——列再多也不把格子压成一条缝。
+     960px = 96px 时段列 + 7 × 116px 格子 + 8 条间隙。
+     容器比它窄时由外层 .week-scroll（overflow-x: auto）横向滚动，
+     桌面端（内容宽约 1390px）每列仍有 ~180px，不触发滚动。 */
+  min-width: 960px;
 }
 
 .grid-head,

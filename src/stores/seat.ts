@@ -261,7 +261,7 @@ export const useSeatStore = defineStore('seat', () => {
   function logSeatChange(student: Student, fromSeat: Seat, toSeat: Seat): void {
     appendSeatChangeLog({
       studentId: student.id,
-      studentName: formatStudentShortName(student),
+      studentName: formatStudentShortName(student, studentStore.nameCounts),
       from: seatPositionShort(fromSeat.row, fromSeat.col),
       to: seatPositionShort(toSeat.row, toSeat.col),
     })
@@ -665,6 +665,12 @@ export const useSeatStore = defineStore('seat', () => {
     // V1.1.2 Phase 1：方案级排座约束 + Excel 座位导入
     currentConstraints,
     constraintReport,
+    /**
+     * 整份约束写回当前方案（v3.3.1 起对外）：座位页「更多 → 复制方案」要把原方案的
+     * 约束一次性搬到副本上，逐条走 addSameDeskForbidden / setRowPreference 会产生
+     * N 次写盘与 N 次广播。单条增删仍走下面的细分 action（它们自带去重与可读原因）。
+     */
+    writeConstraints,
     addSameDeskForbidden,
     removeSameDeskForbidden,
     addAdjacentGroupForbidden,

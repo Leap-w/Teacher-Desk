@@ -79,17 +79,19 @@ const tools = CLASSROOM_TOOLS
   gap: 2px;
 }
 
+/* v3.3.1 §五：卡片标题 +2px */
 .entry-title {
-  font-size: var(--font-content);
+  font-size: calc(var(--font-content) + 2px);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
+/* v3.3.1 §五：副标题 +1px */
 .entry-sub {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: var(--font-caption);
+  font-size: calc(var(--font-caption) + 1px);
   color: var(--color-text-tertiary);
 }
 

@@ -20,6 +20,8 @@ export interface ParsedRow {
   name: string
   gender: Gender | ''
   studentNo: string
+  /** 身份证尾号（选填，最多 4 位）：重名消歧用（v3.3.1） */
+  idCardSuffix: string
   dormitory: string
   cadreRole: string
   tags: string[]
@@ -42,6 +44,7 @@ interface ColumnMap {
   name: number
   gender: number
   studentNo: number
+  idCardSuffix: number
   dormitory: number
   cadreRole: number
   tags: number
@@ -55,6 +58,13 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
   { key: 'name', label: '姓名', aliases: ['姓名', '名字', '学生姓名'] },
   { key: 'gender', label: '性别', aliases: ['性别'] },
   { key: 'studentNo', label: '学号', aliases: ['学号', '学籍号', '考号'] },
+  {
+    key: 'idCardSuffix',
+    label: '身份证尾号',
+    // 只认「尾号」类的写法，**不收「身份证号」**：整串身份证号不是这个字段要的东西，
+    // 收进来只会把 18 位号码截成 4 位存下，教师还以为存的是完整号码
+    aliases: ['身份证尾号', '身份证后四位', '身份证后4位', '证件尾号', '尾号'],
+  },
   { key: 'dormitory', label: '宿舍', aliases: ['宿舍', '宿舍号', '寝室', '房间'] },
   { key: 'cadreRole', label: '班委', aliases: ['班委', '职务', '班委职务', '班级职务'] },
   { key: 'tags', label: '标签', aliases: ['标签', '标记'] },
@@ -172,6 +182,7 @@ function mapColumns(headerRow: unknown[]): ColumnMap {
     name: -1,
     gender: -1,
     studentNo: -1,
+    idCardSuffix: -1,
     dormitory: -1,
     cadreRole: -1,
     tags: -1,
@@ -244,6 +255,10 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       warnings.push('学号为空，无法与已有学生合并，每次导入都会新增一条')
     }
 
+    // 身份证尾号：去空白 + 截到 4 位，与 normalizeStudent 同一口径
+    // （Excel 里写成 15 位手机号也不会被整段存进来）
+    const idCardSuffix = at('idCardSuffix').trim().slice(0, 4)
+
     const dormitoryText = at('dormitory')
     let dormitory = dormitoryText
     const dormitoryRejected =
@@ -269,6 +284,7 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       name,
       gender,
       studentNo,
+      idCardSuffix,
       dormitory,
       cadreRole: at('cadreRole'),
       // 同一行里重复写两遍的标签去掉；顺序保留教师的书写顺序（他大概是按重要性排的）
@@ -409,6 +425,7 @@ function toStudentInput(row: ParsedRow): StudentInput {
   return {
     name: row.name,
     studentNo: row.studentNo,
+    idCardSuffix: row.idCardSuffix || undefined,
     gender: row.gender as Gender,
     dormitory: row.dormitory || undefined,
     cadreRole: row.cadreRole || undefined,
@@ -426,6 +443,7 @@ function toPatch(row: ParsedRow, matched: Student): Partial<StudentInput> {
     studentNo: row.studentNo,
     gender: row.gender as Gender,
   }
+  if (row.idCardSuffix) patch.idCardSuffix = row.idCardSuffix
   if (row.dormitory) patch.dormitory = row.dormitory
   if (row.cadreRole) patch.cadreRole = row.cadreRole
   if (row.tags.length > 0) patch.tags = row.tags

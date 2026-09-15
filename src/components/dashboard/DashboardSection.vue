@@ -54,16 +54,23 @@ defineProps<{
   margin-bottom: var(--spacing-md);
 }
 
+/*
+  v3.3.1 §五：首页 Hero 以下整体放大一级（卡片标题 +2px、数字 +4px、副标题 +1px）。
+  用 `calc(令牌 + Npx)` 而不是直接写死新数字——档位仍然只有一套（theme.css），
+  这里的 `+2px` 就是「比 22px 那一档大一级」，将来调令牌时整条层级一起动。
+  Hero（DashboardHero）刻意不在此列：需求明确「不改变 Hero 标题大小」。
+*/
 .dash-section__title {
-  font-size: var(--text-xl);
+  font-size: calc(var(--text-xl) + 2px);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.01em;
   color: var(--color-text-primary);
 }
 
+/* 副标题 +1px */
 .dash-section__subtitle {
   margin-top: 2px;
-  font-size: var(--font-secondary);
+  font-size: calc(var(--font-secondary) + 1px);
   color: var(--color-text-tertiary);
 }
 

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CalendarClock } from 'lucide-vue-next'
+import { CalendarClock, Trash2 } from 'lucide-vue-next'
 
-import { AppSegmented } from '@/components/ui'
+import { AppButton, AppModal, AppSegmented } from '@/components/ui'
+import { runLockedOperation } from '@/composables/useOperationLock'
 import { useToast } from '@/composables/useToast'
 import { useAppSettingsStore } from '@/stores/appSettings'
+import { useTimetableStore } from '@/stores/timetable'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { SeatView } from '@/types/seat'
 import SettingsPage from '../components/SettingsPage.vue'
@@ -26,6 +28,9 @@ import SettingsField from '../components/SettingsField.vue'
  *   下次打开座位表按它开局（教师当场仍可在座位页临时切，那次切换不写盘）。
  *
  * 两行都**不再有徽标**：徽标是「这项还不能用」的标记，现在没有需要标记的了。
+ *
+ * **v3.3.1 新增「删除所有课程」**：课表整表清空（含换课记录），作息不动。
+ * 破坏性操作，红色危险行 + 二次确认弹窗，写入走长事务锁（同导入纪律）。
  */
 const appSettings = useAppSettingsStore()
 const router = useRouter()
@@ -58,6 +63,34 @@ function setView(view: SeatView): void {
   const label = VIEW_OPTIONS.find((item) => item.value === view)?.label ?? ''
   toast.success(`默认视角已设为${label}，下次打开座位表生效`)
 }
+
+/* ---------- v3.3.1：删除所有课程（危险操作，二次确认） ---------- */
+
+const timetableStore = useTimetableStore()
+const clearOpen = ref(false)
+
+/** 待删除的课程条数（打开确认弹窗时固定，弹窗内不再变） */
+const clearCount = ref(0)
+
+function askClear(): void {
+  clearCount.value = timetableStore.lessons.length
+  clearOpen.value = true
+}
+
+/**
+ * 清空课表。与导入同一纪律：**危险批量写走长事务锁**
+ * （写入期间自动同步只记账不推送，写完补一次冲刷），
+ * 否则清空后的空课表可能与云端的旧课表来回打架。
+ */
+async function confirmClear(): Promise<void> {
+  clearOpen.value = false
+  const removed = await runLockedOperation('course-clear', () => timetableStore.clearLessons())
+  if (removed === 0) {
+    toast.info('课程表本来就是空的')
+    return
+  }
+  toast.success(`已删除全部 ${removed} 节课，课程时间设置保持不变`)
+}
 </script>
 
 <template>
@@ -68,6 +101,18 @@ function setView(view: SeatView): void {
         title="课程时间设置"
         :subtitle="`${courseTimeValue} · 点击逐节调整`"
         @click="router.push('/my/settings/teaching/periods')"
+      />
+      <!--
+        v3.3.1：清空课表。放在「课程」组里、紧跟课程时间设置——两者的区别
+        （清课 vs 改作息）在副标题与确认弹窗里各说一遍，避免教师以为删课会连作息一起没。
+      -->
+      <SettingsCell
+        :icon="Trash2"
+        icon-tone="danger"
+        danger
+        title="删除所有课程"
+        :subtitle="`清空课程表中的全部课程（当前 ${timetableStore.lessons.length} 节），保留课程时间设置`"
+        @click="askClear"
       />
     </SettingsSection>
 
@@ -86,5 +131,40 @@ function setView(view: SeatView): void {
         </template>
       </SettingsField>
     </SettingsSection>
+
+    <!-- 二次确认：文案与需求一致（说清删什么、什么不受影响、不可撤销） -->
+    <AppModal v-model="clearOpen" title="删除所有课程" :width="400">
+      <p class="danger-text">将删除课程表中的全部课程，此操作不可撤销。</p>
+      <p class="danger-note">
+        本次将删除 <strong>{{ clearCount }}</strong> 节课（含换课记录）。 课程时间设置（{{
+          appSettings.periods.length
+        }}
+        个时段）不受影响，删除后仍按现用作息排列。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="clearOpen = false">取消</AppButton>
+        <AppButton variant="danger" @click="confirmClear">删除所有课程</AppButton>
+      </template>
+    </AppModal>
   </SettingsPage>
 </template>
+
+<style scoped>
+.danger-text {
+  font-size: var(--font-content);
+  color: var(--color-text-primary);
+  line-height: 1.6;
+}
+
+.danger-note {
+  margin-top: var(--space-2);
+  font-size: var(--font-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.danger-note strong {
+  color: var(--color-danger-strong);
+  font-variant-numeric: tabular-nums;
+}
+</style>

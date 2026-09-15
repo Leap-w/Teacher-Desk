@@ -5,7 +5,7 @@ import { X } from 'lucide-vue-next'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { useConstraintStore } from '@/stores/constraint'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { CONSTRAINT_TYPE_LABELS } from '@/utils/constraint'
 import type { Student } from '@/types'
 import type { SeatConstraint, SeatConstraintType } from '@/types/constraint'
@@ -32,9 +32,11 @@ const constraintStore = useConstraintStore()
 
 const nameOf = computed(() => {
   const map = new Map(props.students.map((student) => [student.id, student]))
+  // 重名消歧计数：名单就是这份 `students`（v3.3.1）
+  const nameCounts = buildNameCounts(props.students)
   return (id: string): string => {
     const student = map.get(id)
-    return student ? formatStudentShortName(student) : '已删除学生'
+    return student ? formatStudentShortName(student, nameCounts) : '已删除学生'
   }
 })
 

@@ -4,11 +4,11 @@
  * **One-Tap Classroom 规范**：一秒内启动、大控件远距离可操作、直接读现有数据。
  * 三条原则在代码上的落点就是这里——组件只做渲染与交互，规则全部是可测的纯函数：
  * - 学生名单来自 Student Store（在读学生），值日组来自 Duty Store，**不维护第二份数据**；
- * - 重名消歧复用 `utils/student.ts` 的同一份实现（与档案页一致）；
+ * - 重名消歧直接调 `utils/student.ts` 的 `formatStudentShortName`（v3.3.1 起本文件不再自己拼名字）；
  * - 随机源可注入（`rng`），因此「抽到谁」在测试里是确定的。
  */
 import type { Student } from '@/types'
-import { disambiguatorOf } from '@/utils/student'
+import { formatStudentShortName } from '@/utils/student'
 
 /* ==================== 随机点名 ==================== */
 
@@ -52,19 +52,6 @@ export function pickRandom(pool: Student[], rng: () => number = Math.random): St
   return pool[Math.min(Math.max(index, 0), pool.length - 1)]
 }
 
-/**
- * 展示用姓名（含重名消歧）：「旦增卓玛（第3组）」/「旦增卓玛（0012）」。
- * 不重名时就是姓名本身——与档案页、座位图上的写法一致。
- */
-export function displayNameOf(
-  student: Student,
-  nameCounts: Map<string, number>,
-  dutyGroupNameById: Map<string, string>,
-): string {
-  const suffix = disambiguatorOf(student, nameCounts, dutyGroupNameById)
-  return suffix ? `${student.name}（${suffix}）` : student.name
-}
-
 /** 点名结果（组件渲染用；resolved 为 false 表示这一池是空的） */
 export interface PickOutcome {
   student?: Student
@@ -85,26 +72,24 @@ export function drawOnce(
   mode: PickMode,
   students: Student[],
   todayGroupStudentIds: string[],
-  nameCounts: Map<string, number>,
-  dutyGroupNameById: Map<string, string>,
+  nameCounts: ReadonlyMap<string, number>,
   rng: () => number = Math.random,
 ): PickOutcome {
   const pool = pickPoolFor(mode, students, todayGroupStudentIds)
   const student = pickRandom(pool, rng)
   if (!student) return { emptyReason: EMPTY_REASONS[mode] }
-  return { student, displayName: displayNameOf(student, nameCounts, dutyGroupNameById) }
+  return { student, displayName: formatStudentShortName(student, nameCounts) }
 }
 
 /** 滚动动画期间循环显示的候选（约 1 秒里快速换名字） */
 export function rollFrame(
   pool: Student[],
-  nameCounts: Map<string, number>,
-  dutyGroupNameById: Map<string, string>,
+  nameCounts: ReadonlyMap<string, number>,
   tick: number,
 ): string {
   if (pool.length === 0) return '—'
   const student = pool[tick % pool.length]!
-  return displayNameOf(student, nameCounts, dutyGroupNameById)
+  return formatStudentShortName(student, nameCounts)
 }
 
 /** 一秒钟大约换多少个名字（讲台下看起来像「快速滚动」而不是闪屏） */

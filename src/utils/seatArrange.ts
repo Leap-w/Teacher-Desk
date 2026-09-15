@@ -5,7 +5,7 @@ import {
   isPairConstraintType,
 } from '@/utils/constraint'
 import { areSeatsAdjacent, areSeatsSameDesk, buildSeatGrid } from '@/utils/seat'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { SeatConstraint } from '@/types/constraint'
@@ -182,9 +182,12 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
   /** 行号归一化：第 1 排 = 0，最后一排 = 1（「越靠后分越高」的连续打分） */
   const rowNorm = (row: number) => (config.rows > 1 ? (row - 1) / (config.rows - 1) : 0)
 
+  // 重名消歧要看整份名册（v3.3.1）：只算一次，下面逐条报告共用
+  const nameCounts = buildNameCounts(students)
+
   const nameOf = (studentId: string): string => {
     const student = byId.get(studentId)
-    return student ? formatStudentShortName(student) : '已删除学生'
+    return student ? formatStudentShortName(student, nameCounts) : '已删除学生'
   }
 
   /** 把某生放到某座位是否与已放置学生冲突（只查该生的硬约束；position 为 O(1) 反向索引） */

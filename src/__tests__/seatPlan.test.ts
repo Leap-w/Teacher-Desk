@@ -208,14 +208,12 @@ describe('视角（v3.3.0，2026-09-15 补正排序列）：排号只认物理�
       'row-3',
       'row-2',
       'row-1',
-      // 下：前门 + 讲台（第 1 排紧挨讲台）
-      'door-front',
-      'podium',
+      // 下：讲台 + 前门同一行（第 1 排紧挨讲台）
+      'front-line',
     ])
     expect(viewRoomItems('student', CFG).map((item) => item.key)).toEqual([
-      // 上：讲台 + 前门 + 列号 9…1，紧挨讲台的是**第 1 排**
-      'podium',
-      'door-front',
+      // 上：讲台 + 前门同一行 + 列号 9…1，紧挨讲台的是**第 1 排**
+      'front-line',
       'cols',
       'row-1',
       'row-2',
@@ -245,7 +243,8 @@ describe('视角（v3.3.0，2026-09-15 补正排序列）：排号只认物理�
     // 2026-09-15 需求方反馈的就是这条：学生视角的讲台曾经顶在第 7 排头上。
     for (const view of ['teacher', 'student'] as const) {
       const items = viewRoomItems(view, CFG)
-      const podiumAt = items.findIndex((item) => item.kind === 'podium')
+      // v3.3.1：讲台与前门合并成一个 `front-line` 单元，讲台的位置就是它的位置
+      const podiumAt = items.findIndex((item) => item.kind === 'front-line')
       expect(podiumAt).toBeGreaterThanOrEqual(0)
       const rows = items
         .map((item, index) => ({ item, index }))
@@ -256,6 +255,20 @@ describe('视角（v3.3.0，2026-09-15 补正排序列）：排号只认物理�
       const farthest = rows.reduce((best, cur) => (distance(cur) > distance(best) ? cur : best))
       expect(nearest.item.key).toBe('row-1')
       expect(farthest.item.key).toBe('row-7')
+    }
+  })
+
+  it('前门与讲台同一水平线（v3.3.1：共用一个 front-line 单元，不再骑在第 1 排上）', () => {
+    // 页面 SeatClassroom 与导出图 SeatExportGraphic 都按 `kind === 'front-line'` 渲染这一行，
+    // 所以「前门与讲台同一行」在数据层就是「它们在同一个单元里」。
+    // 此前前门是独立的零高单元，标签靠 translateY(-50%) 骑在两块之间，正好压住第 1 排。
+    for (const view of ['teacher', 'student'] as const) {
+      const items = viewRoomItems(view, CFG)
+      const frontLines = items.filter((item) => item.kind === 'front-line')
+      expect(frontLines).toHaveLength(1)
+      // 这一行就画在教室的**前沿**：老师视角在最下、学生视角在最上
+      const at = items.findIndex((item) => item.kind === 'front-line')
+      expect(at).toBe(view === 'teacher' ? items.length - 1 : 0)
     }
   })
 

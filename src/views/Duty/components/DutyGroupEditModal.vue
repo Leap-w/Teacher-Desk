@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { AppBadge, AppButton, AppField, AppInput, AppModal } from '@/components/ui'
 import { defaultDutyGroupName } from '@/utils/duty'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 import type { DutyGroup } from '@/types/duty'
 
@@ -29,6 +29,9 @@ const emit = defineEmits<{
 const name = ref('')
 const selected = ref<Set<string>>(new Set())
 const keyword = ref('')
+
+/** 重名消歧计数：候选名单就是这份 `students`（v3.3.1） */
+const nameCounts = computed(() => buildNameCounts(props.students))
 
 const activeIdSet = computed(() => new Set(props.activeIds))
 const studentIdSet = computed(() => new Set(props.students.map((student) => student.id)))
@@ -131,7 +134,7 @@ function onSubmit(): void {
                   :checked="selected.has(student.id)"
                   @change="toggle(student.id)"
                 />
-                <span class="picker-name">{{ formatStudentShortName(student) }}</span>
+                <span class="picker-name">{{ formatStudentShortName(student, nameCounts) }}</span>
                 <AppBadge v-if="!isActive(student.id)" variant="warning" size="sm">
                   已不在档案
                 </AppBadge>

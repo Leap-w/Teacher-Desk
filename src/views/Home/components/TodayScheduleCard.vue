@@ -154,11 +154,16 @@ const countdownText = computed(() => {
   align-items: flex-start;
 }
 
+/*
+  v3.3.1 §五：首页 Hero 以下整体放大一级，且**今日课程是这一节的主角**
+  （需求单列一档 +2px）。用 `calc(令牌 + Npx)` 表达「比原档位大一级」，
+  档位本身仍只在 theme.css 里定义。
+*/
 .today-course__eyebrow {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--font-secondary);
+  font-size: calc(var(--font-secondary) + 1px);
   font-weight: var(--font-weight-semibold);
   color: var(--color-primary-dark);
 }
@@ -170,9 +175,10 @@ const countdownText = computed(() => {
   background: var(--color-primary);
 }
 
+/* 数字 +4px：这节课是哪一科，是整页第一眼要抓到的东西 */
 .today-course__subject {
   margin-top: var(--space-2);
-  font-size: var(--font-num-2xl);
+  font-size: calc(var(--font-num-2xl) + 4px);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.02em;
   line-height: var(--leading-tight);
@@ -180,13 +186,14 @@ const countdownText = computed(() => {
 }
 
 .today-course__subject--soft {
-  font-size: var(--font-num-sm);
+  font-size: calc(var(--font-num-sm) + 4px);
   color: var(--color-text-secondary);
 }
 
+/* 副标题 +1px */
 .today-course__meta {
   margin-top: var(--space-2);
-  font-size: var(--font-content);
+  font-size: calc(var(--font-content) + 1px);
   color: var(--color-text-secondary);
 }
 
@@ -199,7 +206,8 @@ const countdownText = computed(() => {
   border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   color: var(--color-primary-dark);
-  font-size: var(--font-secondary);
+  /* 副标题 +1px；倒计时是数字，跟着数字那一档走更合手 */
+  font-size: calc(var(--font-secondary) + 1px);
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
@@ -234,7 +242,8 @@ const countdownText = computed(() => {
   padding: var(--spacing-md);
   border-radius: var(--radius-sm);
   border-left: 3px solid transparent;
-  font-size: var(--text-md);
+  /* 今日课程列表 +2px：整行三列（课次 / 时间 / 科目）一起抬，行距才不会显得空 */
+  font-size: calc(var(--text-md) + 2px);
   color: var(--color-text-secondary);
   transition: background var(--duration-base) var(--ease-out);
 }
@@ -274,7 +283,8 @@ const countdownText = computed(() => {
   border-radius: var(--radius-full);
   background: var(--color-primary-soft);
   color: var(--color-primary-dark);
-  font-size: var(--text-xs);
+  /* 今日课程 +2px（徽标跟着行里的字走，不然会比旁边小两档） */
+  font-size: calc(var(--text-xs) + 2px);
   font-weight: var(--font-weight-semibold);
 }
 
@@ -289,7 +299,7 @@ const countdownText = computed(() => {
   }
 
   .today-course__subject {
-    font-size: var(--text-xl);
+    font-size: calc(var(--text-xl) + 4px);
   }
 
   .course-row {

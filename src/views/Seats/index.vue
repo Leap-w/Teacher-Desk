@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import { AppButton, AppModal, EmptyState } from '@/components/ui'
+import { AppButton, AppField, AppInput, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useAppSettingsStore } from '@/stores/appSettings'
 import { useStudentStore } from '@/stores/student'
@@ -24,7 +24,7 @@ import {
   A4_HEIGHT_MM,
 } from '@/utils/seatExport'
 import type { SeatExportKind } from '@/utils/seatExport'
-import { formatStudentDisplayName, formatStudentShortName } from '@/utils/student'
+import { formatStudentShortName } from '@/utils/student'
 import StudentDetailModal from '@/views/Students/components/StudentDetailModal.vue'
 import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
 import type { Student } from '@/types'
@@ -61,6 +61,15 @@ const studentStore = useStudentStore()
 const constraintStore = useConstraintStore()
 const appSettings = useAppSettingsStore()
 const toast = useToast()
+
+/**
+ * 本页所有「某某学生」的文案都走这里（v3.3.1）：toast、确认弹窗、换座提示条一律同一份重名规则。
+ * 散着写 `formatStudentShortName(student)` 的话，加一个参数就得满页找一遍——漏掉的那处
+ * 恰恰会显示成「旦增卓玛」，而教师下一句就要问「哪个旦增卓玛」。
+ */
+function nameOf(student: Pick<Student, 'name' | 'idCardSuffix'>): string {
+  return formatStudentShortName(student, studentStore.nameCounts)
+}
 
 /** 教室参数唯一来源：store.config（即 DEFAULT_CLASSROOM_CONFIG），页面不另写教室数字 */
 const config = seatStore.config
@@ -193,9 +202,7 @@ function applySeatChange(fromId: string, toId: string) {
       changeFailed()
       return
     }
-    toast.success(
-      `已交换：${formatStudentShortName(fromStudent)} ↔ ${formatStudentShortName(toStudent)}`,
-    )
+    toast.success(`已交换：${nameOf(fromStudent)} ↔ ${nameOf(toStudent)}`)
     announceConstraintWarnings(reportBefore)
     return
   }
@@ -203,9 +210,7 @@ function applySeatChange(fromId: string, toId: string) {
     changeFailed()
     return
   }
-  toast.success(
-    `已移动：${formatStudentShortName(fromStudent)} → ${seatPositionLong(toSeat.row, toSeat.col)}`,
-  )
+  toast.success(`已移动：${nameOf(fromStudent)} → ${seatPositionLong(toSeat.row, toSeat.col)}`)
   announceConstraintWarnings(reportBefore)
 }
 
@@ -265,7 +270,7 @@ const pickerFrom = ref<string | undefined>(undefined)
 
 const pickerLabel = computed(() => {
   const student = pickerFrom.value ? seatStudent(pickerFrom.value) : undefined
-  return student ? formatStudentShortName(student) : ''
+  return student ? nameOf(student) : ''
 })
 
 function startPicker(seatId: string) {
@@ -352,7 +357,7 @@ function confirmRemoveStudent() {
   }
   detailStudent.value = undefined
   cancelPicker()
-  toast.success(`已从学生列表中移除 ${formatStudentDisplayName(target)}`)
+  toast.success(`已从学生列表中移除 ${nameOf(target)}`)
 }
 
 /* ========== Phase 3B：保存本次调整 → 摘要 ========== */
@@ -478,7 +483,7 @@ function seatIdOfStudent(studentId: string): string | undefined {
 function locateStudent(student: Student) {
   const seatId = seatIdOfStudent(student.id)
   if (!seatId) {
-    toast.info(`${formatStudentShortName(student)} 当前未就座，请先安排座位`)
+    toast.info(`${nameOf(student)} 当前未就座，请先安排座位`)
     return
   }
   flashSeats([seatId])
@@ -604,12 +609,113 @@ function clearFlash() {
 
 /** 打开自动排座弹窗：清掉上一次的冲突结论 */
 /**
- * 「更多」菜单（v3.3.0）：两个动作各自打开原有的弹窗，逻辑零改动——
- * 菜单只负责把它们从常驻一排收进一次点击。
+ * 「更多」菜单（v3.3.0 建；v3.3.1 补齐方案动作）：
+ * 前两个动作各自打开原有的弹窗，逻辑零改动；后三个作用于**当前方案**，
+ * 把原先藏在「方案下拉 → 管理方案」里的重命名 / 删除拉到一点即达，并补上复制。
  */
 function onMoreAction(action: SeatMoreAction): void {
   if (action === 'arrange') openArrange()
-  else compareOpen.value = true
+  else if (action === 'compare') compareOpen.value = true
+  else if (action === 'rename') askRename()
+  else if (action === 'duplicate') duplicateCurrentPlan()
+  else askRemoveCurrent()
+}
+
+/* ========== v3.3.1：当前方案的 重命名 / 复制 / 删除 ========== */
+
+const renameOpen = ref(false)
+const renameDraft = ref('')
+
+function askRename(): void {
+  const current = seatStore.currentPlan
+  if (!current) return
+  renameDraft.value = current.name
+  renameOpen.value = true
+}
+
+function confirmRename(): void {
+  const current = seatStore.currentPlan
+  const name = renameDraft.value.trim()
+  renameOpen.value = false
+  if (!current) return
+  if (!name) {
+    toast.info('方案名不能为空，未改名')
+    return
+  }
+  handleRename(current.id, name)
+}
+
+/** 副本名（不与现有方案重名：「张三 副本」「张三 副本 2」…） */
+function nextCopyName(base: string): string {
+  const first = `${base} 副本`
+  if (!plans.value.some((plan) => plan.name === first)) return first
+  let n = 2
+  while (plans.value.some((plan) => plan.name === `${first} ${n}`)) n++
+  return `${first} ${n}`
+}
+
+/**
+ * 复制方案：座位与约束照搬，**换座记录不复制**——那是原方案的历史，
+ * 复制品从「此刻的座位」开始。副本立即成为当前方案（store 的既有语义）。
+ *
+ * 约束不随座位走：`createPlanFromSeats` 建的是空约束，所以复制完再写一次
+ * （`writeConstraints` 写的就是当前方案，且会自动规范化）。
+ */
+function duplicateCurrentPlan(): void {
+  const current = seatStore.currentPlan
+  if (!current) return
+  const hadPending = seatStore.pendingLogsCount > 0
+  const created = seatStore.createPlanFromSeats(current.seats, nextCopyName(current.name))
+  seatStore.writeConstraints({
+    sameDeskForbidden: current.constraints.sameDeskForbidden.map((rule) => ({ ...rule })),
+    adjacentGroupForbidden: current.constraints.adjacentGroupForbidden.map((rule) => ({
+      ...rule,
+      students: [...rule.students] as [string, string, string],
+    })),
+    frontRowStudents: [...current.constraints.frontRowStudents],
+    backRowStudents: [...current.constraints.backRowStudents],
+  })
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  if (hadPending) toast.info('已复制方案：未保存的「本次调整」记录已清空')
+  toast.success(`已复制为「${created.name}」并切换为当前`)
+}
+
+/**
+ * 删除**当前**方案：store 规定「当前方案不可删」，所以这里先切到另一份再删，
+ * 确认弹窗把「会切到哪一份」说在前面。只剩一份方案时菜单项灰着（删完就没方案了）。
+ */
+const removeCurrentOpen = ref(false)
+
+const removeFallback = computed(() =>
+  plans.value.find((plan) => plan.id !== seatStore.currentPlan?.id),
+)
+
+function askRemoveCurrent(): void {
+  if (!seatStore.currentPlan || !removeFallback.value) return
+  removeCurrentOpen.value = true
+}
+
+function confirmRemoveCurrent(): void {
+  const target = seatStore.currentPlan
+  const fallback = removeFallback.value
+  removeCurrentOpen.value = false
+  if (!target || !fallback) return
+  const hadPending = seatStore.pendingLogsCount > 0
+  if (!seatStore.switchPlan(fallback.id) || seatStore.currentPlan?.id !== fallback.id) {
+    toast.danger('删除失败：方案已变化，请刷新后重试')
+    return
+  }
+  if (!seatStore.removePlan(target.id)) {
+    toast.danger('删除失败：该方案未能删除，请刷新后重试')
+    return
+  }
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  if (hadPending) toast.info('已删除方案：未保存的「本次调整」记录已清空')
+  toast.success(`已删除「${target.name}」，当前方案为「${fallback.name}」`)
 }
 
 function openArrange() {
@@ -886,6 +992,8 @@ async function runCompareExport() {
           v-if="!compareActive"
           :arrange-disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
           :compare-disabled="plans.length < 2"
+          :plan-disabled="!seatStore.currentPlan"
+          :remove-disabled="plans.length < 2"
           @choose="onMoreAction"
         />
       </template>
@@ -1121,6 +1229,40 @@ async function runCompareExport() {
       />
     </AppModal>
 
+    <!-- v3.3.1：当前方案的重命名 / 删除（「更多」菜单的入口；删除需先切走，弹窗说清切到哪份） -->
+    <AppModal v-model="renameOpen" title="重命名方案" :width="400">
+      <AppField label="方案名称">
+        <AppInput
+          v-model="renameDraft"
+          :maxlength="20"
+          autofocus
+          placeholder="如「第一次月考后」"
+          @keydown.enter.prevent="confirmRename"
+        />
+      </AppField>
+      <template #footer>
+        <AppButton variant="ghost" @click="renameOpen = false">取消</AppButton>
+        <AppButton @click="confirmRename">保存</AppButton>
+      </template>
+    </AppModal>
+
+    <AppModal v-model="removeCurrentOpen" title="删除方案" :width="400">
+      <p class="confirm-text">
+        确定删除当前方案
+        <strong>{{ seatStore.currentPlan ? seatStore.currentPlan.name : '' }}</strong>
+        吗？删除后无法恢复，该方案的换座记录一并删除。
+      </p>
+      <p class="confirm-text confirm-text--sub">
+        当前方案将切换为
+        <strong>{{ removeFallback ? removeFallback.name : '' }}</strong>
+        。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="removeCurrentOpen = false">取消</AppButton>
+        <AppButton variant="danger" @click="confirmRemoveCurrent">删除方案</AppButton>
+      </template>
+    </AppModal>
+
     <AppModal v-model="confirmOpen" title="删除座位方案" :width="380">
       <p class="confirm-text">
         确定删除座位方案
@@ -1144,7 +1286,7 @@ async function runCompareExport() {
     <AppModal v-model="confirmStudentRemoveOpen" title="移除学生" :width="380">
       <p class="confirm-text">
         确定从学生列表中移除
-        <strong>{{ removingStudent ? formatStudentDisplayName(removingStudent) : '' }}</strong>
+        <strong>{{ removingStudent ? nameOf(removingStudent) : '' }}</strong>
         吗？此操作无法撤销。该学生在全部座位方案中的座位将被释放为空位。
       </p>
       <template #footer>
@@ -1205,12 +1347,10 @@ async function runCompareExport() {
 .seats-page {
   max-width: var(--page-max-width);
   /*
-    v3.3.0：本页页边距按需求收窄到 24px（全站是 32px）。
-    不直接改 `--page-pad-x`——那是全局令牌，座位页单独要窄一点，
-    不能让其余每一页跟着变。这里用负外边距抵消 .app-content 的 32px 再补回 24px，
-    影响范围严格限在本页：+16px 可用宽度，座位图跟着宽一点。
+    v3.3.0 这里曾用负外边距把本页页边距单独压到 24px（当时全站是 32px）。
+    v3.3.1 §七 把 `--page-pad-x` 全站改成 24px 之后，那处特例自动归零，
+    于是删掉——座位页不再需要「和别人不一样」的补丁，宽度由全局令牌一份定义。
   */
-  margin-inline: calc(24px - var(--page-pad-x));
 
   /* 页头三层 + 画布 + 状态栏之间的间距 */
   display: flex;
@@ -1400,6 +1540,17 @@ async function runCompareExport() {
 
 .confirm-text strong {
   color: var(--color-text);
+}
+
+/* 第二段说明（当前方案会切到哪一份）：弱一档，不与主问句抢注意力 */
+.confirm-text--sub {
+  margin-top: var(--space-2);
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+}
+
+.confirm-text--sub strong {
+  color: var(--color-text-secondary);
 }
 
 /* 保存本次调整后的摘要 */

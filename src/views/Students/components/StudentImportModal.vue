@@ -253,6 +253,7 @@ function close(): void {
               <th>姓名</th>
               <th>性别</th>
               <th>学号</th>
+              <th>身份证尾号</th>
               <th>宿舍</th>
               <th>班委</th>
               <th>标签</th>
@@ -269,6 +270,7 @@ function close(): void {
               <td>{{ row.name || '—' }}</td>
               <td>{{ genderLabel(row.gender) }}</td>
               <td>{{ row.studentNo || '—' }}</td>
+              <td>{{ row.idCardSuffix || '—' }}</td>
               <td>{{ row.dormitory || '—' }}</td>
               <td>{{ row.cadreRole || '—' }}</td>
               <td>{{ row.tags.join('、') || '—' }}</td>

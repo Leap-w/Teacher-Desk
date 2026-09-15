@@ -17,7 +17,6 @@ import {
   PICK_TICK_MS,
   TIMER_MAX_MINUTES,
   TIMER_PRESETS_MIN,
-  displayNameOf,
   drawOnce,
   formatDuration,
   groupResultLabel,
@@ -32,17 +31,29 @@ import {
   timerProgress,
   type LotteryGroup,
 } from '@/utils/classroom'
-import { buildDutyGroupNameById, buildNameCounts, disambiguatorOf } from '@/utils/student'
+import {
+  buildDutyGroupNameById,
+  buildNameCounts,
+  disambiguatorOf,
+  formatStudentShortName,
+} from '@/utils/student'
 import type { Student } from '@/types'
 
 /* ---------- 测试数据（形状与 normalizeStudent 一致，字段齐全才不会被改写） ---------- */
 
-function makeStudent(id: string, name: string, gender: 'male' | 'female', studentNo = ''): Student {
+function makeStudent(
+  id: string,
+  name: string,
+  gender: 'male' | 'female',
+  studentNo = '',
+  idCardSuffix?: string,
+): Student {
   return {
     id,
     name,
     gender,
     studentNo,
+    idCardSuffix,
     cadreRole: undefined,
     tags: [],
     createdAt: '2026-09-01',
@@ -51,8 +62,9 @@ function makeStudent(id: string, name: string, gender: 'male' | 'female', studen
 }
 
 const STUDENTS: Student[] = [
-  makeStudent('s-1', '旦增卓玛', 'female', '0011'),
-  makeStudent('s-2', '旦增卓玛', 'female', '0012'), // 同名（消歧用）
+  // 同名的一对：**靠身份证尾号区分**（v3.3.1 起消歧只有这一个来源）
+  makeStudent('s-1', '旦增卓玛', 'female', '0011', '3287'),
+  makeStudent('s-2', '旦增卓玛', 'female', '0012', '6145'),
   makeStudent('s-3', '扎西顿珠', 'male', '0013'),
   makeStudent('s-4', '格桑梅朵', 'female', '0014'),
   makeStudent('s-5', '洛桑', 'male', '0015'),
@@ -112,40 +124,46 @@ describe('随机点名', () => {
     expect(PICK_MODES.map((mode) => mode.key)).toEqual(['all', 'male', 'female', 'duty'])
   })
 
-  it('9. 抽一次：返回学生 + 消歧后的展示名（重名带值日组）', () => {
-    const outcome = drawOnce('all', STUDENTS, [], nameCounts, groupNameById, first)
+  it('9. 抽一次：返回学生 + 消歧后的展示名（重名带身份证尾号）', () => {
+    const outcome = drawOnce('all', STUDENTS, [], nameCounts, first)
     expect(outcome.student?.id).toBe('s-1')
-    expect(outcome.displayName).toBe('旦增卓玛（第1组）')
+    expect(outcome.displayName).toBe('旦增卓玛（3287）')
   })
 
-  it('10. 重名但无值日组：回落学号后四位', () => {
-    const outcome = drawOnce('all', STUDENTS, [], nameCounts, new Map(), last)
+  it('10. 两个同名各显各的尾号；不重名的只显示姓名', () => {
     // rng=0.99999 → 池里最后一位是 s-5（洛桑，不重名）
-    expect(outcome.displayName).toBe('洛桑')
-    const second = drawOnce('female', STUDENTS, [], nameCounts, new Map(), () => 0.5)
-    expect(second.displayName).toBe('旦增卓玛（0012）')
+    expect(drawOnce('all', STUDENTS, [], nameCounts, last).displayName).toBe('洛桑')
+    // 女生池 = [s-1, s-2, s-4]，rng=0.5 → s-2
+    expect(drawOnce('female', STUDENTS, [], nameCounts, () => 0.5).displayName).toBe(
+      '旦增卓玛（6145）',
+    )
   })
 
-  it('11. 不重名的学生不加后缀', () => {
-    const student = STUDENTS[2]!
-    expect(displayNameOf(student, nameCounts, groupNameById)).toBe('扎西顿珠')
+  it('11. 重名但没填身份证尾号 → 仍只显示姓名（不编造后缀）', () => {
+    const twins = [
+      makeStudent('n-1', '旦增卓玛', 'female', '0001'),
+      makeStudent('n-2', '旦增卓玛', 'female', '0002'),
+    ]
+    const counts = buildNameCounts(twins)
+    expect(formatStudentShortName(twins[0]!, counts)).toBe('旦增卓玛')
+    expect(disambiguatorOf(twins[0]!, counts)).toBeUndefined()
   })
 
   it('12. 空池给可读原因（按模式区分），而不是空洞的空白', () => {
-    const all = drawOnce('all', [], [], nameCounts, groupNameById, first)
+    const all = drawOnce('all', [], [], nameCounts, first)
     expect(all.emptyReason).toContain('还没有在读学生')
-    const duty = drawOnce('duty', STUDENTS, [], nameCounts, groupNameById, first)
+    const duty = drawOnce('duty', STUDENTS, [], nameCounts, first)
     expect(duty.emptyReason).toContain('今天没有值日组')
-    const male = drawOnce('male', [STUDENTS[0]!], [], nameCounts, groupNameById, first)
+    const male = drawOnce('male', [STUDENTS[0]!], [], nameCounts, first)
     expect(male.emptyReason).toContain('没有男生')
   })
 
   it('13. 滚动帧：按 tick 在池里循环取名字（不会越界）', () => {
     const pool = pickPoolFor('male', STUDENTS)
-    expect(rollFrame(pool, nameCounts, groupNameById, 0)).toBe('扎西顿珠')
-    expect(rollFrame(pool, nameCounts, groupNameById, 1)).toBe('洛桑')
-    expect(rollFrame(pool, nameCounts, groupNameById, 2)).toBe('扎西顿珠') // 循环
-    expect(rollFrame([], nameCounts, groupNameById, 3)).toBe('—')
+    expect(rollFrame(pool, nameCounts, 0)).toBe('扎西顿珠')
+    expect(rollFrame(pool, nameCounts, 1)).toBe('洛桑')
+    expect(rollFrame(pool, nameCounts, 2)).toBe('扎西顿珠') // 循环
+    expect(rollFrame([], nameCounts, 3)).toBe('—')
   })
 
   it('14. 滚动节奏：约 1 秒、约 12 帧（拍板值）', () => {
@@ -319,27 +337,35 @@ describe('重名消歧：与 Student Hub 共用同一份实现', () => {
   })
 
   it('40. disambiguatorOf：不重名 → undefined（不加后缀）', () => {
-    expect(disambiguatorOf(STUDENTS[4]!, nameCounts, groupNameById)).toBeUndefined()
+    expect(disambiguatorOf(STUDENTS[4]!, nameCounts)).toBeUndefined()
   })
 
-  it('41. disambiguatorOf：重名 → 值日组优先', () => {
-    expect(disambiguatorOf(STUDENTS[0]!, nameCounts, groupNameById)).toBe('第1组')
+  it('41. disambiguatorOf：重名 → 身份证尾号（不再用值日组）', () => {
+    expect(disambiguatorOf(STUDENTS[0]!, nameCounts)).toBe('3287')
+    expect(disambiguatorOf(STUDENTS[1]!, nameCounts)).toBe('6145')
+    // 值日组名与消歧无关：s-1 在第 1 组，消歧结果仍是尾号
+    expect(groupNameById.get('s-1')).toBe('第1组')
   })
 
-  it('42. disambiguatorOf：重名且无组 → 学号后四位', () => {
-    expect(disambiguatorOf(STUDENTS[1]!, nameCounts, new Map())).toBe('0012')
+  it('42. disambiguatorOf：重名但没填尾号 → undefined（学号不再是回落项）', () => {
+    const twins = [
+      makeStudent('n-1', '旦增卓玛', 'female', '0011'),
+      makeStudent('n-2', '旦增卓玛', 'female', '0012'),
+    ]
+    expect(disambiguatorOf(twins[0]!, buildNameCounts(twins))).toBeUndefined()
   })
 
-  it('43. 消歧只有一份实现：课堂工具复用 utils/student，不复制一份', async () => {
+  it('43. 消歧只有一份实现：课堂工具直接调 utils/student，不自己拼名字', async () => {
     const { readFileSync } = await import('node:fs')
     const classroom = readFileSync('src/utils/classroom.ts', 'utf8')
     expect(classroom).toContain("from '@/utils/student'")
-    expect(classroom).toContain('disambiguatorOf')
-    // 不允许在这里另起一套同名计数
+    expect(classroom).toContain('formatStudentShortName')
+    // 不允许在这里另起一套同名计数，也不允许自己拼括号
     expect(classroom).not.toContain('nameCounts.set(')
-    // 档案页同样走公共件（不是各自一份）
+    expect(classroom).not.toContain('（${')
+    // 档案页同样走公共件（不是各自一份），且计数取自 store
     const students = readFileSync('src/views/Students/index.vue', 'utf8')
-    expect(students).toContain('buildNameCounts')
+    expect(students).toContain('studentStore.nameCounts')
     expect(students).toContain('buildDutyGroupNameById')
   })
 })

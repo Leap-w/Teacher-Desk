@@ -3,23 +3,23 @@ import { computed } from 'vue'
 
 import { AppButton, AppModal } from '@/components/ui'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
+import { useStudentStore } from '@/stores/student'
 import type { Student } from '@/types'
 import StudentProfileHeader from './StudentProfileHeader.vue'
 
 interface Props {
   modelValue: boolean
   student?: Student
-  /** 同名学生数（重名徽章） */
-  duplicateCount?: number
-  /** 重名消歧文案（值日组优先，回落学号后四位） */
+  /** 重名消歧文案（身份证尾号；不重名时为 undefined） */
   disambiguator?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   student: undefined,
-  duplicateCount: undefined,
   disambiguator: undefined,
 })
+
+const studentStore = useStudentStore()
 
 /** 所在地文案：地区 · 县区；信息缺失显示 — */
 const locationText = computed(() => {
@@ -55,12 +55,10 @@ function onRemove() {
   <AppModal :model-value="modelValue" title="学生详情" :width="520" @update:model-value="close">
     <div v-if="student" class="detail">
       <!-- Profile 头：姓名 + 性别 / 班委 / 重名 / 标签 -->
-      <StudentProfileHeader
-        :student="student"
-        :duplicate-count="duplicateCount"
-        :disambiguator="disambiguator"
-      />
-      <p class="detail-formal">档案名 · {{ formatStudentShortName(student) }}</p>
+      <StudentProfileHeader :student="student" :disambiguator="disambiguator" />
+      <p class="detail-formal">
+        档案名 · {{ formatStudentShortName(student, studentStore.nameCounts) }}
+      </p>
 
       <!-- 信息分组：每组独立 Card Section（Apple Settings 风） -->
       <section class="detail-card">
@@ -69,6 +67,10 @@ function onRemove() {
           <div class="detail-item">
             <dt>学号</dt>
             <dd>{{ student.studentNo || '—' }}</dd>
+          </div>
+          <div class="detail-item">
+            <dt>身份证尾号</dt>
+            <dd>{{ student.idCardSuffix || '—' }}</dd>
           </div>
           <div class="detail-item">
             <dt>宿舍</dt>

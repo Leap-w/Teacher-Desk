@@ -30,7 +30,8 @@ const { hint } = useSyncEngine()
   border-radius: var(--radius-full);
   background: var(--color-warning-soft);
   color: var(--color-warning-strong);
-  font-size: var(--font-caption);
+  /* v3.3.1 §五：副标题 +1px */
+  font-size: calc(var(--font-caption) + 1px);
   font-weight: var(--font-weight-medium);
 }
 

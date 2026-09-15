@@ -21,7 +21,7 @@ import {
   isFrontRowSeat,
   seatBlockLabel,
 } from '@/utils/seat'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatPlan, SeatPlanConstraints } from '@/types/seat'
@@ -107,9 +107,12 @@ export function validateSeatPlanConstraints(
     if (seat.studentId && !studentSeat.has(seat.studentId)) studentSeat.set(seat.studentId, seat)
   }
 
+  // 重名消歧要看整份名册（v3.3.1）；只算一次，下面每份报告共用
+  const nameCounts = buildNameCounts([...students.values()])
+
   function nameOf(studentId: string): string {
     const student = students.get(studentId)
-    return student ? formatStudentShortName(student) : '已删除学生'
+    return student ? formatStudentShortName(student, nameCounts) : '已删除学生'
   }
 
   const errors: SeatPlanConstraintIssue[] = []

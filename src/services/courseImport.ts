@@ -20,11 +20,16 @@ import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 /** 模板表头（弹窗首屏与错误文案共用一份说法） */
 export const COURSE_IMPORT_HEADERS = ['星期', '节次', '班级', '科目', '类型', '原教师'] as const
 
-/** 模板示例（帮助教师理解「节次」写什么、「原教师」什么时候必填） */
+/**
+ * 模板示例（帮助教师理解「节次」写什么、「原教师」什么时候必填）。
+ * v3.3.1：末行举一节**周六**的课——导入本来就吃周一~周日，
+ * 但示例只举工作日会让人以为周末不能排（周视图现在恒定显示七天）。
+ */
 export const COURSE_IMPORT_SAMPLE: readonly (readonly string[])[] = [
   ['周一', '第5节', '高一9班', '数学', '正常', ''],
   ['周二', '第3节', '高一9班', '数学', '代课', '张老师'],
   ['周三', '晚自习1', '高一9班', '数学', '正常', ''],
+  ['周六', '第2节', '高一9班', '数学', '正常', ''],
 ]
 
 export const COURSE_IMPORT_HINT =

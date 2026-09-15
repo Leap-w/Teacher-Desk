@@ -125,14 +125,16 @@ const TONE_STYLE: Record<QuickActionTone, { bg: string; fg: string }> = {
   min-width: 0;
 }
 
+/* v3.3.1 §五：卡片标题 +2px */
 .quick-action__label {
-  font-size: var(--font-secondary);
+  font-size: calc(var(--font-secondary) + 2px);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
 }
 
+/* v3.3.1 §五：副标题 +1px。原来这儿是写死的 11px——顺手收回令牌档位 */
 .quick-action__desc {
-  font-size: 11px;
+  font-size: var(--font-caption);
   color: var(--color-text-tertiary);
 }
 </style>

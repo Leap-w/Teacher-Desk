@@ -1,4 +1,4 @@
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import {
   areSeatsAdjacent,
   areSeatsSameDesk,
@@ -107,9 +107,12 @@ export function checkSeatConstraints(ctx: {
     if (seat.studentId && !studentSeat.has(seat.studentId)) studentSeat.set(seat.studentId, seat)
   }
 
+  // 重名消歧要看整份名册（v3.3.1）：只算一次，下面逐条描述共用
+  const nameCounts = buildNameCounts([...ctx.students.values()])
+
   function nameOf(studentId: string): string {
     const student = ctx.students.get(studentId)
-    return student ? formatStudentShortName(student) : '已删除学生'
+    return student ? formatStudentShortName(student, nameCounts) : '已删除学生'
   }
 
   /** 1+2：手工录入的关系型硬约束（违反 = conflict） */

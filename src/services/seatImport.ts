@@ -16,7 +16,7 @@
 import type { ClassroomConfig } from '@/types/classroom'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import { isValidSeatPosition, seatPositionShort } from '@/utils/seat'
-import { formatStudentShortName } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
@@ -251,6 +251,8 @@ export function planSeatImport(
   blankRows = 0,
 ): SeatImportResult {
   const index = buildStudentIndex(students)
+  // 重名消歧要看整份名册（v3.3.1）：只算一次，预览里每行共用
+  const nameCounts = buildNameCounts(students)
 
   /** 当前方案：学生 → 座位（同一学生至多一处）、座位 id → 学生 */
   const currentSeatOfStudent = new Map<string, string>()
@@ -344,7 +346,7 @@ export function planSeatImport(
           seatLabel,
           action: 'assign',
           studentId,
-          studentLabel: formatStudentShortName(matched),
+          studentLabel: formatStudentShortName(matched, nameCounts),
           change,
         })
         continue

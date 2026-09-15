@@ -7,6 +7,7 @@ import type { CoursePeriodId, Lesson, Weekday } from '@/types/timetable'
 import {
   WEEKDAY_LABELS,
   WEEKDAY_SHORT_LABELS,
+  WEEKDAYS,
   isEveningPeriod,
   periodFullTextOf,
   periodLabelOf,
@@ -41,9 +42,11 @@ const emit = defineEmits<{
   ]
 }>()
 
-const WEEKDAY_OPTIONS: SelectOption<Weekday>[] = ([1, 2, 3, 4, 5, 6, 7] as Weekday[]).map(
-  (weekday) => ({ label: WEEKDAY_LABELS[weekday], value: weekday }),
-)
+/** 可调往的星期：直接吃 `WEEKDAYS`（曾在这里手写一遍 1~7，改口径时要改两处） */
+const WEEKDAY_OPTIONS: SelectOption<Weekday>[] = WEEKDAYS.map((weekday) => ({
+  label: WEEKDAY_LABELS[weekday],
+  value: weekday,
+}))
 
 interface FormState {
   toWeekday: Weekday

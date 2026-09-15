@@ -5,14 +5,15 @@ import StudentAvatar from './StudentAvatar.vue'
 
 /**
  * StudentProfileHeader — 学生详情头部（V2.0.3-alpha · Phase UI-4A 沉淀）：
- * 首字头像占位（学生无头像）+ 姓名 22px + 性别 / 班委 / 重名 / 标签徽章。
+ * 首字头像占位（学生无头像）+ 姓名 22px + 性别 / 班委 / 标签徽章。
  * Apple Settings 风格的 Profile 区；详情弹窗与未来档案页共用。
+ *
+ * v3.3.1：撤掉「同名 N 人」徽章——消歧的答案就是姓名后面那个身份证尾号，
+ * 再挂一个「同名 2 人」只是把同一个事实说了两遍，还占掉一行徽章的位置。
  */
 defineProps<{
   student: Student
-  /** 同名学生数；>1 时显示重名徽章 */
-  duplicateCount?: number
-  /** 重名消歧文案（值日组或学号后四位），如「第3组」 */
+  /** 重名消歧文案（身份证尾号，如「3287」）；不重名 / 未填尾号时为 undefined */
   disambiguator?: string
 }>()
 </script>
@@ -30,9 +31,6 @@ defineProps<{
           {{ student.gender === 'male' ? '男' : '女' }}
         </AppBadge>
         <AppBadge v-if="student.cadreRole" variant="success">{{ student.cadreRole }}</AppBadge>
-        <AppBadge v-if="duplicateCount && duplicateCount > 1" variant="warning">
-          同名 {{ duplicateCount }} 人
-        </AppBadge>
         <AppBadge v-for="tag in student.tags ?? []" :key="tag" variant="neutral">
           {{ tag }}
         </AppBadge>

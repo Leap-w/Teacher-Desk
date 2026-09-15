@@ -104,7 +104,14 @@ const emit = defineEmits<{
   backdrop-filter: blur(var(--nav-blur)) saturate(150%);
   -webkit-backdrop-filter: blur(var(--nav-blur)) saturate(150%);
   box-shadow: var(--shadow-sm);
-  overflow: hidden; /* 让首尾两层贴住圆角 */
+  /*
+    这里**不能**加 `overflow: hidden`（v3.3.0 曾用来「让首尾两层贴住圆角」）：
+    圆角本来就由本元素自己的背景裁切，而 `overflow: hidden` 会连带剪掉
+    第三层里展开的下拉——「更多」与「导出座位图」两个菜单都是在这一层里
+    `position: absolute` 向下展开的，被剪掉之后按钮看着就是**点了没反应**
+    （v3.3.1 修的两个 P0 都出在这一行上）。下拉要能压住下面的座位图，
+    靠的是本元素的 `z-index: var(--z-sticky)`。
+  */
 }
 
 /* 层与层之间的通栏细线（最后一层没有线） */

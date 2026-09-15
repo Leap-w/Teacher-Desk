@@ -58,11 +58,18 @@ export const VIEW_NOTES: Record<SeatView, string> = {
 /** 教室的四面墙（仅左右两面与视角有关：讲台居中，不随视角移动） */
 export type RoomSide = 'left' | 'right'
 
-/** 房间显示单元（讲台 / 门签 / 列号行 / 一排座位）：渲染顺序即数组顺序 */
+/**
+ * 房间显示单元（讲台 / 门签 / 列号行 / 一排座位）：渲染顺序即数组顺序。
+ *
+ * v3.3.1：讲台与前门合并成一个 `front-line` 单元——两者画在**同一水平线**上
+ * （`前门            讲台`，前门贴墙、讲台居中）。此前前门是独立的零高单元，
+ * 标签靠 `translateY(-50%)` 骑在两块之间，正好压在**紧挨讲台的那一排**（第 1 排）上，
+ * 那排的座位与排号被挡掉一截。
+ */
 export type RoomItem =
   | { key: string; kind: 'row'; row: number }
-  | { key: string; kind: 'podium' }
-  | { key: string; kind: 'door-front' }
+  /** 讲台 + 前门（同一行；前门挂哪面墙由 doorSidesOf 决定） */
+  | { key: string; kind: 'front-line' }
   | { key: string; kind: 'door-back' }
   /** 顶部列号行（v3.2.0）：永远紧跟在教室顶部那一块之后 */
   | { key: string; kind: 'cols' }
@@ -130,8 +137,8 @@ export function viewBlockIndexes(
 
 /**
  * 房间显示单元顺序（讲台 / 门签 / 列号 / 排）：**排序列跟着讲台走**。
- * - 老师视角：后门 → 列号 → 第 7 排 … 第 1 排 → 前门 → 讲台（讲台在下，第 1 排紧挨它）；
- * - 学生视角：讲台 → 前门 → 列号 → 第 1 排 … 第 7 排 → 后门（讲台在上，第 1 排紧挨它）。
+ * - 老师视角：后门 → 列号 → 第 7 排 … 第 1 排 → 讲台 + 前门（讲台在下，第 1 排紧挨它）；
+ * - 学生视角：讲台 + 前门 → 列号 → 第 1 排 … 第 7 排 → 后门（讲台在上，第 1 排紧挨它）。
  *
  * **2026-09-15 纠正**：v3.3.0 首版让两个视角的排序列完全一致（都是第 7 排在上），
  * 学生视角于是画成「讲台顶在第 7 排头上」——图本身就读不通（紧挨讲台的是末排）。
@@ -141,6 +148,9 @@ export function viewBlockIndexes(
  *
  * 单元 key 按**物理排号**稳定（`row-3`），换视角时 TransitionGroup 靠它做 FLIP 平滑换位；
  * 排序列反过来之后，7 排座位都会参与换位动画。
+ *
+ * **v3.3.1**：讲台与前门合并为同一个 `front-line` 单元——两者同一水平线，
+ * 前门不再骑着第 1 排那条分界线（见 `RoomItem` 的说明）。
  */
 export function viewRoomItems(
   view: SeatView,
@@ -148,13 +158,12 @@ export function viewRoomItems(
 ): RoomItem[] {
   const rows: RoomItem[] = []
   for (let row = 1; row <= config.rows; row++) rows.push({ key: `row-${row}`, kind: 'row', row })
-  const podium: RoomItem = { key: 'podium', kind: 'podium' }
-  const doorFront: RoomItem = { key: 'door-front', kind: 'door-front' }
+  const frontLine: RoomItem = { key: 'front-line', kind: 'front-line' }
   const doorBack: RoomItem = { key: 'door-back', kind: 'door-back' }
   const cols: RoomItem = { key: 'cols', kind: 'cols' }
   // 列号行贴着教室顶部那一条（老师视角 = 后门；学生视角 = 讲台 + 前门）
-  if (view === 'teacher') return [doorBack, cols, ...rows.reverse(), doorFront, podium]
-  return [podium, doorFront, cols, ...rows, doorBack]
+  if (view === 'teacher') return [doorBack, cols, ...rows.reverse(), frontLine]
+  return [frontLine, cols, ...rows, doorBack]
 }
 
 /**

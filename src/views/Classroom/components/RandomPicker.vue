@@ -4,7 +4,7 @@ import { Dices, Target } from 'lucide-vue-next'
 
 import { useDutyStore } from '@/stores/duty'
 import { useStudentStore } from '@/stores/student'
-import { buildDutyGroupNameById, buildNameCounts } from '@/utils/student'
+
 import {
   PICK_MODES,
   PICK_ROLL_MS,
@@ -42,8 +42,8 @@ let lastDrawnAt: number | null = null
 
 /** 在读学生（点名池的唯一来源） */
 const roster = computed(() => studentStore.activeStudents)
-const nameCounts = computed(() => buildNameCounts(roster.value))
-const dutyGroupNameById = computed(() => buildDutyGroupNameById(dutyStore.groups))
+/** 重名消歧的计数来自 store（v3.3.1 唯一来源），本组件不再自己算一份 */
+const nameCounts = computed(() => studentStore.nameCounts)
 
 /** 今日值日组的组员 id（当天没有值日组 → 空数组） */
 const todayGroupIds = computed(() => dutyStore.todayGroup?.studentIds ?? [])
@@ -96,13 +96,7 @@ function start(): void {
   const candidates = pool.value
   if (candidates.length === 0) {
     // 空池：立刻给出可读原因（不做无意义的滚动）
-    const outcome = drawOnce(
-      mode.value,
-      roster.value,
-      todayGroupIds.value,
-      nameCounts.value,
-      dutyGroupNameById.value,
-    )
+    const outcome = drawOnce(mode.value, roster.value, todayGroupIds.value, nameCounts.value)
     emptyReason.value = outcome.emptyReason ?? '没有可点名的学生'
     resultText.value = ''
     return
@@ -112,18 +106,12 @@ function start(): void {
   let tick = Math.floor(Math.random() * candidates.length)
   rollTimer = setInterval(() => {
     tick += 1
-    resultText.value = rollFrame(candidates, nameCounts.value, dutyGroupNameById.value, tick)
+    resultText.value = rollFrame(candidates, nameCounts.value, tick)
   }, PICK_TICK_MS)
 
   stopTimer = setTimeout(() => {
     clearTimers()
-    const outcome = drawOnce(
-      mode.value,
-      roster.value,
-      todayGroupIds.value,
-      nameCounts.value,
-      dutyGroupNameById.value,
-    )
+    const outcome = drawOnce(mode.value, roster.value, todayGroupIds.value, nameCounts.value)
     resultText.value = outcome.displayName ?? ''
     resultStudentId.value = outcome.student?.id ?? null
     rolling.value = false

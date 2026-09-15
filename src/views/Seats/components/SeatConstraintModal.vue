@@ -11,6 +11,7 @@ import type { ConstraintGroup, ConstraintIssue } from '@/utils/constraint'
 import { ADJACENT_RULE_NOTE, SAME_DESK_RULE_NOTE, seatPositionLong } from '@/utils/seat'
 import { PLAN_CONSTRAINT_LABELS, rowRuleNote } from '@/utils/seatPlanConstraint'
 import { formatStudentShortName } from '@/utils/student'
+import type { Student } from '@/types'
 
 /**
  * 排座约束弹窗（V1.1.2 Phase 1）。
@@ -76,12 +77,19 @@ const tab = ref<Tab>('desk')
 const students = computed(() => studentStore.activeStudents)
 const studentMap = computed(() => new Map(students.value.map((item) => [item.id, item])))
 const studentOptions = computed(() =>
-  students.value.map((item) => ({ value: item.id, label: formatStudentShortName(item) })),
+  students.value.map((item) => ({
+    value: item.id,
+    label: formatStudentShortName(item, studentStore.nameCounts),
+  })),
 )
 
 function nameOf(studentId: string): string {
   const student = studentMap.value.get(studentId)
-  return student ? formatStudentShortName(student) : '已删除学生'
+  return student ? formatStudentShortName(student, studentStore.nameCounts) : '已删除学生'
+}
+
+function nameOfDisplay(student: Student): string {
+  return formatStudentShortName(student, studentStore.nameCounts)
 }
 
 /** 学生当前所在位置（前排 / 后排列表里直接给出，教师不必回头找） */
@@ -360,7 +368,7 @@ function close(): void {
             :checked="selectedIds.includes(student.id)"
             @change="toggleSelect(student.id)"
           />
-          <span class="student-name">{{ formatStudentShortName(student) }}</span>
+          <span class="student-name">{{ nameOfDisplay(student) }}</span>
           <span class="student-seat">{{ seatLabelOf(student.id) }}</span>
           <span v-if="markOf(student.id) === 'front'" class="mark is-front">前排</span>
           <span v-else-if="markOf(student.id) === 'back'" class="mark is-back">后排</span>

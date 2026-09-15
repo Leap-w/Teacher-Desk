@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { ChevronRight, Ellipsis } from 'lucide-vue-next'
 
 import { AppBadge, AppCard } from '@/components/ui'
@@ -13,9 +12,7 @@ const props = withDefaults(
     /** 批量管理模式下卡片可勾选（Phase 5B）：点卡片 = 勾选，而不是打开详情 */
     selectable?: boolean
     selected?: boolean
-    /** 同名学生总数；>1 时显示重名徽章并在姓名后带消歧 */
-    duplicateCount?: number
-    /** 重名消歧文案（值日组优先，回落学号后四位） */
+    /** 重名消歧文案（身份证尾号）；不重名 / 未填尾号时为 undefined，姓名后面就什么都不加 */
     disambiguator?: string
     /** 家庭地区短文案（县区优先） */
     region?: string
@@ -25,7 +22,6 @@ const props = withDefaults(
   {
     selectable: false,
     selected: false,
-    duplicateCount: undefined,
     disambiguator: undefined,
     region: undefined,
     dutyGroup: undefined,
@@ -51,9 +47,9 @@ function activate() {
 
 /**
  * 信息优先级（UI-4A 产品规范）：姓名最醒目 → 身份标签 → 辅助信息 → 操作。
- * 重名徽章只在真正重名时出现，不给大多数卡片添噪。
+ * 消歧只在真正重名时出现（`disambiguator` 由父级按同一份规则算好），
+ * 不给大多数卡片添噪——v3.3.1 起连「同名 N 人」徽章也一并撤了。
  */
-const isDuplicate = computed(() => (props.duplicateCount ?? 1) > 1)
 </script>
 
 <template>
@@ -82,9 +78,7 @@ const isDuplicate = computed(() => (props.duplicateCount ?? 1) > 1)
       <div class="who">
         <h3 class="name">
           {{ student.name
-          }}<span v-if="isDuplicate && disambiguator" class="name-disamb"
-            >（{{ disambiguator }}）</span
-          >
+          }}<span v-if="disambiguator" class="name-disamb">（{{ disambiguator }}）</span>
         </h3>
         <!-- 学号自 Phase 5A 起可选，空值按 §2.3 显示占位符 -->
         <p class="student-no">{{ student.studentNo || '—' }}</p>
@@ -96,7 +90,6 @@ const isDuplicate = computed(() => (props.duplicateCount ?? 1) > 1)
       <AppBadge :variant="student.gender === 'male' ? 'primary' : 'neutral'">
         {{ student.gender === 'male' ? '男' : '女' }}
       </AppBadge>
-      <AppBadge v-if="isDuplicate" variant="warning"> 同名 {{ duplicateCount }} 人 </AppBadge>
       <AppBadge v-if="student.cadreRole" variant="success">{{ student.cadreRole }}</AppBadge>
       <AppBadge v-for="tag in student.tags ?? []" :key="tag" variant="neutral">{{ tag }}</AppBadge>
     </div>
