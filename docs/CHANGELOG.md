@@ -134,6 +134,15 @@
   这与当年 `vitest.config.ts` 固定 `TZ` 是同一类问题：**凡是「本机绿、CI 红」的口径，
   都要在代码里钉死，不能交给运行环境默认值。**
 
+### 上线（交付当日，2026-09-16）
+
+- 交付完成后执行 `npm run deploy`：116 + 25 个文件上传成功，`✔ 部署完成：1 个资源成功`，
+  地址 <https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com/>。
+- **线上 `curl` 复核**：`/` 引用的入口 chunk 与本机 `dist/` 同名，且**该文件 SHA-256 逐字节一致**
+  （`41ac6e0d…`）——线上确实是本次构建，看到旧版就只剩浏览器 SW 预缓存一个可能（刷新两次即可）。
+  `sw.js` / `/students/` / `/students/index.html` 均 200；导入模板用的 `assets/xlsx-*.js` 也在线（429 KB）。
+- 线上验收（真机点一遍）仍未做，与历次一样如实记着。
+
 ### 如实记录（与需求描述不一致的两处）
 
 - **「更多」与「导出座位图」按钮其实早已实现并接线**（`SeatMoreMenu` + `onMoreAction`、`SeatExportMenu` + `runExport`，
