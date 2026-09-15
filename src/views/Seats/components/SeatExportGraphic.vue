@@ -51,7 +51,8 @@ type ExportItem = RoomItem
 
 /**
  * 与页面**同一份**视角逻辑（`utils/seatView.ts`，V1.1.2 Phase 1；v3.2.0 定死纵向朝向）：
- * 老师视角讲台在下、第 1 排紧挨讲台；学生视角讲台在上、左右镜像（**排号与排序列不变**）。
+ * 老师视角讲台在下、学生视角讲台在上，**两个视角里紧挨讲台的都是第 1 排**
+ * （排序列跟着讲台走，排号本身仍是物理号，2026-09-15 补正）。
  * 两处共用实现，导出与页面不可能再对不上。
  */
 const items = computed<ExportItem[]>(() => viewRoomItems(props.view, props.config))
@@ -227,17 +228,24 @@ function rowUnits(row: number): RowUnit[] {
   padding: 10px 20px 6px;
 }
 
-/* 窗：整条灰色竖条 + 一个「窗」字（v3.2.0 参考图口径，与页面同款） */
+/* 窗：**天蓝底 + 窗棂线 + 一个「窗」字**（2026-09-15 加强，与页面同款） */
 .ex-windows {
   position: absolute;
   top: 10px;
   bottom: 6px;
-  width: 16px;
+  width: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--color-sky);
   border-radius: var(--radius-xs);
-  background: var(--color-fill-disabled);
+  background-color: var(--color-sky-light);
+  /* 每 11px 一道横线 = 窗棂（导出图比页面小一号，间距同比缩） */
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 10px,
+    rgba(111, 168, 220, 0.45) 10px 11px
+  );
 }
 
 .ex-windows.is-right {
@@ -252,7 +260,8 @@ function rowUnits(row: number): RowUnit[] {
   writing-mode: vertical-rl;
   font-style: normal;
   font-size: 9px;
-  color: var(--color-text-faint);
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .ex-podium {
@@ -274,16 +283,18 @@ function rowUnits(row: number): RowUnit[] {
   height: 22px;
 }
 
-/* 门签：浅灰矩形标签（v3.2.0 参考图口径，与页面同款） */
+/* 门签：矩形标签 + 描边 + 贴墙侧加粗门轴（2026-09-15 加强，与页面同款） */
 .ex-door::after {
   content: '';
   position: absolute;
   top: 1px;
-  padding: 2px 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius-xs);
-  background: var(--color-fill-disabled);
+  background: var(--color-primary-light);
   font-size: 10px;
-  color: var(--color-text-secondary);
+  font-weight: 600;
+  color: var(--color-primary-strong);
   white-space: nowrap;
 }
 
@@ -298,10 +309,12 @@ function rowUnits(row: number): RowUnit[] {
 
 .ex-door.is-right::after {
   right: 2px;
+  border-right-width: 3px;
 }
 
 .ex-door.is-left::after {
   left: 2px;
+  border-left-width: 3px;
 }
 
 /* ---- 座位排 ---- */
@@ -333,12 +346,20 @@ function rowUnits(row: number): RowUnit[] {
   gap: 6px;
 }
 
-/* 过道：灰色竖条（v3.2.0 参考图口径，与页面同款） */
+/* 过道：淡青底 + 虚线中线（2026-09-15 加强，与页面同款） */
 .ex-aisle {
   width: 8px;
   flex-shrink: 0;
   border-radius: var(--radius-full);
-  background: var(--color-fill-disabled);
+  background-color: var(--color-primary-bg);
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--color-primary) 0 4px,
+    transparent 4px 9px
+  );
+  background-size: 2px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 /* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 50px） */

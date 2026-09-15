@@ -29,7 +29,10 @@ interface Props {
   seats: Seat[]
   /** 学生查询表（id → Student）；已删除学生查不到时按空位展示 */
   students: Map<string, Student>
-  /** 视角：老师（讲台在下）/ 学生（讲台在上）。**排号与座位数据两视角一致**，只左右镜像 */
+  /**
+   * 视角：老师（讲台在下）/ 学生（讲台在上）。两个视角是同一间教室的正反两面，
+   * **排号 / 座位号 / 座位数据都是物理号，不随视角改变**，只有画面顺序跟着讲台翻。
+   */
   view: SeatView
   /** 当前选中座位 id（切换视角时保持不变，仅改变排布顺序） */
   selectedId?: string
@@ -70,8 +73,10 @@ const seatsById = computed(() => new Map(props.seats.map((seat) => [seat.id, sea
 /**
  * 双视角显示顺序（computed 生成，不复制座位）——**与导出图共用同一份实现**
  * （`utils/seatView.ts`，V1.1.2 Phase 1 起的唯一事实来源）：
- * - 老师视角：后门 → 列号 → 第 7 排 … 第 1 排 → 前门 → 讲台（讲台在下）；
- * - 学生视角：讲台 → 前门 → 列号 → 第 7 排 … 第 1 排 → 后门（**排序列不变**，只把讲台 / 门换到另一端）。
+ * - 老师视角：后门 → 列号 → 第 7 排 … 第 1 排 → 前门 → 讲台（讲台在下，第 1 排紧挨它）；
+ * - 学生视角：讲台 → 前门 → 列号 → 第 1 排 … 第 7 排 → 后门（讲台在上，第 1 排紧挨它）。
+ *
+ * 两个视角里**紧挨讲台的都是第 1 排**：排序列跟着讲台走，排号本身仍是物理号。
  */
 const roomItems = computed(() => viewRoomItems(props.view, props.config))
 
@@ -470,7 +475,8 @@ defineExpose({ revealSeat, openQuickCard })
   padding: var(--space-4) 24px;
 }
 
-/* 右墙 / 左墙的窗：整条灰色竖条 + 居中一个「窗」字（v3.2.0 参考图口径）。
+/* 右墙 / 左墙的窗：**天蓝底 + 窗棂线 + 一个「窗」字**（2026-09-15 加强）。
+   此前是 4% 灰底、灰字，与过道、门签一起糊在纸面上，一眼看不出哪是墙哪是座位。
    静态装饰，但挂哪面墙随视角对调——老师视角在右、学生视角在左。 */
 .windows {
   position: absolute;
@@ -480,8 +486,15 @@ defineExpose({ revealSeat, openQuickCard })
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--color-sky);
   border-radius: var(--radius-sm);
-  background: var(--color-fill-disabled);
+  background-color: var(--color-sky-light);
+  /* 每 13px 一道横线 = 窗棂，读起来是一排窗户而不是一根竖条 */
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent 0 12px,
+    rgba(111, 168, 220, 0.45) 12px 13px
+  );
 }
 
 .windows.is-right {
@@ -496,11 +509,14 @@ defineExpose({ revealSeat, openQuickCard })
   writing-mode: vertical-rl;
   font-style: normal;
   font-size: var(--text-xs);
-  color: var(--color-text-faint);
+  font-weight: var(--font-weight-semibold);
+  /* 天蓝在浅蓝底上不够读，字用中性深色——颜色靠底色和窗棂交代，字只负责说清是「窗」 */
+  color: var(--color-text-secondary);
 }
 
 /* 翻转容器：单元重排时由 Vue TransitionGroup 的 move 过渡驱动（FLIP）。
-   180ms / ease-out——v3.3.0 后排队列不再重排，实际只有讲台与两个门签换端时「挪过去」。 */
+   180ms / ease-out——2026-09-15 起排序列随讲台翻，切换视角时整间教室（含 7 排座位）
+   一起「绕中心转过去」，不再是只有讲台与两个门签换端。 */
 .room-flip {
   display: flex;
   flex-direction: column;
@@ -545,7 +561,8 @@ defineExpose({ revealSeat, openQuickCard })
 }
 
 /* 前 / 后门：零高单元（is-front / is-back）随排布顺序 FLIP 平移，门签挂在对应墙侧。
-   门签是**浅灰矩形标签**（v3.2.0 参考图口径），不是胶囊。 */
+   门签仍是**矩形标签**（v3.2.0 参考图口径，不是胶囊），但 2026-09-15 起描边 + 着色，
+   并在**贴墙那一侧**描一道粗边当门轴，与浅色座位卡片明确区分开。 */
 .doorline {
   position: relative;
   height: 0;
@@ -555,22 +572,28 @@ defineExpose({ revealSeat, openQuickCard })
 .door {
   position: absolute;
   top: 0;
-  padding: 4px 14px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius-sm);
-  background: var(--color-fill-disabled);
+  background: var(--color-primary-light);
   font-size: var(--text-xs);
-  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-primary-strong);
   white-space: nowrap;
   transform: translateY(-50%);
+  box-shadow: var(--shadow-xs);
 }
 
 /* 两个门同在教室「左墙」（配置 frontDoor/backDoor 同侧），学生视角镜像到右墙 */
 .doorline.is-right .door {
   right: 0;
+  /* 粗边朝墙：门轴贴在墙上那一侧 */
+  border-right-width: 4px;
 }
 
 .doorline.is-left .door {
   left: 0;
+  border-left-width: 4px;
 }
 
 /* ---- 座位排 ---- */
@@ -612,12 +635,22 @@ defineExpose({ revealSeat, openQuickCard })
   min-width: 0;
 }
 
-/* 过道：灰色竖条（参考图口径）。宽度与列号行的同名单元一致，两侧座位因此严格分块 */
+/* 过道：**淡青底 + 一条虚线中线**（2026-09-15 加强）。
+   宽度与列号行的同名单元一致，两侧座位因此严格分块；
+   中线是虚线，与「座位之间那道窄缝」区分开——过道是一条能走人的通道。 */
 .aisle {
   width: var(--space-3);
   flex-shrink: 0;
   border-radius: var(--radius-full);
-  background: var(--color-fill-disabled);
+  background-color: var(--color-primary-bg);
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--color-primary) 0 5px,
+    transparent 5px 11px
+  );
+  background-size: 2px 100%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 /* ---- 顶部列号行 ---- */

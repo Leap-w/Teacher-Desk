@@ -106,7 +106,7 @@ describe('坐标：真实教室只有 7 × 9', () => {
   })
 })
 
-describe('视角（v3.3.0）：只镜像列，不镜像行', () => {
+describe('视角（v3.3.0，2026-09-15 补正排序列）：排号只认物理号，排序列跟着讲台走', () => {
   it('需求给定的四个点都严格吻合：行原样、列 10-col', () => {
     // Row7 Col1 → Row7 Col9
     expect(mirrorSeatPosition(7, 1, CFG)).toEqual({ row: 7, col: 9 })
@@ -194,9 +194,9 @@ describe('视角（v3.3.0）：只镜像列，不镜像行', () => {
     ])
   })
 
-  it('房间单元顺序：两视角的**排序列完全一致**（都是第 7 排在上、第 1 排在下）', () => {
-    // 逐项钉死整条顺序，而不是抽查首尾——「讲台在哪一端」与「排怎么排」正是 v3.2.0/v3.3.0
-    // 两次改动的点，只抽查首尾是看不出来的。
+  it('房间单元顺序：排序列跟着讲台走（第 1 排永远紧挨讲台）', () => {
+    // 逐项钉死整条顺序，而不是抽查首尾——「讲台在哪一端」与「排怎么排」正是 v3.2.0 /
+    // v3.3.0 / 2026-09-15 三次改动的点，只抽查首尾是看不出来的。
     expect(viewRoomItems('teacher', CFG).map((item) => item.key)).toEqual([
       // 上：后门 + 列号 1…9
       'door-back',
@@ -213,27 +213,50 @@ describe('视角（v3.3.0）：只镜像列，不镜像行', () => {
       'podium',
     ])
     expect(viewRoomItems('student', CFG).map((item) => item.key)).toEqual([
-      // 上：讲台 + 前门 + 列号 9…1
+      // 上：讲台 + 前门 + 列号 9…1，紧挨讲台的是**第 1 排**
       'podium',
       'door-front',
       'cols',
-      // 排序列与老师视角逐位相同——这是 v3.3.0 的全部要点
-      'row-7',
-      'row-6',
-      'row-5',
-      'row-4',
-      'row-3',
-      'row-2',
       'row-1',
-      // 下：后门
+      'row-2',
+      'row-3',
+      'row-4',
+      'row-5',
+      'row-6',
+      'row-7',
+      // 下：后门（紧挨后门的是第 7 排）
       'door-back',
     ])
   })
 
-  it('两视角的排序列逐位相等（只有讲台 / 两个门签换了端）', () => {
+  it('两视角的排序列互为倒序（同一间教室的正反两面）', () => {
     const rowsOf = (items: ReturnType<typeof viewRoomItems>) =>
       items.filter((item) => item.kind === 'row').map((item) => item.key)
-    expect(rowsOf(viewRoomItems('student', CFG))).toEqual(rowsOf(viewRoomItems('teacher', CFG)))
+    expect(rowsOf(viewRoomItems('student', CFG))).toEqual(
+      rowsOf(viewRoomItems('teacher', CFG)).reverse(),
+    )
+    // 排号本身不换：两视角用的都是同一批 `row-N` 键，只是先后不同
+    expect([...rowsOf(viewRoomItems('student', CFG))].sort()).toEqual(
+      [...rowsOf(viewRoomItems('teacher', CFG))].sort(),
+    )
+  })
+
+  it('两个视角里紧挨讲台的都是第 1 排、紧挨远端的是第 7 排（图不能自己打自己）', () => {
+    // 2026-09-15 需求方反馈的就是这条：学生视角的讲台曾经顶在第 7 排头上。
+    for (const view of ['teacher', 'student'] as const) {
+      const items = viewRoomItems(view, CFG)
+      const podiumAt = items.findIndex((item) => item.kind === 'podium')
+      expect(podiumAt).toBeGreaterThanOrEqual(0)
+      const rows = items
+        .map((item, index) => ({ item, index }))
+        .filter(({ item }) => item.kind === 'row')
+      expect(rows).toHaveLength(CFG.rows)
+      const distance = (entry: { index: number }) => Math.abs(entry.index - podiumAt)
+      const nearest = rows.reduce((best, cur) => (distance(cur) < distance(best) ? cur : best))
+      const farthest = rows.reduce((best, cur) => (distance(cur) > distance(best) ? cur : best))
+      expect(nearest.item.key).toBe('row-1')
+      expect(farthest.item.key).toBe('row-7')
+    }
   })
 
   it('列号行：老师 1 2 3 | 4 5 6 | 7 8 9，学生 9 8 7 | 6 5 4 | 3 2 1，过道位置一一对应', () => {
