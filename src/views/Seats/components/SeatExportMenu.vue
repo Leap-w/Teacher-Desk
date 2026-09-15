@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ChevronDown, FileDown, FileText } from 'lucide-vue-next'
+import { ChevronDown, FileDown, FileSpreadsheet, FileText } from 'lucide-vue-next'
 
 import type { SeatExportKind } from '@/utils/seatExport'
 
 /**
  * SeatExportMenu — 导出菜单（V2.0.4-alpha · Phase UI-4B）：
- * 工具栏胶囊按钮 → 下拉列出 PNG / PDF 各导出项；busy 时禁用并显示进度。
+ * 工具栏胶囊按钮 → 下拉列出 PNG / PDF / Excel 各导出项；busy 时禁用并显示进度。
  * 导出执行由父级 runExport 完成（Loading + Toast 沿用编排层）。
+ *
+ * v3.4.0：PDF 两项都改成**横向 A4**（双视角 = 一个视角一页，共 2 页），
+ * 并新增 Excel 一项（照需求方模板出的 .xlsx，两个视角各一个工作表）。
  */
 const ITEMS: { kind: SeatExportKind; label: string; icon: typeof FileDown }[] = [
   { kind: 'png-teacher', label: 'PNG · 老师视角', icon: FileDown },
   { kind: 'png-student', label: 'PNG · 学生视角', icon: FileDown },
-  { kind: 'pdf-teacher', label: 'PDF · 老师视角', icon: FileText },
-  { kind: 'pdf-dual', label: 'PDF · 双视角', icon: FileText },
+  { kind: 'pdf-teacher', label: 'PDF · 老师视角（横向 A4）', icon: FileText },
+  { kind: 'pdf-dual', label: 'PDF · 双视角（2 页横向 A4）', icon: FileText },
+  { kind: 'xlsx-dual', label: 'Excel · 两个视角', icon: FileSpreadsheet },
 ]
 
 const props = defineProps<{

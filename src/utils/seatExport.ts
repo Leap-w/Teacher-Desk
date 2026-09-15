@@ -8,9 +8,15 @@ import { jsPDF } from 'jspdf'
 
 /** px → mm（浏览器 CSS 像素按 96dpi 折算，jsPDF unit: 'mm'） */
 const MM_PER_PX = 25.4 / 96
-/** A4 竖版页面尺寸（mm） */
-export const A4_WIDTH_MM = 210
-export const A4_HEIGHT_MM = 297
+/**
+ * A4 **横向**页面尺寸（mm）。
+ *
+ * v3.4.0：由竖版（210×297）改为横向——需求方给的座位图模板就是横向 A4
+ * （`pageSetup paperSize="9" orientation="landscape"`），竖版打出来左右空一大片。
+ * 座位图天然是「宽 > 高」的一间教室，横向才是它的正形。
+ */
+export const A4_WIDTH_MM = 297
+export const A4_HEIGHT_MM = 210
 
 /** 中文导出日期文案：2026年9月10日 */
 export function exportDateLabel(date = new Date()): string {
@@ -24,8 +30,14 @@ export function exportDateStamp(date = new Date()): string {
   return `${date.getFullYear()}-${month}-${day}`
 }
 
-/** 导出种类：PNG（单视角）× PDF（老师单页 / 双视角同页） */
-export type SeatExportKind = 'png-teacher' | 'png-student' | 'pdf-teacher' | 'pdf-dual'
+/**
+ * 导出种类：PNG（单视角）/ PDF（老师单页、双视角两页）/ Excel（两个视角各一个工作表）。
+ *
+ * v3.4.0：PDF 全部改为**横向 A4**，`pdf-dual` 由「一页装两个视角」改为**一个视角一页**；
+ * 新增 `xlsx-dual`（照需求方模板出的 .xlsx，见 `utils/xlsxSheet.ts`）。
+ */
+export type SeatExportKind =
+  'png-teacher' | 'png-student' | 'pdf-teacher' | 'pdf-dual' | 'xlsx-dual'
 
 /** 把（隐藏的）导出渲染节点快照为画布；等待字体就绪避免中文 / 图标缺失 */
 export async function renderExportNode(
@@ -48,9 +60,9 @@ export function downloadPng(canvas: HTMLCanvasElement, filename: string): void {
   anchor.click()
 }
 
-/** 新建竖版 A4 PDF（unit mm） */
+/** 新建横向 A4 PDF（unit mm）。所有导出 PDF（单视角 / 双视角 / 方案对比）共用同一个页面口径 */
 export function createPdf(): jsPDF {
-  return new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  return new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 }
 
 export interface PdfImageOptions {

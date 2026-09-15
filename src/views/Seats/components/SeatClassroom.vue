@@ -136,6 +136,9 @@ function seatClass(seat: Seat): Record<string, boolean> {
     'is-cadre': accent === 'cadre',
     'is-tall': accent === 'tall',
     'is-tag': accent === 'tag',
+    // 女生底条（v3.3.2）：空座位与性别未填都落到 false——不臆造性别。
+    // 与顶部条分列两端，班委 / 高个与女生两个标记可以同时成立（见 SeatCard 的说明）。
+    'is-girl': student?.gender === 'female',
   }
 }
 

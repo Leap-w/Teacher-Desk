@@ -57,6 +57,14 @@
   --color-danger-strong: #a54f52;
   --color-danger-soft: rgba(194, 103, 106, 0.12);
   --color-info: #4b8f8c;
+  /*
+   * 座位图性别标记（v3.3.2）：女生卡片底部的细条。
+   * 与**顶部条**（班委 = 主色 / 高个 = 琥珀）分列卡片上下两端，同一个学生两者兼得时
+   * 互不遮蔽——顶部说的是「角色」，底部说的是「性别」，两条信息互不覆盖。
+   * 只在**网站屏幕**上用；导出图（`SeatExportGraphic.vue`）不带任何性别标记，
+   * 这是需求方点名的「导出的不要这个彩条」。
+   */
+  --color-gender-female: #c47d9b;
 
   /* ========== 4. 背景系统（V6.0：页面底 #F8FAFB + 卡片纯白） ========== */
   --bg-page: #f8fafb; /* UI-1 规范命名 */
@@ -266,6 +274,8 @@
   --color-danger-strong: #dd9294;
   --color-danger-soft: rgba(211, 122, 125, 0.16);
   --color-info: #5aa7af;
+  /* 座位图性别标记：暗底上提亮一档（同语义色的处理），见 :root 里的完整说明 */
+  --color-gender-female: #d89ab4;
 
   /* 背景系统：page → surface → surface2 三层 */
   --bg-page: #111315;

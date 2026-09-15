@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { buildNameCounts, formatStudentShortName, seatAccentOf } from '@/utils/student'
-import { seatOrdinal } from '@/utils/seat'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import {
   doorSidesOf,
   viewColUnits,
@@ -18,8 +17,16 @@ import type { Student } from '@/types'
 /**
  * 导出用静态座位图（纯展示、无交互，与页面 SeatClassroom 同一份 Seat 数据）。
  * 与页面差异：固定 A4 友好尺寸、无编辑控件 / 按钮 / 拖拽手势，供 html-to-image 快照。
+ *
+ * **v3.4.0：导出图改成「素格」**——需求方给的模板（`docs/座位图-9.3.xlsx`）里，
+ * 每个学生就是一个**带边框的方格，格子里只有姓名**。此前导出图上有头像圈、
+ * 班委 / 高个的彩色顶条、空座位的虚线框加＋号与图例，于是**同一张图上出现了三种
+ * 长相不同的格子**，需求方原话是「有的学生卡片形状和其他学生不一样」。
+ * 现在一律只留边框：格子尺寸 / 边框 / 底色完全相同，有人的写字、没人的空着。
+ *
+ * **注意：只改导出图**。页面上的 `SeatClassroom.vue` 保留头像与强调标记——
+ * 屏幕上有图例、能悬停、能看出谁是班委，那些装饰是给屏幕用的，不是给打印用的。
  */
-
 interface Props {
   config: ClassroomConfig
   seats: Seat[]
@@ -77,21 +84,9 @@ const colUnits = computed<ColUnit[]>(() => viewColUnits(props.view, props.config
 const doorSides = computed(() => doorSidesOf(props.view, props.config))
 const windowsSide = computed(() => windowSideOf(props.view, props.config))
 
+/** 方案对比：相对 A 方案换过座位的学生，格子加一圈黄描边（只在这一处高亮） */
 function seatChanged(seat: Seat): boolean {
   return Boolean(seat.studentId && props.changedStudentIds?.has(seat.studentId))
-}
-
-/** 座位附加类：强调标记（同页面图例）+ 对比变化高亮 */
-function exSeatClass(seat: Seat): Record<string, boolean> {
-  const student = occupantOf(seat)
-  const accent = student ? seatAccentOf(student) : undefined
-  return {
-    'is-empty': !student,
-    'is-changed': seatChanged(seat),
-    'is-cadre': accent === 'cadre',
-    'is-tall': accent === 'tall',
-    'is-tag': accent === 'tag',
-  }
 }
 
 /** 某一显示排的列块与过道：按视角排列（与页面 seat 布局同源） */
@@ -106,11 +101,6 @@ function rowUnits(row: number): RowUnit[] {
       <h3 class="ex-title">{{ title }}</h3>
       <p class="ex-meta">{{ subtitle }}</p>
       <p v-if="highlightNote" class="ex-meta is-note">{{ highlightNote }}</p>
-      <ul class="ex-legend" aria-label="图例">
-        <li><i class="ex-swatch is-cadre"></i>班委</li>
-        <li><i class="ex-swatch is-tall"></i>高个</li>
-        <li><i class="ex-swatch is-tag"></i>其他标签</li>
-      </ul>
     </header>
 
     <div class="ex-room">
@@ -147,16 +137,15 @@ function rowUnits(row: number): RowUnit[] {
           <template v-for="unit in rowUnits(item.row)" :key="unit.key">
             <span v-if="unit.kind === 'aisle'" class="ex-aisle" aria-hidden="true"></span>
             <span v-else class="ex-block">
-              <template v-for="seat in unit.seats" :key="seat.id">
-                <div v-if="occupantOf(seat)" class="ex-seat" :class="exSeatClass(seat)">
-                  <i class="ex-avatar" aria-hidden="true">{{ occupantOf(seat)?.name.charAt(0) }}</i>
-                  <span class="ex-name">{{ occupantName(seat) }}</span>
-                </div>
-                <div v-else class="ex-seat is-empty">
-                  <span class="ex-plus" aria-hidden="true">＋</span>
-                  <span class="ex-ordinal">{{ seatOrdinal(seat.row, seat.col, config) }}</span>
-                </div>
-              </template>
+              <!-- 空座位与有人的座位**长得完全一样**（只是里面没字）——模板就是这么画的 -->
+              <div
+                v-for="seat in unit.seats"
+                :key="seat.id"
+                class="ex-seat"
+                :class="{ 'is-changed': seatChanged(seat) }"
+              >
+                <span v-if="occupantOf(seat)" class="ex-name">{{ occupantName(seat) }}</span>
+              </div>
             </span>
           </template>
         </div>
@@ -197,44 +186,6 @@ function rowUnits(row: number): RowUnit[] {
 
 .ex-meta.is-note {
   color: var(--color-warning-strong);
-}
-
-.ex-legend {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 10px;
-  color: var(--color-text-secondary);
-}
-
-.ex-legend li {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ex-swatch {
-  display: inline-block;
-  width: 16px;
-  height: 2px;
-  border-radius: var(--radius-full);
-}
-
-.ex-swatch.is-cadre {
-  background: var(--color-primary-strong);
-}
-
-.ex-swatch.is-tall {
-  background: var(--color-warning);
-}
-
-.ex-swatch.is-tag {
-  width: 5px;
-  height: 5px;
-  background: var(--color-text-secondary);
 }
 
 /* ---- 教室区 ---- */
@@ -404,7 +355,7 @@ function rowUnits(row: number): RowUnit[] {
   background-repeat: no-repeat;
 }
 
-/* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 54px） */
+/* 顶部列号行：每个列号占的宽度与一个座位一致（.ex-seat 的 64px） */
 .ex-row.is-cols {
   align-items: center;
   padding-bottom: 0;
@@ -414,100 +365,47 @@ function rowUnits(row: number): RowUnit[] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
+  width: 64px;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
 }
 
-/* ---- 座位单元（窄列：头像 + 姓名） ---- */
+/* ---- 座位格（v3.4.0：素格——只有边框与姓名，与模板一致） ----
+   尺寸按横向 A4 放大一号（54×56 → 64×60，姓名 10 → 11px）：一页只放一个视角，
+   纸面上的字因此从约 8.6pt 抬到约 9.8pt（`html-to-image` 默认 pixelRatio: 2，
+   矢量放大不吃印刷精度）。**不再用圆角**：模板是 Excel 单元格，直角才像那张表。 */
 .ex-seat {
-  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  width: 54px;
-  height: 56px;
-  padding: 3px 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xs);
+  width: 64px;
+  height: 60px;
+  padding: 3px 4px;
+  border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
   overflow: hidden;
 }
 
-.ex-seat.is-empty {
-  border-style: dashed;
-  background: transparent;
-}
-
+/* 方案对比专用：换过座位的格子套一圈黄环（唯一一处「格子不一样」，因为那正是要比的东西）。
+   用 **inset box-shadow** 而不是 outline——outline 不参与布局，画出来会比邻座每边大 3px，
+   邻座间距只有 6px，于是高亮格与邻座贴死，又是一次「这张卡片形状不一样」。
+   现在黄环画在格子**里面**，边界一格不差（页面 SeatCard 同样不改几何，用 box-shadow）。 */
 .ex-seat.is-changed {
   border-color: var(--color-warning-strong);
-  outline: 2px solid var(--color-warning);
-  outline-offset: 1px;
-}
-
-.ex-avatar {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--color-primary-soft);
-  color: var(--color-primary-strong);
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 600;
+  box-shadow: inset 0 0 0 2px var(--color-warning);
 }
 
 /* 姓名**完整显示**（v3.3.1）：重名带尾号后「旦增卓玛（3287）」一行放不下，
    去掉省略号改成最多折两行——导出图上被截断的名字等于没导 */
 .ex-name {
   max-width: 100%;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  line-height: 1.15;
+  line-height: 1.2;
   text-align: center;
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: normal;
-}
-
-.ex-plus {
-  font-size: 14px;
-  font-weight: 300;
-  color: var(--color-text-faint);
-  line-height: 1;
-}
-
-.ex-ordinal {
-  font-size: 8px;
-  color: var(--color-text-faint);
-  line-height: 1;
-}
-
-/* 强调标记（同页面图例）：班委 = 顶条主色，高个 = 顶条琥珀 */
-.ex-seat.is-cadre::before,
-.ex-seat.is-tall::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-}
-
-.ex-seat.is-cadre::before {
-  background: var(--color-primary-strong);
-}
-
-.ex-seat.is-tall::before {
-  background: var(--color-warning);
-}
-
-.ex-seat.is-cadre .ex-avatar {
-  background: var(--color-primary);
-  color: var(--color-text-inverse);
 }
 </style>

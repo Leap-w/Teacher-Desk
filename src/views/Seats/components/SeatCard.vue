@@ -2,7 +2,11 @@
 /**
  * SeatCard — 座位卡（V2.0.4-alpha · Phase UI-4B）：
  * Apple Classroom 风的统一座位块——上：首字头像 + 姓名；中：座位号；边缘：强调标记
- * （班委顶条 / 高个顶条 / 标签角点，颜色一律来自 theme.css）。
+ * （班委顶条 / 高个顶条 / 女生底条 / 标签角点，颜色一律来自 theme.css）。
+ *
+ * v3.3.2：新增**女生底条**（`is-girl`，由父级 `seatClass` 计算）——顶部条画的是「角色」
+ * （班委 / 高个），底部条画的是「性别」，两条信息分列卡片两端、互不遮蔽。
+ * **只在网站屏幕上**：导出图走的是另一套实现（`SeatExportGraphic.vue`），不带性别标记。
  * 纯展示组件：交互（点击 / 拖拽）由父级通过原生事件穿透绑定，data-seat-id 也由
  * 父级传入后落到根按钮（拖拽落点判定 `closest('[data-seat-id]')` 依赖它）。
  */
@@ -33,6 +37,9 @@ withDefaults(
 
 <template>
   <button type="button" class="seat" :class="classes" :title="title">
+    <!-- 女生标记（v3.3.2）：底部细条，与顶部条（班委 / 高个）分列两端、互不遮蔽。
+         伪元素只有 ::before / ::after 两个且已被顶条与标签角点占用，故这里用真实元素 -->
+    <span v-if="classes['is-girl']" class="seat-gender-bar" aria-hidden="true" />
     <template v-if="!empty">
       <span class="seat-avatar" aria-hidden="true">{{ char }}</span>
       <span class="seat-name">{{ name }}</span>
@@ -227,6 +234,22 @@ withDefaults(
   right: 0;
   height: 3px;
   border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+/*
+  女生 = 底条（v3.3.2）。**为什么是底部而不是顶部**：顶部条已经被班委 / 高个占用，
+  两者都画在 `::before` 上——同一个学生既是班委又是女生时，若都往顶部画就只剩一条。
+  分列上下两端之后，顶部说的是「角色」、底部说的是「性别」，两条同时成立、各自可见。
+  高度与顶条同是 3px、圆角跟着卡片下沿走，视觉上就是同一套标记语言的下半部分。
+*/
+.seat-gender-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: var(--color-gender-female);
 }
 
 .seat.is-cadre::before {
