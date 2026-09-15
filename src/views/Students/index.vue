@@ -75,6 +75,8 @@ const removingStudent = ref<Student | undefined>(undefined)
 /** 批量管理模式（Phase 5B）：卡片变成可勾选，点卡片 = 勾选而不是打开详情 */
 const batchMode = ref(false)
 const batchOpen = ref(false)
+/** 批量删除的二次确认（v3.3.1）——与单个删除一样，删之前必须让教师看清是谁 */
+const batchRemoveOpen = ref(false)
 /** 选中集合。整体替换而不是就地增删——与 store 侧「整体替换」同一哲学 */
 const selectedIds = ref<Set<string>>(new Set())
 
@@ -177,6 +179,17 @@ const selectedStudents = computed(() =>
 const detailStudent = computed(() =>
   activeStudents.value.find((item) => item.id === detailId.value),
 )
+
+/**
+ * 批量删除确认弹窗里的名字预览。**列出来是为了让教师核对点没点错人**，不是为了列全——
+ * 超过 8 个就截断，否则选了一个班时光是名单就把弹窗撑满，反而看不清「确定」按钮。
+ * 名字走 `nameOf()`，重名的带尾号，与列表里看到的一致（否则核对本身就没意义）。
+ */
+const selectedNames = computed(() => {
+  const names = selectedStudents.value.map((student) => nameOf(student))
+  if (names.length <= 8) return names.join('、')
+  return `${names.slice(0, 8).join('、')} 等 ${names.length} 人`
+})
 
 const activeFilterCount = computed(() => (filter.value === 'all' ? 0 : 1) + (keyword.value ? 1 : 0))
 
@@ -300,6 +313,25 @@ function confirmRemove() {
   toast.success(`已从学生列表中移除 ${nameOf(target)}`)
 }
 
+/**
+ * 批量删除（v3.3.1）：确认后一次性软删除选中的人。
+ *
+ * 走 `studentStore.removeStudents()`——**一次写盘 + 一次广播**，与批量修改同一纪律。
+ * 删完清空勾选：留着已消失的 id 在选中集合里，下次进批量模式会显示「已选 3 人」却一个都选不中。
+ * 全班删空时顺手退出批量模式，否则只剩一个空勾选界面。
+ */
+function confirmBatchRemove() {
+  batchRemoveOpen.value = false
+  const removed = studentStore.removeStudents([...selectedIds.value])
+  if (removed === 0) {
+    toast.danger('删除失败：选中的学生记录不存在，请刷新后重试')
+    return
+  }
+  toast.success(`已从学生列表中移除 ${removed} 名学生`)
+  clearSelection()
+  if (activeStudents.value.length === 0) batchMode.value = false
+}
+
 function clearFilters() {
   keyword.value = ''
   filter.value = 'all'
@@ -321,6 +353,9 @@ function clearFilters() {
             取消全选
           </AppButton>
           <AppButton :disabled="!selectedIds.size" @click="batchOpen = true">批量修改</AppButton>
+          <AppButton variant="danger" :disabled="!selectedIds.size" @click="batchRemoveOpen = true">
+            批量删除
+          </AppButton>
           <AppButton variant="secondary" @click="exitBatch">退出批量管理</AppButton>
         </template>
         <!-- v3.1.0：顺序改为 批量导入 → 批量管理 → 新增学生（主按钮仍在最后、仍带底色）；
@@ -429,6 +464,22 @@ function clearFilters() {
       <template #footer>
         <AppButton variant="ghost" @click="confirmOpen = false">取消</AppButton>
         <AppButton variant="danger" @click="confirmRemove">从学生列表中移除</AppButton>
+      </template>
+    </AppModal>
+
+    <!-- 批量删除：**必须二次确认，且把名字摊开**——批量操作最容易「点错了还看不出来」 -->
+    <AppModal v-model="batchRemoveOpen" title="批量删除学生" :width="420">
+      <p class="confirm-text">
+        确定将选中的
+        <strong>{{ selectedIds.size }}</strong>
+        名学生从学生列表中移除吗？此操作无法撤销。
+      </p>
+      <p v-if="selectedNames" class="confirm-names">{{ selectedNames }}</p>
+      <template #footer>
+        <AppButton variant="ghost" @click="batchRemoveOpen = false">取消</AppButton>
+        <AppButton variant="danger" @click="confirmBatchRemove">
+          从学生列表中移除 {{ selectedIds.size }} 人
+        </AppButton>
       </template>
     </AppModal>
   </div>
@@ -548,5 +599,17 @@ function clearFilters() {
 
 .confirm-text strong {
   color: var(--color-text);
+}
+
+/* 待删名单：长名字要能折行，不能被弹窗宽度截掉——截掉就等于没让人核对 */
+.confirm-names {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 </style>

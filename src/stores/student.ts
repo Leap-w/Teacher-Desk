@@ -164,6 +164,38 @@ export const useStudentStore = defineStore('student', () => {
     return { updated, skipped }
   }
 
+  /**
+   * 批量软删除（v3.3.1）：把选中的学生一次性标记 deletedAt。
+   *
+   * **一次整体替换 = 一次写盘 + 一次广播**，理由与 `applyStudentBatch` 完全相同：
+   * 循环调 `removeStudent()` 的话，选 30 个人就是 30 次写盘 + 30 次广播。
+   *
+   * 与单个删除同口径——只标记 `deletedAt`，不做物理删除，**也不动座位 / 请假 / 值日**：
+   * 那些记录各自认学生 id，学生被软删后不再参与显示与统计，行为与逐个删完全一致。
+   * 一个人都没删（id 不存在 / 已经删过）时**不赋值**——不赋值 = 不写盘、不广播。
+   *
+   * @returns 本次实际移除的人数
+   */
+  function removeStudents(ids: readonly string[]): number {
+    const targets = new Set(ids)
+    if (targets.size === 0) return 0
+    // 同一批用同一个时间戳：将来若要按「哪次操作」回溯，一条时间戳就是一个批次
+    const deletedAt = new Date().toISOString()
+    let removed = 0
+    const next: Student[] = []
+    for (const student of students.value) {
+      if (!targets.has(student.id) || student.deletedAt) {
+        next.push(student)
+        continue
+      }
+      removed += 1
+      next.push({ ...student, deletedAt })
+    }
+    if (removed === 0) return 0
+    students.value = next
+    return removed
+  }
+
   /** 软删除：标记 deletedAt 并从活跃列表移除（当前无回收站入口，仅本地留档） */
   function removeStudent(id: string): boolean {
     const index = students.value.findIndex((item) => item.id === id && !item.deletedAt)
@@ -185,6 +217,7 @@ export const useStudentStore = defineStore('student', () => {
     addStudent,
     updateStudent,
     removeStudent,
+    removeStudents,
     applyStudentImport,
     applyStudentBatch,
   }

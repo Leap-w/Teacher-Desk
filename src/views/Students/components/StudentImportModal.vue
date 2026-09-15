@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal, TemplateDownloadLink } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import {
   DORMITORY_HINT,
+  STUDENT_IMPORT_HEADERS,
+  STUDENT_IMPORT_SAMPLE,
   parseStudentRows,
   planStudentImport,
   readSheetRows,
@@ -191,10 +193,20 @@ function close(): void {
 
     <!-- 未选文件：先讲清楚表格该怎么摆，教师回去改表比来回试快 -->
     <div v-if="!filename && !parseError" class="intro">
-      <p class="intro-lead">选择一份 Excel 名单（.xlsx / .xls），第一行为表头。</p>
+      <header class="intro-hint">
+        <p class="intro-lead">选择一份 Excel 名单（.xlsx / .xls），第一行为表头。</p>
+        <TemplateDownloadLink
+          filename="学生名单导入模板"
+          sheet-name="学生名单"
+          :headers="STUDENT_IMPORT_HEADERS"
+          :sample="STUDENT_IMPORT_SAMPLE"
+        />
+      </header>
       <ul class="intro-list">
         <li><strong>必填列</strong>：姓名、性别</li>
-        <li><strong>选填列</strong>：学号、宿舍、班委、标签、联系电话、家庭住址、返家范围</li>
+        <li>
+          <strong>选填列</strong>：学号、身份证尾号、宿舍、班委、标签、联系电话、家庭住址、返家范围
+        </li>
         <li>
           学号相同的行会<strong>更新</strong>已有学生，其余<strong>新增</strong>；标签用逗号分隔
         </li>
@@ -302,6 +314,15 @@ function close(): void {
 <style scoped>
 .file-input {
   display: none;
+}
+
+/* 说明 + 「下载模板」一行。**不复用下面的 `.hint`**——那个类已经归解析结果
+   的提示条目用了（`.hint.is-warning` 等），同名会互相串样式 */
+.intro-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .intro-lead {

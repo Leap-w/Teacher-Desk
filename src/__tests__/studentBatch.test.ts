@@ -1,10 +1,10 @@
 /**
- * 批量修改落库（Phase 5B）。
+ * 批量修改 / 批量删除落库（Phase 5B、v3.3.1）。
  *
- * 被测的是 `utils/studentBatch.ts` 的补丁规则与 `stores/student.ts` 的 `applyStudentBatch`。
- * 前者纯函数、后者只管分账，所以能把各种「教师点错了」的处境直接摆出来跑。
+ * 被测的是 `utils/studentBatch.ts` 的补丁规则与 `stores/student.ts` 的 `applyStudentBatch`
+ * / `removeStudents`。前者纯函数、后者只管分账，所以能把各种「教师点错了」的处境直接摆出来跑。
  *
- * 五条最要紧的：
+ * 六条最要紧的：
  *  ① **整批只写一次盘、只广播一条**。`syncPersisted` 的 deep watch 盯着数组本身，
  *     一次整体替换 = 一次写盘；循环调 `updateStudent()` 的话，选 30 个人就是 30 次写盘
  *     + 30 条广播（`applyStudentImport` 的注释里已把这条写成纪律，这里把它测出来）。
@@ -15,6 +15,9 @@
  *  ④ **不修改就是真的不修改**。「不修改」与「清空」必须区分开——混成一个的话，
  *     教师只想改宿舍时标签会整批没掉。
  *  ⑤ **不动无关学生**。整批替换 ≠ 全表重建：没被选中的学生对象引用不变。
+ *  ⑥ **批量删除与单个删除同口径**（v3.3.1）。只标记 `deletedAt`、不做物理删除，
+ *     也不动座位 / 请假 / 值日；同一批共用一个时间戳，将来能按「哪次操作」回溯。
+ *     一个人都没删（id 不存在 / 已经删过）时同样**不赋值**。
  */
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
@@ -394,6 +397,82 @@ describe('分账：谁被动过、谁没动', () => {
     await nextTick()
 
     expect(find(store, 's1').seatNumber).toBe(7)
+  })
+})
+
+describe('批量删除落库（v3.3.1）：与单个删除同口径', () => {
+  it('三人一起删：写盘一次、广播一条，且都只是标记 deletedAt', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '甲', '0101'),
+      makeStudent('s2', '乙', '0102'),
+      makeStudent('s3', '丙', '0103'),
+    ])
+    browser.localStorage.resetCounters()
+
+    expect(store.removeStudents(['s1', 's2', 's3'])).toBe(3)
+    await nextTick()
+
+    expect(store.activeStudents).toHaveLength(0)
+    // 记录仍在（软删除），不是物理删除
+    expect(store.students).toHaveLength(3)
+    for (const id of ['s1', 's2', 's3']) expect(find(store, id).deletedAt).toBeTruthy()
+    expect(browser.localStorage.writesFor(STUDENTS_KEY)).toBe(1)
+    expect(posted).toHaveLength(1)
+    expect(posted[0]).toMatchObject({ kind: 'keys', keys: [STUDENTS_KEY] })
+  })
+
+  it('同一批用同一个时间戳——一条时间戳就是一个批次', async () => {
+    const store = seedAndOpen([makeStudent('s1', '甲', '0101'), makeStudent('s2', '乙', '0102')])
+
+    store.removeStudents(['s1', 's2'])
+    await nextTick()
+
+    expect(find(store, 's1').deletedAt).toBe(find(store, 's2').deletedAt)
+  })
+
+  it('只动被选中的人：没选中的引用不变，已删过的不重复盖时间戳', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '甲', '0101'),
+      makeStudent('s2', '乙', '0102'),
+      makeStudent('s3', '丙', '0103', { deletedAt: '2026-01-01T00:00:00.000Z' }),
+    ])
+    const untouched = find(store, 's2')
+    browser.localStorage.resetCounters()
+
+    // s3 早就删了、s9 根本不存在——两者都不该让计数变多
+    expect(store.removeStudents(['s1', 's3', 's9'])).toBe(1)
+    await nextTick()
+
+    expect(find(store, 's1').deletedAt).toBeTruthy()
+    expect(find(store, 's2')).toBe(untouched)
+    // 已删过的那条保留原时间戳，不被这次操作改写
+    expect(find(store, 's3').deletedAt).toBe('2026-01-01T00:00:00.000Z')
+  })
+
+  it('一个人都没删 → 不赋值：一个字节都不写、一条广播都不发', async () => {
+    const store = seedAndOpen([makeStudent('s1', '甲', '0101')])
+    browser.localStorage.resetCounters()
+
+    expect(store.removeStudents(['nope'])).toBe(0)
+    expect(store.removeStudents([])).toBe(0)
+    await nextTick()
+
+    expect(browser.localStorage.writesFor(STUDENTS_KEY)).toBe(0)
+    expect(posted).toHaveLength(0)
+  })
+
+  it('删空之后重名计数跟着收敛：软删除的人不再参与 nameCounts', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '张三', '0101', { idCardSuffix: '4321' }),
+      makeStudent('s2', '张三', '0102', { idCardSuffix: '8765' }),
+    ])
+    expect(store.nameCounts.get('张三')).toBe(2)
+
+    store.removeStudents(['s2'])
+    await nextTick()
+
+    // 只剩一个「张三」——他就不该再挂着尾号显示
+    expect(store.nameCounts.get('张三')).toBe(1)
   })
 })
 

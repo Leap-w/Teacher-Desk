@@ -43,9 +43,9 @@
 > 想知道现在的首页 / 「我的」/ 数据与同步长什么样，看 `docs/CHANGELOG.md` 最新一条（v3.3.1-rc）。
 > 特别提醒：**工作台的「今日待办」模块已在 v3.0.3-rc 整体移除**（数据层一并删除），下面 Phase 4 / 8 / 9A / 9B / 9C 里提到它，都属于历史。
 
-学生档案已完成：搜索与筛选、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）、Excel 批量导入。**重名学生区分（v3.3.1 起全站一条规则）**：**不重名只显示姓名；重名且填了「身份证尾号」才显示成 `旦增卓玛（3287）`**；尾号是选填字段（建议 4 位，不做数字校验——尾号可能是 X），表单 / 详情 / Excel 导入 / 座位图 / 导出图全都支持。旧口径（「姓名（学号后四位｜N 号）」，以及卡片上那个「同名 N 人」徽章、「第 X 组」后缀）**已全部撤掉**。
+学生档案已完成：搜索与筛选、详情 / 新增 / 编辑弹窗、软删除、学号唯一性（表单 + Store 双层）、家庭地址与返家范围数据模型（为未来周末管理打底）、Excel 批量导入（**v3.3.1 起弹窗里提供 .xlsx 模板下载**）、批量修改与**批量删除**（v3.3.1 新增——多选后一次移除，确认框会把待删名单列出来；与单个删除同口径：只标记 `deletedAt`，不动座位 / 请假 / 值日，**一次写盘 + 一次广播**）。**重名学生区分（v3.3.1 起全站一条规则）**：**不重名只显示姓名；重名且填了「身份证尾号」才显示成 `旦增卓玛（3287）`**；尾号是选填字段（建议 4 位，不做数字校验——尾号可能是 X），表单 / 详情 / Excel 导入 / 座位图 / 导出图全都支持。旧口径（「姓名（学号后四位｜N 号）」，以及卡片上那个「同名 N 人」徽章、「第 X 组」后缀）**已全部撤掉**。
 
-座位管理（Phase 3A）已完成：固定教室模型（高一9班 · 7 排 × 9 列 · 3-3-3 分列 · 63 座就座 62 · 末排尾座留空）、老师 / 学生双视角可视化网格（约 300ms 翻转动画，选中跨视角保持）、班委 / 高个 / 标签强调标记、多座位方案管理（开学初 / 新建 / 切换 / 重命名 / 删除历史）。
+座位管理（Phase 3A）已完成：固定教室模型（高一9班 · 7 排 × 9 列 · 3-3-3 分列 · 63 座就座 62 · 末排尾座留空）、老师 / 学生双视角可视化网格（约 300ms 翻转动画，选中跨视角保持）、班委 / 高个 / 标签强调标记、多座位方案管理（开学初 / 新建 / 切换 / 重命名 / 删除历史）、**座位表 Excel 导入（v3.3.1 起弹窗里提供 .xlsx 模板下载）**。
 
 拖拽换座（Phase 3B）已完成：Pointer Events 原生拖拽（交换 / 移入空位，63 号尾座可手动拖入，落回原位不动作，双视角即时同步）、换座日志 SeatChangeLog（交换 2 条 / 移动 1 条，姓名快照 + 位置短文案）、「保存本次调整」归档并自动生成「本次调整」摘要、长按（0.4s）信息卡（查看详情 / 开始换座，详情复用学生模块弹窗）、删除学生自动释放其全部座位。
 
@@ -110,7 +110,7 @@ npm run dev         # 开发服务器
 npm run type-check  # TypeScript 类型检查（vue-tsc --noEmit）
 npm run lint        # ESLint 检查并自动修复
 npm run format      # Prettier 格式化
-npm run test        # 回归测试（27 个文件 612 项，离线可跑，不需要云环境）
+npm run test        # 回归测试（31 个文件 685 项，离线可跑，不需要云环境）
 npm run test:watch  # 同上，改一处跑一次
 npm run build       # 类型检查 + 生产构建
 npm run deploy      # 构建并发布到 CloudBase 静态网站托管（需先 tcb login，v1.0.0）
@@ -165,7 +165,7 @@ npm run deploy                  # = tcb deploy：安装依赖 → 构建 → 上
 
 ## 基础组件（`src/components/ui/`）
 
-AppCard / AppButton / AppInput / AppTextarea / AppSelect / AppField / AppBadge / AppModal / AppDrawer / AppSwitch / AppToast / EmptyState，统一由 `@/components/ui` 出口导入（弹层的滚动锁 / 层级栈 / 焦点陷阱在 `ui/layers.ts`，Modal 与 Drawer 共用）。
+AppCard / AppButton / AppInput / AppTextarea / AppSelect / AppField / AppBadge / AppModal / AppDrawer / AppSwitch / AppToast / EmptyState / **TemplateDownloadLink**（导入模板下载，v3.3.1），统一由 `@/components/ui` 出口导入（弹层的滚动锁 / 层级栈 / 焦点陷阱在 `ui/layers.ts`，Modal 与 Drawer 共用）。
 
 全局通知（AppToast 已在 `App.vue` 挂载）：
 
@@ -210,7 +210,8 @@ TeacherDesk/
 │   │                   #   / timetable（星期 / 节次 / 班级标识 / 时段冲突 / 周末列）/ scheduleNow（当前课 / 下一节判定唯一实现）
 │   │                   #   / leave / duty（轮换推进 / 说明文案 / 记录健壮化）/ weekend / point
 │   │                   #   / classroom（课堂工具元信息）/ work / backup（备份导出 / 校验 / 合并 / 清空）
-│   ├── __tests__/      # 常驻回归自检（27 个测试文件 612 项，随仓库长期存在）
+│   │                   #   / xlsxTemplate（导入模板生成与下载，v3.3.1：真 .xlsx，与导入器认的是同一种格式）
+│   ├── __tests__/      # 常驻回归自检（31 个测试文件 685 项，随仓库长期存在）
 │   │                   #   / helpers/env.ts（假浏览器底座：内存存储 / 假广播通道 / 假时钟 / 断网开关）
 │   ├── views/          # Home（工作台）/ Students / Seats / Schedule / Leave / Duty / Weekend / Works（工作清单）
 │   │                   #   / My（我的：个人信息 / 工作时光 / 设置入口 / 关于）

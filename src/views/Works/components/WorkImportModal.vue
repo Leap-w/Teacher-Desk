@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal, TemplateDownloadLink } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import { useWorkStore } from '@/stores/work'
@@ -104,22 +104,6 @@ async function onConfirm(): Promise<void> {
 function onCancel(): void {
   emit('update:modelValue', false)
 }
-
-function downloadTemplate(): void {
-  const csv = [
-    WORK_IMPORT_HEADERS.join(','),
-    ...WORK_IMPORT_SAMPLE.map((row) =>
-      row.map((cell) => (cell.includes(',') ? `"${cell}"` : cell)).join(','),
-    ),
-  ].join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = '工作清单导入模板.csv'
-  a.click()
-  URL.revokeObjectURL(url)
-}
 </script>
 
 <template>
@@ -132,16 +116,19 @@ function downloadTemplate(): void {
     <div class="import-body">
       <header class="hint">
         <p class="hint-text">{{ WORK_IMPORT_HINT }}</p>
-        <button type="button" class="download-link" @click="downloadTemplate">
-          下载模板（CSV）
-        </button>
+        <TemplateDownloadLink
+          filename="工作清单导入模板"
+          sheet-name="工作清单"
+          :headers="WORK_IMPORT_HEADERS"
+          :sample="WORK_IMPORT_SAMPLE"
+        />
       </header>
 
       <div class="file-row">
         <input
           ref="fileInput"
           type="file"
-          accept=".xlsx,.csv,.xls"
+          accept=".xlsx,.xls"
           class="file-input"
           @change="onFileChange"
         />
@@ -210,16 +197,6 @@ function downloadTemplate(): void {
   font-size: var(--text-xs);
   line-height: 1.7;
   color: var(--color-text-secondary);
-}
-
-.download-link {
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-primary-strong);
-  cursor: pointer;
 }
 
 .file-row {

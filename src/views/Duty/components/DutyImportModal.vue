@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal, TemplateDownloadLink } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useDutyStore } from '@/stores/duty'
 import { useStudentStore } from '@/stores/student'
@@ -143,23 +143,6 @@ function onConfirm(): void {
   }
   emit('update:modelValue', false)
 }
-
-function downloadTemplate(): void {
-  const headers = HEADERS.value as unknown as string[]
-  const csv = [
-    headers.join(','),
-    ...SAMPLE.value.map((row) =>
-      row.map((cell) => (cell.includes(',') ? `"${cell}"` : cell)).join(','),
-    ),
-  ].join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = isGroups.value ? '值日分组导入模板.csv' : '值日安排导入模板.csv'
-  a.click()
-  URL.revokeObjectURL(url)
-}
 </script>
 
 <template>
@@ -172,16 +155,19 @@ function downloadTemplate(): void {
     <div class="import-body">
       <header class="hint">
         <p class="hint-text">{{ HINT }}</p>
-        <button type="button" class="download-link" @click="downloadTemplate">
-          下载模板（CSV）
-        </button>
+        <TemplateDownloadLink
+          :filename="isGroups ? '值日分组导入模板' : '值日安排导入模板'"
+          :sheet-name="isGroups ? '值日分组' : '值日安排'"
+          :headers="HEADERS"
+          :sample="SAMPLE"
+        />
       </header>
 
       <div class="file-row">
         <input
           ref="fileInput"
           type="file"
-          accept=".xlsx,.csv,.xls"
+          accept=".xlsx,.xls"
           class="file-input"
           @change="onFileChange"
         />
@@ -288,16 +274,6 @@ function downloadTemplate(): void {
   font-size: var(--text-xs);
   line-height: 1.7;
   color: var(--color-text-secondary);
-}
-
-.download-link {
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-primary-strong);
-  cursor: pointer;
 }
 
 .file-row {

@@ -77,6 +77,50 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
   { key: 'scope', label: '返家范围', aliases: ['返家范围', '返家', '回家范围'] },
 ]
 
+/**
+ * 模板下载用的表头（v3.3.1）。
+ * **从 `COLUMN_ALIASES` 的 label 派生，不另抄一份**——抄一份迟早会出现
+ * 「模板上写着 A、识别器只认 B」这种「自家模板导不进自家系统」的事故。
+ * 顺序即模板列序（必填的姓名 / 性别在最前，其余按录入习惯排）。
+ */
+export const STUDENT_IMPORT_HEADERS: readonly string[] = COLUMN_ALIASES.map(
+  (column) => column.label,
+)
+
+/**
+ * 模板示例（v3.3.1）。两行的取舍：
+ * ① 一行女生、一行男生——宿舍按性别分列，示例里各举一间才说明得清；
+ * ② 第二行**故意留空「身份证尾号」与「班委」**，让教师看见选填列可以空着；
+ * ③ 「标签」写成 `住校生,体育委员`——逗号分隔这件事光靠文字说明容易被忽略。
+ * 学号与姓名沿用座位模板里的那两个（0101/0102），两份模板填起来是同一个班的故事。
+ */
+export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
+  [
+    '旦增卓玛',
+    '女',
+    '0101',
+    '3287',
+    '女生2栋113',
+    '班长',
+    '住校生,体育委员',
+    '13800000000',
+    '昌都市卡若区',
+    '昌都市区',
+  ],
+  [
+    '扎西顿珠',
+    '男',
+    '0102',
+    '',
+    '男生1栋209',
+    '',
+    '住校生',
+    '13900000000',
+    '昌都市江达县',
+    '昌都市其他县',
+  ],
+]
+
 /** 性别列的各种写法 */
 const GENDER_ALIASES: Record<string, Gender> = {
   男: 'male',

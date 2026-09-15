@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal, TemplateDownloadLink } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import { readSheetRows } from '@/services/studentImport'
@@ -202,7 +202,15 @@ function close(): void {
     <!-- 未选文件：上传卡（点击 / 拖入）+ 先讲清表格该怎么摆，教师回去改表比来回试快 -->
     <div v-if="!filename && !parseError" class="intro">
       <SeatImportCard class="intro-upload" :busy="busy" @pick="pickFile" @file="readFile" />
-      <p class="intro-lead">选择一份 Excel 座位表（.xlsx / .xls），第一行为表头。</p>
+      <header class="intro-hint">
+        <p class="intro-lead">选择一份 Excel 座位表（.xlsx / .xls），第一行为表头。</p>
+        <TemplateDownloadLink
+          filename="座位表导入模板"
+          sheet-name="座位表"
+          :headers="SEAT_IMPORT_HEADERS"
+          :sample="SEAT_IMPORT_SAMPLE"
+        />
+      </header>
       <ul class="intro-list">
         <li><strong>必需列</strong>：{{ SEAT_IMPORT_HEADERS.join('、') }}</li>
         <li>{{ SEAT_IMPORT_HINT }}</li>
@@ -339,6 +347,14 @@ function close(): void {
 
 .intro-upload {
   margin-bottom: var(--space-4);
+}
+
+/* 说明 + 「下载模板」一行 */
+.intro-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .intro-lead {
