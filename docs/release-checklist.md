@@ -472,6 +472,9 @@ node scripts/audit/runtime-check.cjs
       的存储键改动；`utils/seatView.ts`（视角唯一出处）与 `SeatCard.vue`（尺寸）**不在其中**
 - [ ] CloudBase 部署完成且线上是新版（`/` 引用的 chunk 名与本机 `dist/` 一致；
       浏览器里 SW 预缓存要**刷两次**，见 CHANGELOG 2026-09-14 部署修复）
+- [ ] **用浏览器真开一次**（或 `npm run preview`）：首次会先出 CloudBase 的「**风险提醒**」
+      中间页，点「确定访问」应能进入应用——**curl 通过 ≠ 浏览器打得开**，网关只对导航请求
+      返回中间页、对非导航请求加 `attachment` 头（2026-09-18 记，见 CHANGELOG v3.4.0 上线一节）
 
 **退路**：若目标机上「一屏装不下」而现在不是 79%，第一嫌疑是**上下预留被实测值带偏**
 （`SEAT_STAGE_TOP_RESERVE` 应取常数 80，不是实测 `rect.top`）；
