@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { AppButton, AppField, AppInput, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
+import { useSeatStage } from '@/composables/useSeatStage'
 import { useAppSettingsStore } from '@/stores/appSettings'
 import { useStudentStore } from '@/stores/student'
 import { useSeatStore } from '@/stores/seat'
@@ -41,6 +42,7 @@ import SeatExportGraphic from './components/SeatExportGraphic.vue'
 import SeatExportSummary from './components/SeatExportSummary.vue'
 import SeatCompareModal from './components/SeatCompareModal.vue'
 import SeatMoreMenu from './components/SeatMoreMenu.vue'
+import SeatZoomBar from './components/SeatZoomBar.vue'
 import type { SeatMoreAction } from './components/SeatMoreMenu.vue'
 import SeatArrangeModal from './components/SeatArrangeModal.vue'
 import SeatImportModal from './components/SeatImportModal.vue'
@@ -310,12 +312,30 @@ function onWindowKeydown(event: KeyboardEvent) {
     return
   }
   // 对比弹窗打开时 Esc 归弹窗（关闭它），不额外退出对比视图
-  if (comparePair.value && !compareOpen.value) exitCompare()
+  if (comparePair.value && !compareOpen.value) {
+    exitCompare()
+    return
+  }
+  /*
+    v3.4.0：最后一档才是「退出铺满」——由深到浅，一次 Esc 只做一件事
+    （换座模式 > 对比视图 > 铺满）。`handleEscape` 内部还有两道守卫：
+    浏览器全屏时不抢（那个 Esc 归浏览器，状态由 fullscreenchange 同步），
+    以及不在层级栈最上层时不抢（弹窗 / 长按卡开着时 Esc 归它们）。
+  */
+  stage.handleEscape()
 }
 
-onMounted(() => window.addEventListener('keydown', onWindowKeydown))
+/*
+  **捕获阶段**注册（第三个参数 `true`）：本页的 Esc 链必须比其他弹层先拿到这次按键。
+  原因在 v3.4.0 加铺满时暴露出来：弹窗（AppModal）的 Esc 处理器挂在 **document 冒泡**上，
+  而本页挂在 window 上——冒泡顺序是 target → document → window，于是**弹窗先关、自己的
+  层级令牌先弹**，等本页的 `stage.handleEscape()` 轮到执行时，层级栈里已经没有弹窗了，
+  「只接最上层」的守卫形同虚设 → 一次 Esc 既关弹窗又退出铺满。
+  改到捕获阶段（window 捕获 → document → target → …）就天然先于弹窗判断，守卫才成立。
+*/
+onMounted(() => window.addEventListener('keydown', onWindowKeydown, true))
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('keydown', onWindowKeydown, true)
   if (flashTimer !== undefined) window.clearTimeout(flashTimer)
 })
 
@@ -456,9 +476,66 @@ function isSeatEmpty(seatId: string): boolean {
   return !seatStudent(seatId)
 }
 
+/* ========== v3.4.0：座位图一屏自适应 / 两种全屏（几何的唯一持有者在本页） ========== */
+/**
+ * 座位图**以下**、又在本组件之外的固定占高（px）：
+ * 画布（AppCard 的 `padding-normal` = 24）+ 页面间距 16 + 壳层下留白 32。
+ * 状态栏的高度单独实测（窄屏它会换行，写死会少算）。
+ *
+ * 为什么要把这个数报给 `useSeatStage`：拟合的语义是「从顶栏下沿算起的一屏」，
+ * 座位图**下面的**两条说明与状态栏也在这一屏里——不扣掉它们，图会把状态栏顶出屏幕，
+ * 看着「装下了」其实还差一条。
+ */
+const SEAT_PAGE_BELOW_PX = 72
+
+const statusBarRef = ref<InstanceType<typeof SeatStatusBar>>()
+
+function statusBarHeight(): number {
+  const el = statusBarRef.value?.$el as HTMLElement | undefined
+  return el?.offsetHeight ?? 0
+}
+
+const stage = useSeatStage({
+  belowReserve: () => SEAT_PAGE_BELOW_PX + statusBarHeight(),
+})
+
+/** 控制条与模板直接用的那几个（解构出来给模板自动脱 ref） */
+const {
+  scaleLabel,
+  mode: scaleMode,
+  fullscreen: seatFullscreen,
+  browserFullscreen: seatBrowserFullscreen,
+  fullscreenSupported: seatFullscreenSupported,
+  atMin: scaleAtMin,
+  atMax: scaleAtMax,
+  zoomIn: zoomSeatIn,
+  zoomOut: zoomSeatOut,
+  resetFit: resetSeatFit,
+  toggleOverlay: toggleSeatOverlay,
+  toggleBrowserFullscreen: toggleSeatBrowserFullscreen,
+} = stage
+
 /* ========== Phase 3C：学生定位（搜索 / 约束定位共用：滚动 + 闪烁 + 信息卡） ========== */
 
 const classroomRef = ref<InstanceType<typeof SeatClassroom>>()
+
+/**
+ * 绑定三层缩放结构。**用 watch 而不是 onMounted**：`SeatClassroom` 挂在
+ * `v-if="seatStore.currentPlan"` 下，第一个方案可能是本页挂载之后才建的——
+ * 那一刻 `onMounted` 早就跑完了，元素拿不到，量出来全是 0（图会一动不动）。
+ * watch 在组件挂上 / 卸下时各触发一次，卸载时 `stageEls()` 回 undefined，
+ * `bindEls(undefined)` 正好把监听解掉。
+ */
+watch(classroomRef, (instance) => {
+  stage.bindEls(instance?.stageEls())
+})
+
+/** 控制条左侧的状态位：全屏时这是页面里唯一还看得见的操作提示（hint 条会被盖住） */
+const stageStatusNote = computed(() => {
+  if (pickerFrom.value) return '换座中：点目标座位完成交换，Esc 取消'
+  if (compareActive.value) return '方案对比查看中：只读'
+  return undefined
+})
 /** 正在闪烁定位的座位（3 次由 CSS 动画完成，随后由定时器清空以便重放） */
 const flashSeatIds = ref<Set<string>>(new Set())
 let flashTimer: number | undefined
@@ -1132,12 +1209,37 @@ async function runCompareExport() {
         :flash-seat-ids="flashSeatIds"
         :changed-student-ids="changedStudentIds"
         :interactive="!compareActive"
+        :fullscreen="seatFullscreen"
         @select="handleSeatClick"
         @change="applySeatChange"
         @quick-detail="openStudentDetail"
         @quick-swap="startPicker"
         @quick-constraint="openConstraintForSeat"
-      />
+      >
+        <!--
+          v3.4.0 缩放 / 全屏控制条。**必须注入到座位图组件内部**：
+          应用内全屏时座位图铺满整个视口、SeatToolbar 被盖住，
+          控制条在那边就等于「进去了出不来」（详见 SeatZoomBar 的说明）。
+        -->
+        <template #controls>
+          <SeatZoomBar
+            :scale-label="scaleLabel"
+            :at-min="scaleAtMin"
+            :at-max="scaleAtMax"
+            :mode="scaleMode"
+            :fullscreen="seatFullscreen"
+            :browser-fullscreen="seatBrowserFullscreen"
+            :fullscreen-supported="seatFullscreenSupported"
+            :status-note="stageStatusNote"
+            :status-active="Boolean(pickerFrom)"
+            @zoom-in="zoomSeatIn"
+            @zoom-out="zoomSeatOut"
+            @fit="resetSeatFit"
+            @toggle-overlay="toggleSeatOverlay"
+            @toggle-fullscreen="toggleSeatBrowserFullscreen"
+          />
+        </template>
+      </SeatClassroom>
       <EmptyState
         v-else
         :icon="Armchair"
@@ -1150,6 +1252,7 @@ async function runCompareExport() {
 
     <!-- ========== Layer 3：底部状态栏（最低视觉权重；右侧放座位标记图例） ========== -->
     <SeatStatusBar
+      ref="statusBarRef"
       :plan-name="seatStore.currentPlan?.name ?? '—'"
       :updated-at="planUpdatedAtLabel"
       :pending-count="seatStore.pendingLogsCount"
@@ -1382,10 +1485,9 @@ async function runCompareExport() {
   gap: var(--space-4);
 }
 
-/* 页头自带下边距（sticky 元素不参与 flex gap 时可预期地留白） */
-.seats-page > .seat-bar {
-  margin-bottom: 0;
-}
+/* v3.4.0：此处原有 `.seats-page > .seat-bar { margin-bottom: 0 }`——那是专为吸顶写的
+   补丁（页头自带 margin-bottom，与 flex gap 叠加会变成 32px）。取消吸顶后页头的
+   margin-bottom 已直接删除（见 SeatToolbar），这条补丁随之作废，间距仍是 gap 的 16px。 */
 
 /* 图例（放在 SeatStatusBar 右侧插槽，最低视觉权重） */
 .legend {

@@ -16,6 +16,7 @@ import type { RowUnit } from '@/utils/seatView'
 import type { ClassroomConfig } from '@/types/classroom'
 import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
+import type { SeatStageEls } from '@/composables/useSeatStage'
 import SeatCard from './SeatCard.vue'
 import SeatQuickCard from './SeatQuickCard.vue'
 
@@ -44,6 +45,12 @@ interface Props {
   changedStudentIds?: Set<string>
   /** 只读模式（方案对比查看中）：禁止拖拽 / 长按弹卡，普通点击选中保留 */
   interactive?: boolean
+  /**
+   * v3.4.0 应用内全屏（铺满视口）：本组件挂 `.is-fullscreen`，
+   * 由 `useSeatStage` 驱动。**只改这一层的外观，不改任何座位尺寸**——
+   * 缩放仍由 `.room-stage` 的 transform 负责，两件事互不干扰。
+   */
+  fullscreen?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -52,6 +59,7 @@ const props = withDefaults(defineProps<Props>(), {
   flashSeatIds: undefined,
   changedStudentIds: undefined,
   interactive: true,
+  fullscreen: false,
 })
 
 const emit = defineEmits<{
@@ -66,6 +74,25 @@ const emit = defineEmits<{
 
 /** 组件根节点（定位滚动 / 信息卡锚点换算用） */
 const classroomRoot = ref<HTMLElement>()
+
+/*
+  ========== v3.4.0：三层缩放结构的三个把手 ==========
+  几何全部由 `useSeatStage` 命令式写内联样式（测量 → 算比例 → 写尺寸），
+  本组件只负责把元素交出去。三层各管一件事，**不能合并**：
+
+    · viewport（.room-viewport）—— 滚动/平移容器，也是**可用空间的量尺**
+      （它的 clientWidth / clientHeight 就是「一屏」的边界）；
+    · spacer（.room-spacer）—— 显式尺寸 = 自然尺寸 × k。缩放后视觉占位由它撑起，
+      没有它 `.room-stage` 是绝对定位、父级高度会塌成 0，座位图下面的说明文字
+      会跑到图上面去；`margin-inline: auto` 顺手负责「缩小时居中」。
+    · stage（.room-stage）—— **唯一**被 transform 的一层。只包 `.room-scroll`，
+      绝不包拖拽幽灵（见模板里的说明）。
+*/
+const viewportEl = ref<HTMLElement>()
+const spacerEl = ref<HTMLElement>()
+const stageEl = ref<HTMLElement>()
+/** `.room-scroll`：量「内容真正需要多宽」的唯一出处（窄窗口下座位挤不下时用它兜底） */
+const scrollEl = ref<HTMLElement>()
 
 /** 座位查表：同一批 63 个 Seat 引用，视角切换零数据变更、零重建 */
 const seatsById = computed(() => new Map(props.seats.map((seat) => [seat.id, seat])))
@@ -160,9 +187,22 @@ const dropCandidate = ref<string | undefined>(undefined)
 /** 长按信息卡：锚点 + 座位；student 由 studentMap 即时解析（被删则自动收起） */
 const quickSeat = ref<{ seatId: string; x: number; y: number } | undefined>(undefined)
 
-const quickStudent = computed(() =>
-  quickSeat.value ? props.students.get(quickSeat.value.seatId) : undefined,
-)
+/**
+ * 长按信息卡的主人：**座位 id → 座位 → studentId → 学生**，两步都不能省。
+ *
+ * `props.students` 是 `Map<学生 id, Student>`（如 `s1`），而 `quickSeat.seatId` 是
+ * 座位 id（如 `r2c6`）——拿座位 id 直接查永远得到 undefined，`v-if` 不成立，
+ * **长按信息卡从不渲染**。更隐蔽的是：松手时 `longFired` 已置位、`suppressClick`
+ * 把随后的 click 也吞掉了，所以表现是「长按毫无反应，连选中都没有」，
+ * 而这条链路正是「点击换座」「座位约束」「查看详情」三个入口的唯一出处。
+ *
+ * 这个写法从 Phase 3B 就在（`cf5ef49`），2026-09-17 由真机探针（无头 Chrome 里
+ * 派发真实的 pointerdown / pointerup）发现并改正——纯逻辑测试与字符串断言都碰不到它。
+ */
+const quickStudent = computed(() => {
+  const seat = quickSeat.value ? seatsById.value.get(quickSeat.value.seatId) : undefined
+  return seat ? occupantOf(seat) : undefined
+})
 
 /**
  * 一次手势的进行态（非响应式，仅指针回调内部使用）：
@@ -359,91 +399,152 @@ function openQuickCard(seatId: string): boolean {
   return true
 }
 
-defineExpose({ revealSeat, openQuickCard })
+/**
+ * v3.4.0：把三层结构的元素交给页面编排层（`useSeatStage` 的唯一入口）。
+ *
+ * **为什么是函数而不是三个 ref**：`useSeatStage` 只在需要测量时才要这些元素，
+ * 而模板 ref 是 `ref` 对象——交出去等于把「什么时候有值」这件事散到两边。
+ * 这里一次性打包，未挂载时回 `undefined`（调用方据此跳过，不要把半截结构喂给测量）。
+ */
+function stageEls(): SeatStageEls | undefined {
+  const root = classroomRoot.value
+  const viewport = viewportEl.value
+  const spacer = spacerEl.value
+  const stage = stageEl.value
+  const scroll = scrollEl.value
+  if (!root || !viewport || !spacer || !stage || !scroll) return undefined
+  return { root, viewport, spacer, stage, scroll }
+}
+
+defineExpose({ revealSeat, openQuickCard, stageEls })
 </script>
 
 <template>
-  <div ref="classroomRoot" class="seat-classroom" :class="{ 'is-dragging': drag }">
-    <div class="room-scroll">
-      <div class="room">
-        <!-- 窗：整条灰色竖条（老师视角在右墙，学生视角换到左墙） -->
-        <span class="windows" :class="`is-${windowsSide}`" aria-hidden="true">
-          <em class="windows-text">窗</em>
-        </span>
+  <div
+    ref="classroomRoot"
+    class="seat-classroom"
+    :class="{ 'is-dragging': drag, 'is-fullscreen': fullscreen }"
+  >
+    <!--
+      ========== v3.4.0：控制条（页面经 #controls 插槽注入） ==========
+      **必须在 `.seat-classroom` 里面**：应用内全屏时本组件 `position: fixed` 铺满视口，
+      页面上的工具栏（SeatToolbar）会被整块盖住——缩放 / 全屏的按钮若放在外面，
+      进全屏之后就再也点不到了，那是「进去了出不来」。
+      没插槽时整条不渲染（导出图等场景复用本组件时不出现空条）。
+    -->
+    <header v-if="$slots.controls" class="stage-bar">
+      <slot name="controls" />
+    </header>
 
-        <TransitionGroup tag="div" name="room-flip" class="room-flip">
-          <div v-for="item in roomItems" :key="item.key" class="room-item">
-            <!--
+    <!--
+      ========== v3.4.0：缩放三层结构（viewport → spacer → stage） ==========
+      缩放走 `transform: scale`（唯一被变换的是 `.room-stage`），不缩放座位本身：
+      座位尺寸（126 / 48 / 90）与 `.col-no` 的 `max-width` 是承重耦合，动一处坏一片。
+
+      三条铁律，改这个结构前先读：
+
+      ① **stage 只包 `.room-scroll`，绝不包拖拽幽灵。** `transform` 会给
+         `position: fixed` 的后代重新认一个包含块——幽灵是按**指针的视口坐标**写
+         `left/top` 的（`drag.x/y = event.clientX/clientY`），一旦变成 stage 的后代，
+         它会被再叠一次左上角偏移，表现为「幽灵不跟手」，而座位落点判定用的是
+         `elementFromPoint`（视口坐标，本来就正确）→ 拖对了位置却看着没对准。
+      ② **只在一层做 transform。** 两层各缩一半，比例就不是 `useSeatStage` 算的那个数了，
+         而且 `.col-no` 与座位列的逐列对齐会被两份舍入误差拆开。
+      ③ **`.seat-classroom` / `.seats-page` 上不许出现 `transform` / `filter` /
+         `backdrop-filter`。** 这三者同样会抢 `position: fixed` 的包含块，后果同 ①。
+         （这也是 `.drag-ghost` 与本组件根之间必须保持「无变换祖先」的原因。）
+    -->
+    <div ref="viewportEl" class="room-viewport">
+      <div ref="spacerEl" class="room-spacer">
+        <div ref="stageEl" class="room-stage">
+          <div ref="scrollEl" class="room-scroll">
+            <div class="room">
+              <!-- 窗：整条灰色竖条（老师视角在右墙，学生视角换到左墙） -->
+              <span class="windows" :class="`is-${windowsSide}`" aria-hidden="true">
+                <em class="windows-text">窗</em>
+              </span>
+
+              <TransitionGroup tag="div" name="room-flip" class="room-flip">
+                <div v-for="item in roomItems" :key="item.key" class="room-item">
+                  <!--
               讲台 + 前门（v3.3.1）：**同一水平线**——前门贴墙、讲台居中。
               此前前门是独立的零高单元、标签骑在两块之间，正好压住第 1 排。
             -->
-            <div
-              v-if="item.kind === 'front-line'"
-              class="front-line"
-              :class="`is-${doorSides.front}`"
-            >
-              <span class="door">前门</span>
-              <div class="podium">
-                <span class="podium-name">讲台</span>
-                <span class="podium-sub">前方中央</span>
-              </div>
-            </div>
+                  <div
+                    v-if="item.kind === 'front-line'"
+                    class="front-line"
+                    :class="`is-${doorSides.front}`"
+                  >
+                    <span class="door">前门</span>
+                    <div class="podium">
+                      <span class="podium-name">讲台</span>
+                      <span class="podium-sub">前方中央</span>
+                    </div>
+                  </div>
 
-            <div
-              v-else-if="item.kind === 'door-back'"
-              class="doorline is-back"
-              :class="`is-${doorSides.back}`"
-            >
-              <span class="door">后门</span>
-            </div>
+                  <div
+                    v-else-if="item.kind === 'door-back'"
+                    class="doorline is-back"
+                    :class="`is-${doorSides.back}`"
+                  >
+                    <span class="door">后门</span>
+                  </div>
 
-            <!--
+                  <!--
               顶部列号行：老师视角 1 2 3 | 4 5 6 | 7 8 9、
               学生视角 9 8 7 | 6 5 4 | 3 2 1，与座位行逐列对齐。
               左侧留出与行号同宽的空位，列号才压在它所标的座位正上方。
             -->
-            <div v-else-if="item.kind === 'cols'" class="room-row is-cols" aria-hidden="true">
-              <span class="row-label"></span>
-              <template v-for="unit in colUnits" :key="unit.key">
-                <span v-if="unit.kind === 'aisle'" class="aisle"></span>
-                <span v-else class="seat-block">
-                  <span v-for="col in unit.cols" :key="col" class="col-no">{{ col }}</span>
-                </span>
-              </template>
-            </div>
+                  <div v-else-if="item.kind === 'cols'" class="room-row is-cols" aria-hidden="true">
+                    <span class="row-label"></span>
+                    <template v-for="unit in colUnits" :key="unit.key">
+                      <span v-if="unit.kind === 'aisle'" class="aisle"></span>
+                      <span v-else class="seat-block">
+                        <span v-for="col in unit.cols" :key="col" class="col-no">{{ col }}</span>
+                      </span>
+                    </template>
+                  </div>
 
-            <div v-else-if="item.kind === 'row' && item.row !== undefined" class="room-row">
-              <span class="row-label">{{ item.row }}</span>
-              <template v-for="unit in rowUnits(item.row)" :key="unit.key">
-                <span v-if="unit.kind === 'aisle'" class="aisle" aria-hidden="true"></span>
-                <span v-else class="seat-block">
-                  <!--
+                  <div v-else-if="item.kind === 'row' && item.row !== undefined" class="room-row">
+                    <span class="row-label">{{ item.row }}</span>
+                    <template v-for="unit in rowUnits(item.row)" :key="unit.key">
+                      <span v-if="unit.kind === 'aisle'" class="aisle" aria-hidden="true"></span>
+                      <span v-else class="seat-block">
+                        <!--
                     UI-4B：座位块抽为 SeatCard 纯展示组件（统一样式 / Hover / 空座态）。
                     点击与拖拽处理仍在本组件：原生事件穿透 + data-seat-id 落到根按钮，
                     拖拽落点判定 `closest('[data-seat-id]')` 不受影响，Pointer 逻辑零改动。
                   -->
-                  <SeatCard
-                    v-for="seat in unit.seats"
-                    :key="seat.id"
-                    :data-seat-id="seat.id"
-                    :title="seatTitle(seat)"
-                    :empty="!occupantOf(seat)"
-                    :name="occupantName(seat)"
-                    :char="occupantChar(seat)"
-                    :ordinal="`${seatOrdinal(seat.row, seat.col, config)} 号`"
-                    :classes="seatClass(seat)"
-                    @click="pick(seat.id)"
-                    @pointerdown="onSeatPointerDown(seat, $event)"
-                  />
-                </span>
-              </template>
+                        <SeatCard
+                          v-for="seat in unit.seats"
+                          :key="seat.id"
+                          :data-seat-id="seat.id"
+                          :title="seatTitle(seat)"
+                          :empty="!occupantOf(seat)"
+                          :name="occupantName(seat)"
+                          :char="occupantChar(seat)"
+                          :ordinal="`${seatOrdinal(seat.row, seat.col, config)} 号`"
+                          :classes="seatClass(seat)"
+                          @click="pick(seat.id)"
+                          @pointerdown="onSeatPointerDown(seat, $event)"
+                        />
+                      </span>
+                    </template>
+                  </div>
+                </div>
+              </TransitionGroup>
             </div>
           </div>
-        </TransitionGroup>
+        </div>
       </div>
     </div>
 
-    <!-- 拖拽幽灵：固定于指针上方，pointer-events 不拦截落点判定 -->
+    <!--
+      拖拽幽灵：固定于指针上方，pointer-events 不拦截落点判定。
+      **它必须是 `.seat-classroom` 的直接子节点、绝不能被挪进 `.room-stage`**
+      ——理由见上面结构注释的 ①（transform 会抢 fixed 的包含块，幽灵就不跟手了）。
+      下面这几行代码看着可以「顺手」挪进去，那正是本组件最容易坏的一处。
+    -->
     <div v-if="drag" class="drag-ghost" :style="{ left: `${drag.x}px`, top: `${drag.y}px` }">
       <span class="drag-ghost-avatar" aria-hidden="true">{{ drag.char }}</span>
       <span class="drag-ghost-name">{{ drag.name }}</span>
@@ -472,10 +573,87 @@ defineExpose({ revealSeat, openQuickCard })
 <style scoped>
 /* v3.3.0：左右内边距收到 8px，宽度优先让给座位（这一层只是防座位贴到纸面边） */
 .seat-classroom {
+  /*
+    v3.4.0：改成纵向 flex。控制条 / 视口 / 两条说明之间的间距统一由 gap 给——
+    原先只有 `.room-note` 自带 `margin-top`，加上控制条与视口之后，
+    「谁跟谁隔多少」靠各家 margin 拼会各说各话（间距还会随 flex 换行漂）。
+  */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
   padding: var(--space-4) var(--space-2) var(--space-3);
 }
 
+/* ========== v3.4.0：控制条（缩放 / 全屏；页面经 #controls 插槽注入） ========== */
+.stage-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding-bottom: var(--space-2);
+  /* 视觉权重低于座位图（UI-4B）：无卡片底、无阴影，只用一条细线与图分开 */
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+/* ========== v3.4.0：缩放三层结构（viewport → spacer → stage） ========== */
+
+/*
+  滚动 / 平移容器，同时也是「一屏」的量尺：它的 clientWidth / clientHeight
+  就是 `useSeatStage` 算比例时的可用空间。两种模式共用它，只有高度来源不同——
+  常规模式是内容高（图随页面滚），全屏模式由下面的 `flex: 1` 撑满。
+*/
+.room-viewport {
+  overflow: auto;
+  /*
+    **flex 子项默认 `min-height: auto`，不写这条全屏时地图滚不动**：
+    内容撑到 847px 高时容器不肯低于内容，于是它顶破视口、页面又已经锁了滚动——
+    「一屏装不下又滚不了」是最坏的一种。写法上 `min-height: 0` 是必须的，
+    只在全屏（flex:1）下生效，常规模式下它对自动高的块级盒子没有影响。
+  */
+  min-height: 0;
+  /*
+    点「适应」时把座位图滚到顶栏（fixed，--nav-height 72）下面。
+    没有这条 `scroll-margin-top`，`scrollIntoView({block:'start'})` 会把图滚到
+    顶栏底下被盖住——一屏装下了，可最上面那排看不见。
+    数值口径与 utils/seatStage.ts 的 SEAT_STAGE_TOP_RESERVE 一致（72 + 8 呼吸）。
+  */
+  scroll-margin-top: 80px;
+}
+
+/*
+  缩放后的视觉占位：宽高由 `useSeatStage` 写成内联样式（自然尺寸 × k）。
+  没有它，绝对定位的 `.room-stage` 不会给父级任何高度——下面的说明文字会跑到图上。
+*/
+.room-spacer {
+  /* 给绝对定位的 `.room-stage` 当包含块 */
+  position: relative;
+  /*
+    居中在**这里**做，不靠 `transform-origin`：origin 必须取 `top left`，
+    放大（k>1）时图才还能往右滚——取 `top center` 时左右各溢出一半，
+    而 LTR 下**左溢是 ink overflow、滚不过去**，左半张图永远看不到。
+  */
+  margin-inline: auto;
+}
+
+/* 唯一被施加 transform 的一层（为什么只能有一层，见模板里的三条铁律） */
+.room-stage {
+  /*
+    **这里刻意不写 `position`**：首帧（还没测量时）它就在文档流里、按自然尺寸渲染，
+    也就是这一版之前的样子；挂载后的第一帧由 `useSeatStage` 改成 `absolute` 并施加
+    `scale`。若在这里就写 `absolute`，首帧会因为没有显式宽度而塌成 0 宽——
+    图会先「消失」一下再出现。测量逻辑正是靠「先改回 static 量一次」拿到自然尺寸的。
+  */
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
 .room-scroll {
+  /*
+    v3.4.0 起它基本不再自己横向滚动：`.room-stage` 的宽度恒等于自然宽，
+    横向滚动交给外面的 `.room-viewport`（只有一条横向滚动条，不会两条打架）。
+    保留本条是兜底——万一将来宽度算错，图仍然能滚着看全，而不是被剪掉。
+  */
   overflow-x: auto;
 }
 
@@ -768,9 +946,48 @@ defineExpose({ revealSeat, openQuickCard })
 }
 
 .room-note {
-  margin-top: var(--space-3);
+  /* v3.4.0：间距改由 `.seat-classroom` 的 flex gap 给；留 margin 会与 gap 叠加 */
+  margin: 0;
   text-align: center;
   font-size: var(--text-xs);
   color: var(--color-text-faint);
+}
+
+/*
+  ========== v3.4.0：应用内全屏（铺满视口） ==========
+
+  **浏览器全屏与应用内全屏共用这一个类**：前者把 `<html>` 整个交给浏览器全屏
+  （见 `useSeatStage`：目标元素必须是 `document.documentElement`，取本组件根会让
+  Teleport 到 body 的长按信息卡在全屏下根本不渲染），后者靠下面这组固定定位铺满视口。
+  两者视觉一致，测试面因此收敛成一条。
+
+  注意本类只改「这块放在哪」，**不改任何座位尺寸**——缩放仍归 `.room-stage` 的 transform。
+  新增 `transform` / `filter` / `backdrop-filter` 到这里会抢掉 `.drag-ghost` 的包含块
+  （幽灵是 `position: fixed` 且按视口坐标定位，见模板铁律 ①）。
+*/
+.seat-classroom.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-fullscreen);
+  /*
+    底色必须用**不透明**的 `--color-bg`：全屏时后面就是页面本身（同一张座位图），
+    用 `--glass-bg` 会透出自己那层残影。
+  */
+  background: var(--color-bg);
+  /*
+    安全区四边：座位页的浮层一律不接安全区（浮层在设计稿上是贴边的），
+    全屏是**唯一例外**——它铺到屏幕物理边缘，不躲开刘海/圆角，
+    左上角的「适应」「全屏」按钮就会被压住甚至点不到。
+  */
+  padding: calc(var(--space-4) + env(safe-area-inset-top))
+    calc(var(--space-4) + env(safe-area-inset-right))
+    calc(var(--space-3) + env(safe-area-inset-bottom))
+    calc(var(--space-4) + env(safe-area-inset-left));
+}
+
+/* 全屏：视口吃掉控制条与说明之外的全部高度（min-height:0 见 .room-viewport 的说明） */
+.seat-classroom.is-fullscreen .room-viewport {
+  flex: 1;
+  min-height: 0;
 }
 </style>

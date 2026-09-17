@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { AppButton } from '@/components/ui'
+import { popLayer, pushLayer } from '@/components/ui/layers'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
 
@@ -72,14 +73,27 @@ function onDocumentKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') close()
 }
 
+/**
+ * 层级栈令牌（v3.4.0 补）。卡片开着时占一层，**不开滚动锁**——它只是张浮卡，
+ * 页面该能滚（与弹窗不同）。
+ *
+ * 为什么必须占这一层：座位页的 Esc 链在捕获阶段先跑（见 index.vue 的说明），
+ * 它靠 `isTopLayer` 判断「这次 Esc 该不该归我」。卡片不在栈里的话，卡片开着时
+ * 那一步会认为「我是最上层」而**退出铺满**，紧接着卡片自己的 Esc 又把它收起——
+ * 一次 Esc 关两样东西。占了层，语义就与弹窗一致了：谁在最上面谁关。
+ */
+const layerToken = Symbol('seat-quick-card')
+
 onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown, true)
   document.addEventListener('keydown', onDocumentKeydown)
+  pushLayer(layerToken)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
   document.removeEventListener('keydown', onDocumentKeydown)
+  popLayer(layerToken)
 })
 </script>
 
