@@ -48,11 +48,14 @@ const emit = defineEmits<{
 
     <aside class="hub-sidebar" :class="{ 'is-open': open }" aria-label="学生筛选">
       <div class="hub-sidebar__inner">
-        <!-- 搜索置顶 -->
+        <!-- 搜索置顶。占位符只放得下十来个字（侧栏 280px），所以**列最近新增的那几个**
+             （电话 / 备注 / 地址——教师最不容易猜到的三个），完整范围放在 title 里，
+             鼠标停一下就能看到。范围本身在 `utils/studentQuery.ts` 的 `searchText()`。 -->
         <AppInput
           :model-value="keyword"
           class="hub-search"
-          placeholder="搜索姓名、班委、宿舍或标签…"
+          placeholder="搜索姓名、电话、备注、地址…"
+          title="可搜索：姓名、学号、班委、宿舍、标签、电话、备注、身份证尾号、家庭地址与返家范围"
           clearable
           @update:model-value="emit('update:keyword', $event)"
         />

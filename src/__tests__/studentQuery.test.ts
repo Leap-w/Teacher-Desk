@@ -13,6 +13,9 @@
  *     悄悄改写列表本身；而且 Vue 的 computed 依赖它会连带触发别处的重算。
  *  ④ **界面偏好不进同步名单**。`syncPersisted` 一注册就同时上跨标签页与 CloudBase，
  *     还会参与「最后写入胜出」的冲突判定——教师的搜索框内容不该有这三重后果。
+ *  ⑤ **扩围后的字段不能把空值拼进去**（v3.4.0 起 haystack 补上电话 / 备注 /
+ *     身份证尾号 / 家庭地址与所在地）。搜「138」「走读」必须只命中确实写了它的人；
+ *     空字段若被当成有效文本拼进去，全班都会命中，而界面只是「搜出来有点多」。
  */
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -129,6 +132,85 @@ describe('搜索：字段范围与匹配口径', () => {
     expect(ids(queryStudents(source, { gender: 'male' }))).toEqual(['b', 'c'])
     expect(ids(queryStudents(source, { cadreOnly: true }))).toEqual(['a', 'b'])
     expect(ids(queryStudents(source, { gender: 'male', keyword: '班长' }))).toEqual(['b'])
+  })
+})
+
+describe('搜索：扩围后的字段（电话 / 备注 / 身份证尾号 / 家庭地址与所在地）', () => {
+  /**
+   * 扩出来的字段**各点一名学生，且互不重叠**——命中谁就是谁。
+   * 断言写成 id 列表而不是「数量大于 0」：后者对「搜什么都把全班带出来」同样通过，
+   * 而扩 haystack 最典型的事故正是这个（顺手拼进去一个空值 / 一个共享字段）。
+   */
+  function contactRoster(): Student[] {
+    return [
+      makeStudent('c1', '旦增卓玛', '0201', { phone: '138 1234 5678' }),
+      makeStudent('c2', '旦增旺堆', '0202', { remark: '走读，中午回家吃饭' }),
+      makeStudent('c3', '格桑', '0203', { idCardSuffix: '3287' }),
+      makeStudent('c4', '卓嘎', '0204', {
+        familyAddress: '西藏自治区昌都市卡若区埃西乡××村',
+        familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+      }),
+      makeStudent('c5', '次仁', '0205', {
+        familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
+      }),
+      makeStudent('c6', '白玛', '0206', {
+        familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+      }),
+      makeStudent('c7', '扎西', '0207'), // 扩出来的字段一个都没填
+    ]
+  }
+
+  it('电话能搜到（家长来电，教师手里只有号码，要反查是谁的家长）', () => {
+    expect(ids(queryStudents(contactRoster(), { keyword: '13812345678' }))).toEqual(['c1'])
+  })
+
+  it('电话存的时候带空格 / 短横也搜得到（按原样敲一半同样算命中）', () => {
+    // 盘上存的是「138 1234 5678」，教师拨打时手里只有一串数字，原样敲进来不能搜不到
+    expect(ids(queryStudents(contactRoster(), { keyword: '138 1234' }))).toEqual(['c1'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '5678' }))).toEqual(['c1'])
+  })
+
+  it('备注的内容能搜到（不只是「有备注」这一档）', () => {
+    expect(ids(queryStudents(contactRoster(), { keyword: '走读' }))).toEqual(['c2'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '中午回家' }))).toEqual(['c2'])
+  })
+
+  it('身份证尾号能搜到（报名表 / 学籍表上印的就是它）', () => {
+    // 重名的孩子只有尾号分得开，而这两个「旦增」的名字互相匹配得到对方（子串「旦增」）
+    expect(ids(queryStudents(contactRoster(), { keyword: '3287' }))).toEqual(['c3'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '旦增' }))).toEqual(['c1', 'c2'])
+  })
+
+  it('家庭地址全文能搜到（「××乡的孩子有几个」是真实问法）', () => {
+    expect(ids(queryStudents(contactRoster(), { keyword: '埃西乡' }))).toEqual(['c4'])
+  })
+
+  it('家庭所在地的结构化字段能搜到（地址全文没写的县名也算）', () => {
+    expect(ids(queryStudents(contactRoster(), { keyword: '江达县' }))).toEqual(['c5'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '卡若区' }))).toEqual(['c4'])
+  })
+
+  it('返家范围的中文文案能搜到（地址全文里写的是「昌都市卡若区」，搜「昌都市区」原本零结果）', () => {
+    expect(ids(queryStudents(contactRoster(), { keyword: '昌都市区' }))).toEqual(['c4'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '昌都市外' }))).toEqual(['c6'])
+    // 代价记在这：三类文案共有的「昌都」也一并变成可搜词，所以搜「昌都」会把
+    // 「昌都市外」的学生一起带出来——他分明不在昌都。换来的是「昌都市区 / 市外」
+    // 这两个真正常用的问法搜得到，这笔账划算，但要写下来而不是假装没有
+    expect(ids(queryStudents(contactRoster(), { keyword: '昌都' }))).toEqual(['c4', 'c5', 'c6'])
+  })
+
+  it('新字段全空的学生不会被扩围牵连（空值绝不能当成有效文本拼进去）', () => {
+    // 扩 haystack 的典型事故：拼进去一个全班共享或人人皆空的值，搜什么都命中一片，
+    // 而界面只是「搜出来有点多」，看不出坏了
+    expect(ids(queryStudents(contactRoster(), { keyword: '138' }))).toEqual(['c1'])
+    expect(ids(queryStudents(contactRoster(), { keyword: '旦增' }))).toEqual(['c1', 'c2'])
+  })
+
+  it('扩围之后原有的匹配口径不变：仍是子串、不区分大小写', () => {
+    const source = [makeStudent('a', '甲', '0101', { remark: 'Sports Day 请假' })]
+
+    expect(ids(queryStudents(source, { keyword: 'sports' }))).toEqual(['a'])
+    expect(ids(queryStudents(source, { keyword: 'SPORTS' }))).toEqual(['a'])
   })
 })
 

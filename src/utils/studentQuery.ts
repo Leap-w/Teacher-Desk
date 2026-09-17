@@ -1,4 +1,5 @@
 import type { Gender, Student } from '@/types'
+import { familyScopeLabel } from '@/utils/student'
 
 /**
  * 列表排序方式（Phase 5B）：默认按学号升序 / 按姓名拼音 / 随机。
@@ -24,21 +25,48 @@ export interface StudentQueryOptions {
 }
 
 /**
- * 关键词匹配的字段（Phase 5B）：姓名 / 学号 / **班委** / 宿舍 / 标签。
+ * 一名学生的**可搜索文本**（全应用唯一一份口径）：各字段拼成一行，供子串匹配。
  *
- * 班委是 Phase 5B 补上的：班主任最常找的就是「班长是谁」「学习委员在哪」，
- * 而在这之前 haystack 里根本没有 `cadreRole`，搜「班长」零结果。
+ * 范围分两轮长成现在这样：
+ * ・Phase 5B 起：姓名 / 学号 / 班委 / 宿舍 / 标签。班委是那一轮补的——班主任最常找的
+ *   就是「班长是谁」「学习委员在哪」，而 haystack 里原本没有 `cadreRole`，搜「班长」零结果。
+ * ・v3.4.0 起再补：**电话 / 备注 / 身份证尾号 / 家庭地址与所在地**。
+ *   补的理由一律是「教师手里已经拿着这条信息，想按它把人找出来」：
+ *   - 电话：家长来电，教师手上只有号码，要反查是谁的家长；
+ *   - 备注：备注里写的常是「走读」「中午回家」这类**没有专门字段的事**，
+ *     以前只能先筛「有备注」再一条条点开看；
+ *   - 身份证尾号：报名表 / 学籍表上印的就是它，而重名的孩子恰恰只有它分得开；
+ *   - 家庭地址与所在地：「××乡的孩子有几个」是真实问法。地址全文与结构化的
+ *     市 / 县都要能搜到；返家范围（「昌都市区」这种中文文案）另外拼一份——
+ *     地址全文里写的是「昌都市卡若区」，只拼全文的话搜「昌都市区」仍是零结果。
+ *
+ * 字段顺序固定、空值也照拼（`?? ''`）：这份清单同时是**范围说明**，一行一个字段，
+ * 拿着它对着 `types/index.ts` 的 `Student` 能逐个核过去，将来加字段时不容易漏。
  */
-function matchesKeyword(student: Student, query: string): boolean {
-  if (!query) return true
-  const haystack = [
+function searchText(student: Student): string {
+  const location = student.familyLocation
+  return [
     student.name,
     student.studentNo,
     student.cadreRole ?? '',
     student.dormitory ?? '',
     ...(student.tags ?? []),
-  ]
-  return haystack.join(' ').toLowerCase().includes(query)
+    student.phone ?? '',
+    // 电话另拼一份纯数字：Excel 里存成「138 1234 5678」的，教师拨打时手里只有一串数字，
+    // 按空格 / 短横原样敲进来是搜不到的
+    (student.phone ?? '').replace(/\D/g, ''),
+    student.remark ?? '',
+    student.idCardSuffix ?? '',
+    student.familyAddress ?? '',
+    location?.prefecture ?? '',
+    location?.county ?? '',
+    familyScopeLabel(location) ?? '',
+  ].join(' ')
+}
+
+function matchesKeyword(student: Student, query: string): boolean {
+  if (!query) return true
+  return searchText(student).toLowerCase().includes(query)
 }
 
 /**
