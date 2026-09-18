@@ -250,9 +250,10 @@ describe('CloudTransport · 推送', () => {
   })
 
   it('10. 断网（连不上）：推送失败但**标记可重试**', async () => {
+    const transport = await signInReady(await makeTransport())
+    // 本机这一份还没上过云（云端没有这个键）：裁决说「推」，才真的走到推那一步 → 撞上断网
     seedDisk(KEY, LOCAL)
     await registerKey(KEY, JSON.parse(LOCAL))
-    const transport = await signInReady(await makeTransport())
     cloud.pushError = new Error('Failed to fetch')
 
     const outcome = await transport.push({
@@ -270,9 +271,9 @@ describe('CloudTransport · 推送', () => {
   })
 
   it('11. 被拒（权限 / 集合不存在）：不可重试（要教师处理，重试无用）', async () => {
+    const transport = await signInReady(await makeTransport())
     seedDisk(KEY, LOCAL)
     await registerKey(KEY, JSON.parse(LOCAL))
-    const transport = await signInReady(await makeTransport())
     cloud.pushError = new Error('permission denied')
 
     const outcome = await transport.push({

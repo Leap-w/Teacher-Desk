@@ -1,7 +1,7 @@
 /**
  * 云端传输实现（V2.2.2-alpha · Phase Cloud-3 核心）。
  *
- * 把 `services/cloudSync.ts`（真实 CloudBase 通道：登录 / 拉全量 / 单键推 / LWW 记账）
+ * 把 `services/cloudSync.ts`（真实 CloudBase 通道：登录 / 拉全量 / 单键对齐 / LWW 记账）
  * 适配成 `SyncTransport`——**这就是 Sync Engine First 那个接缝**：
  * 引擎只管排队、重试、状态、冲突；网络、鉴权、集合、记账全在通道这一侧。
  *
@@ -18,9 +18,9 @@ import {
   probeFirstSync,
   pullKeyNow,
   pushAllLocalNow,
-  pushKeyNow,
   signInAndSync,
   signOutAndStop,
+  syncKeyNow,
   syncNow,
   cloudSyncState,
   type FirstSyncSituation,
@@ -70,7 +70,10 @@ export function createCloudTransport(): CloudTransport {
         return { ok: false, error: '未登录云端', retryable: false }
       }
       try {
-        const outcome = await pushKeyNow(task.key)
+        // 不是「推一个键」，而是「把这一个键对齐」（v3.4.1 起）：先拉云端这一份，
+        // 再按与整轮对账同一个 decideKey 裁决，推 / 采纳 / 报冲突都由裁决说了算。
+        // 通道这一层只等结果——保护一律在 `services/cloudSync.ts` 里，不在这里复制一份。
+        const outcome = await syncKeyNow(task.key)
         if (outcome.ok) return { ok: true, at: Date.now() }
         return { ok: false, error: outcome.error, retryable: outcome.retryable }
       } catch (error) {

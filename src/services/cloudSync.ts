@@ -276,6 +276,26 @@ function adoptToDisk(key: string, doc: RemoteDoc, meta: SyncMeta): boolean {
   return true
 }
 
+/**
+ * 采纳之后的收尾（整轮对账、冲突裁决、单键快通道共用这一份）。
+ *
+ * 内存跟上（`applySyncKeys` 是同设备同步与云端采纳唯一的一条路）→ 广播给别的入口 →
+ * **等归一化写完盘再记 `seen`**。顺序要紧：归一化（各 store 的 `reviveXxx`）会把内容
+ * 改写成自己的口径（比如请假记录补上姓名快照），这一步是内存替换触发的 watch 完成的、
+ * 异步发生。必须等它写完盘**再**记 `seen`，否则记的是归一化前的原文，下一轮就会把这次
+ * 归一化当成「本地又改了」再推一次——两台设备之间于是来回多推一轮。
+ *（顺序写反过一版，是自检里「采纳之后又推了一个键」抓出来的。）
+ */
+async function finishAdoptions(adopted: string[], meta: SyncMeta, now: number): Promise<void> {
+  if (adopted.length === 0) return
+  applySyncKeys(adopted)
+  broadcastKeys(adopted)
+  await nextTick()
+  for (const key of adopted) {
+    meta[key] = { ...(meta[key] ?? { syncedAt: now, localUpdatedAt: 0 }), seen: safeRead(key) }
+  }
+}
+
 /** 推一个键的结果：成功 / 本地这份推不了（原文保留）/ 请求失败 */
 type PushResult =
   | { kind: 'pushed' }
@@ -332,6 +352,18 @@ let rerun = false
 
 function setState(patch: Partial<CloudSyncState>): void {
   state.value = { ...state.value, ...patch }
+}
+
+/**
+ * 记下一处**待教师裁决**的冲突：只登记「哪个键」和「云端那一份是什么」，
+ * **不写盘、不推、不采纳**。整轮对账（轮末统一报）与单键快通道（当场报）共用这一处口径，
+ * 教师看到的那份冲突列表因此只有一个来源。
+ */
+function noteConflict(key: string, doc: RemoteDoc): void {
+  pendingConflicts.set(key, doc)
+  if (!state.value.conflicts.includes(key)) {
+    setState({ conflicts: [...state.value.conflicts, key] })
+  }
 }
 
 /** 判断一次失败算「连不上」还是「被拒」：前者会自己好，后者要教师去处理 */
@@ -478,22 +510,7 @@ async function runCycle(): Promise<void> {
     else if (result.kind === 'failed') failure ??= { status: result.status, error: result.error }
   }
 
-  if (adopted.length > 0) {
-    // 本页内存跟上（同一条路：重读 → reviveXxx → 替换），并让同设备的其它入口也跟上
-    applySyncKeys(adopted)
-    broadcastKeys(adopted)
-
-    // **顺序要紧**：归一化（各 store 的 reviveXxx）会把内容改写成自己的口径
-    //（比如请假记录补上姓名快照），这一步是内存替换触发的 watch 完成的、异步发生。
-    // 必须等它写完盘**再**记 `seen`，否则记的是归一化前的原文，下一轮就会把这次
-    // 归一化当成「本地又改了」再推一次——两台设备之间于是来回多推一轮。
-    //（顺序写反过一版，是自检里「采纳之后又推了一个键」抓出来的。）
-    await nextTick()
-    for (const key of adopted) {
-      meta[key] = { ...(meta[key] ?? { syncedAt: now, localUpdatedAt: 0 }), seen: safeRead(key) }
-    }
-  }
-
+  await finishAdoptions(adopted, meta, now)
   writeMeta(meta)
 
   if (failure) {
@@ -592,17 +609,8 @@ export async function resolveConflicts(choice: ConflictChoice): Promise<void> {
     settled.push(key)
   }
 
-  if (adopted.length > 0) {
-    // 与同步轮走同一条路：重读 → reviveXxx → 替换，并让同设备的其它入口也跟上
-    applySyncKeys(adopted)
-    broadcastKeys(adopted)
-    // **顺序要紧**（同 `runCycle` 的说明）：等归一化写完盘**再**记 `seen`
-    await nextTick()
-    for (const key of adopted) {
-      meta[key] = { ...(meta[key] ?? { syncedAt: now, localUpdatedAt: 0 }), seen: safeRead(key) }
-    }
-  }
-
+  // 与同步轮走同一条路：重读 → reviveXxx → 替换，并让同设备的其它入口也跟上
+  await finishAdoptions(adopted, meta, now)
   writeMeta(meta)
 
   for (const key of settled) pendingConflicts.delete(key)
@@ -656,8 +664,11 @@ export async function probeCloudSession(): Promise<void> {
       account: user ? (user.username ?? user.email ?? user.uid) : null,
       status: user ? 'idle' : 'signedOut',
       error: null,
-      // 上一个账号留下的待裁决冲突到这里为止：这轮没跟云端对过账，没有「冲突」可言
-      conflicts: [],
+      // **不碰 `conflicts`**：这一句只查会话，没有跟云端对过账，也就没有资格宣判
+      // 「没有冲突了」。它和启动时那一轮整轮对账是并发的——对账先跑完、刚报出
+      // 「需要确认」，这句再把它擦掉，教师就再也看不到那道题（冲突只在下一轮回前台 /
+      // 联网 / 编辑时才会被重新发现）。清空冲突只在**对过账**的地方做：
+      // 整轮对账轮末（`runCycle`）、登出（`signOutAndStop`）、处置完（`resolveConflicts`）。
     })
   } catch (error) {
     // 问不出来（断网、SDK 初始化失败）：如实报，并且**照样置 checked**——
@@ -757,19 +768,92 @@ function isRetryableStatus(status: CloudSyncStatus): boolean {
 }
 
 /**
- * 上传**一个**键（Cloud-3）：同步引擎队列的快通道。
- * 与整轮 `syncNow()` 的差别只在于「不拉全量、不裁决其它键」——
- * 记账口径完全一致（`pushKey` 内部同一份实现），所以两条路径不会打架。
+ * 同步**一个**键（Cloud-3 快通道）：同步引擎队列里一个脏键的即时处置。
+ *
+ * 与整轮 `syncNow()` 的差别只在于「只处理这一个键」——**判定用的是同一个 `decideKey`**，
+ * 记账口径也同一份，所以两条路不会打架。
+ *
+ * **v3.4.1 起不再是「盲推」**。原实现是「读本机原文 → 直接 set 上云」，不拉、不比对；
+ * 而本文件里所有的保护——播种基线（`hasNoLocalData`）、首次同步的冲突分支、
+ * 最后写入胜出——全长在 `decideKey` 里，只有整轮对账会走。于是快通道成了绕过全部保护的
+ * 一条侧门，两条实测复现（见开发手册 §9.69）：
+ * ① 本机这个键缺失（换设备 / 清过数据 / iOS 的 Safari 与主屏 PWA 是两个存储分区）时，
+ *    store 一被打开就播种示例数据，注册触发的脏事件经这条路把示例直推上云，
+ *    **云端教师的真实数据被整份盖掉**（线上 `teacherdesk:seatPlans` 就这么没了）；
+ * ② 一个键已经判成「待裁决冲突」时，教师在本机改一下，这条路照样把本机那份推上去，
+ *    云端那份在教师按下裁决之前就已经被删了。
+ * 两条的病根是同一个：**推之前没问过云端这一份是什么**。现在先拉这一份、再按裁决走。
+ *
+ * 代价：每次冲刷多一次拉取（集合只有个位数文档，一次请求）。换来的是「上云的每一份
+ * 都经过裁决」——保护只有一处实现，不会再有第二条路绕过它。
  */
-export async function pushKeyNow(key: string): Promise<KeySyncOutcome> {
+export async function syncKeyNow(key: string): Promise<KeySyncOutcome> {
   if (!isCloudReady()) {
     return { ok: false, status: 'signedOut', error: '未登录云端', retryable: false }
   }
-  const port = (remote ??= createCloudBaseRemote())
   const localText = safeRead(key)
   if (localText === null) return { ok: true, pushed: false }
+
+  // 整轮对账正在跑就先等它跑完：两条路都在做「读记账 → 裁决 → 写记账」，
+  // 交错着走会互相作废对方的记账，而它这一轮可能正好在裁决同一个键。
+  if (running) await running
+
+  let doc: RemoteDoc | null
+  try {
+    doc = await pullKeyNow(key)
+  } catch (error) {
+    // 拉不到就**不推**：拿一次「不知道云端是什么」去覆盖云端，正是这里要修的病。
+    // 本机那份留在盘上（记账也不动），引擎按退避重试，下一轮对账照样会带上它。
+    const status = statusOfError(error)
+    return { ok: false, status, error: errorText(error), retryable: isRetryableStatus(status) }
+  }
+
   const meta = readMeta()
-  const outcome = await pushKey(port, key, localText, Date.now(), meta)
+  const record = meta[key]
+  // 「本地这份是什么时候写的」以盘上的实际写盘记录为准（与 runCycle 同一口径）：
+  // 不刷新它，冲突判定就会拿上一轮的时刻去比，把「最后写入胜出」判反
+  const written = lastWriteAt(key)
+  if (record && written !== null && record.localUpdatedAt !== written) {
+    record.localUpdatedAt = written
+  }
+
+  const now = Date.now()
+  const decision = decideKey(
+    localText,
+    doc ?? undefined,
+    record,
+    now,
+    hasNoLocalData(key, localText),
+  )
+
+  if (decision.kind === 'skip') {
+    // 两边都没变／云端没有这个键而本机也没改过：无事可做（引擎据此出队，不重试）
+    return { ok: true, pushed: false }
+  }
+
+  if (decision.kind === 'conflict') {
+    // **一个字节都不动**，与整轮对账同一条口径：只把冲突报给界面（工具箱据此显示「需要确认」），
+    // 等教师选留哪一份。以前这里会直接把本机那份推上去，把云端那份静默删掉。
+    noteConflict(key, decision.doc)
+    return { ok: true, pushed: false }
+  }
+
+  if (decision.kind === 'adopt') {
+    if (!adoptToDisk(key, decision.doc, meta)) {
+      return {
+        ok: false,
+        status: 'error',
+        error: `${keyLabel(key)}：本地写入失败，云端那份没能取回来`,
+        retryable: false,
+      }
+    }
+    await finishAdoptions([key], meta, now)
+    writeMeta(meta)
+    return { ok: true, pushed: false }
+  }
+
+  const port = (remote ??= createCloudBaseRemote())
+  const outcome = await pushKey(port, key, localText, now, meta)
   if (outcome.kind === 'failed') {
     return {
       ok: false,
@@ -787,8 +871,8 @@ export async function pushKeyNow(key: string): Promise<KeySyncOutcome> {
 }
 
 /**
- * 拉取**一个**键的云端文档（Cloud-3）：给引擎的 `pull` 用。
- * 只读不写盘——是否采纳由调用方按 LWW 判定（真实处置仍在整轮同步里）。
+ * 拉取**一个**键的云端文档（Cloud-3）：给引擎的 `pull` 用，也给 `syncKeyNow` 的裁决用。
+ * 只读不写盘——采纳与否由调用方按 `decideKey` 判定，本函数永远不动本机数据。
  */
 export async function pullKeyNow(key: string): Promise<RemoteDoc | null> {
   if (!isCloudReady()) return null

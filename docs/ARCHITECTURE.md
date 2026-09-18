@@ -94,8 +94,11 @@ UI（同步徽章 / 提示条）──只读──► SyncSnapshot
   └─ services/sync 广播键名 → onSyncDirty(key)
         └─ autoSync（调度层）：isCloudReady() ? engine.enqueue(key) : 忽略（本地模式）
               └─ 防抖 1.5s → SyncEngine.flush()
-                    └─ CloudTransport.push(key) → pushKeyNow(key)
-                          └─ RemotePort.push({ key, payload, updatedAt }) → CloudBase 文档
+                    └─ CloudTransport.push(key) → syncKeyNow(key)（v3.4.1 起不再盲推）
+                          └─ pull 这一份 → decideKey 裁决（与整轮对账同一个函数）
+                                ├─ push     → RemotePort.push({ key, payload, updatedAt }) → CloudBase 文档
+                                ├─ adopt    → 写盘 → applySyncKeys（内存跟上）
+                                └─ conflict → 一个字都不动，列进待裁决
 
 触发整轮对账（SyncEngine.runCycle → CloudTransport.sync → syncNow）：
   应用启动 ｜ 邮箱登录完成 ｜ 回到前台 ｜ 重新联网 ｜ 手动「立即同步」
@@ -150,9 +153,11 @@ autoSync 调度层（只有这里 import 云模块）
 SyncEngine 队列（FIFO + 同键去重 + 指数退避 1s→2s→4s + 20s 超时）
   ↓ 防抖 150ms 落盘（teacherdesk:sync-queue）→ 防抖 1.5s → flush()
 CloudTransport（SyncTransport 实现）
-  ↓ pushKeyNow(key)
-services/cloudSync（LWW 记账：seen / syncedAt / localUpdatedAt）
-  ↓ RemotePort.push
+  ↓ syncKeyNow(key)：先拉这一份云端文档 → decideKey 裁决（与整轮对账同一函数）
+    ├─ 推   ：services/cloudSync 的 LWW 记账（seen / syncedAt / localUpdatedAt）→ RemotePort.push
+    ├─ 采纳 ：写盘 → applySyncKeys（内存与其它入口跟上）
+    └─ 冲突 ：一个字都不动，列进待裁决（工具箱显示「需要确认」）
+  ↓
 CloudBase 文档（key / payload / updatedAt）
   ↓ 事件 sync:start / sync:success / sync:error / sync:retry / sync:state
 UI（同步徽章 / 首页提示条 / 工具箱诊断卡）＋ 队列快照落盘

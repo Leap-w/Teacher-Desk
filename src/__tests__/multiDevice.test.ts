@@ -515,6 +515,8 @@ describe('重试 · 退避 · 超时 · 网络恢复', () => {
     await flushMicrotasks()
     const { syncEngine } = await import('@/sync')
     const baseline = cloud.pushes.filter((doc) => doc.key === KEYS.students).length
+    // 盘上再改一次：这一份真的与云端不同了，才谈得上「推几次」（对齐着的键不再重复上传）
+    browser.localStorage.seed(KEYS.students, JSON.stringify([{ id: 's-1' }, { id: 's-2' }]))
     syncEngine.enqueue(KEYS.students)
     syncEngine.enqueue(KEYS.students) // 同键去重 → 仍只有一条
 
