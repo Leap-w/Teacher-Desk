@@ -26,6 +26,12 @@ export interface ParsedRow {
   cadreRole: string
   tags: string[]
   phone: string
+  /** 备注（v3.5.0）。档案页有「有备注」筛选、检索也吃这个字段，所以它必须能导入 */
+  remark: string
+  /** 所属地区（地级市 / 地区，如「昌都市」）——与表单里的「所属地区」同一个字段（v3.5.0） */
+  prefecture: string
+  /** 所属县 / 区（如「卡若区」）——与表单里的「所属县/区」同一个字段（v3.5.0） */
+  county: string
   familyAddress: string
   scope: FamilyScope | ''
   /** 拦截原因：非空表示这一行不会入库 */
@@ -49,11 +55,22 @@ interface ColumnMap {
   cadreRole: number
   tags: number
   phone: number
+  remark: number
+  prefecture: number
+  county: number
   familyAddress: number
   scope: number
 }
 
-/** 列名与常见别名的对应表。**先匹配到的列胜出**，所以顺序即优先级 */
+/**
+ * 列名与常见别名的对应表。**先匹配到的列胜出**，所以顺序即优先级（也是模板列序）。
+ *
+ * v3.5.0 补齐三个原本只能在档案页手填的字段：**备注 / 所属地区 / 所属县·区**。
+ * 之前它们只存在于 `StudentFormModal`，Excel 里没有对应列，于是「从 Excel 建一批档案」
+ * 之后每个人都得再点开补一遍——导入的意义正好丢掉一半。
+ * 「家庭住址」一并在这一版改叫「家庭地址」，与表单上的字段名对齐
+ * （两个写法都在别名里，老文件照样认得出）。
+ */
 const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: string[] }> = [
   { key: 'name', label: '姓名', aliases: ['姓名', '名字', '学生姓名'] },
   { key: 'gender', label: '性别', aliases: ['性别'] },
@@ -67,14 +84,31 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
   },
   { key: 'dormitory', label: '宿舍', aliases: ['宿舍', '宿舍号', '寝室', '房间'] },
   { key: 'cadreRole', label: '班委', aliases: ['班委', '职务', '班委职务', '班级职务'] },
-  { key: 'tags', label: '标签', aliases: ['标签', '标记'] },
   {
     key: 'phone',
     label: '联系电话',
     aliases: ['联系电话', '电话', '手机', '手机号', '家长电话', '联系方式'],
   },
-  { key: 'familyAddress', label: '家庭住址', aliases: ['家庭住址', '家庭地址', '住址', '地址'] },
+  { key: 'tags', label: '标签', aliases: ['标签', '标记'] },
+  { key: 'remark', label: '备注', aliases: ['备注', '说明', '备注说明'] },
   { key: 'scope', label: '返家范围', aliases: ['返家范围', '返家', '回家范围'] },
+  {
+    key: 'prefecture',
+    label: '所属地区',
+    // 与表单上的「所属地区」同一个字段。不收裸「市」：那个字太容易出现在无关列名里
+    aliases: ['所属地区', '所在地区', '地区', '地级市', '所属市', '所在市'],
+  },
+  {
+    key: 'county',
+    label: '所属县/区',
+    // 同表单上的「所属县/区」。不收裸「县」「区」——它们太短，撞上别的列名就悄悄存错地方
+    aliases: ['所属县/区', '所属县区', '所属县市', '县/区', '县区', '区县', '所属县', '所属区'],
+  },
+  {
+    key: 'familyAddress',
+    label: '家庭地址',
+    aliases: ['家庭地址', '家庭住址', '住址', '地址'],
+  },
 ]
 
 /**
@@ -88,9 +122,29 @@ export const STUDENT_IMPORT_HEADERS: readonly string[] = COLUMN_ALIASES.map(
 )
 
 /**
- * 模板示例（v3.3.1）。两行的取舍：
+ * 必填列 —— 就是 `parseStudentRows` 里「缺了直接整体报错」的那两个字段。
+ * 键名从别名表派生，文案才不会在改 label 时走样。
+ */
+const REQUIRED_KEYS: readonly (keyof ColumnMap)[] = ['name', 'gender']
+
+export const STUDENT_IMPORT_REQUIRED: readonly string[] = COLUMN_ALIASES.filter((column) =>
+  REQUIRED_KEYS.includes(column.key),
+).map((column) => column.label)
+
+/**
+ * 选填列 = 模板表头 − 必填列。**派生，不另抄一份**：
+ * v3.5.0 加了三列，正是「抄一份就必然漏掉」的那种改动（弹窗文案会悄悄少列一个字段，
+ * 教师以为导入不了，又回去手填）。
+ */
+export const STUDENT_IMPORT_OPTIONAL: readonly string[] = STUDENT_IMPORT_HEADERS.filter(
+  (header) => !STUDENT_IMPORT_REQUIRED.includes(header),
+)
+
+/**
+ * 模板示例（v3.3.1 起，v3.5.0 随列一起扩到 13 列）。三行的取舍：
  * ① 一行女生、一行男生——宿舍按性别分列，示例里各举一间才说明得清；
- * ② 第二行**故意留空「身份证尾号」与「班委」**，让教师看见选填列可以空着；
+ * ② 第一行**故意留空「备注」**、第二行**故意留空「身份证尾号」与「班委」**，
+ *    让教师看见选填列可以空着（空着不等于清空既有值，这条口径见 `toPatch`）；
  * ③ 「标签」写成 `住校生,体育委员`——逗号分隔这件事光靠文字说明容易被忽略。
  * 学号与姓名沿用座位模板里的那两个（0101/0102），两份模板填起来是同一个班的故事。
  */
@@ -102,10 +156,13 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '3287',
     '女生2栋113',
     '班长',
-    '住校生,体育委员',
     '13800000000',
-    '昌都市卡若区',
+    '住校生,体育委员',
+    '',
     '昌都市区',
+    '昌都市',
+    '卡若区',
+    '西藏自治区昌都市卡若区城关镇某村',
   ],
   [
     '扎西顿珠',
@@ -114,10 +171,13 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '',
     '男生1栋209',
     '',
-    '住校生',
     '13900000000',
-    '昌都市江达县',
+    '住校生',
+    '家长长期在外务工，由爷爷接送',
     '昌都市其他县',
+    '昌都市',
+    '江达县',
+    '西藏自治区昌都市江达县岗托镇某村',
   ],
 ]
 
@@ -222,18 +282,11 @@ export async function readSheetRows(data: ArrayBuffer): Promise<ReadSheetResult>
 /* ------------------------------------------------------------------ 第 2 层 */
 
 function mapColumns(headerRow: unknown[]): ColumnMap {
-  const map: ColumnMap = {
-    name: -1,
-    gender: -1,
-    studentNo: -1,
-    idCardSuffix: -1,
-    dormitory: -1,
-    cadreRole: -1,
-    tags: -1,
-    phone: -1,
-    familyAddress: -1,
-    scope: -1,
-  }
+  // 初始值从别名表派生。**不再手抄一份键名**：抄漏一个键，那一列的下标就是 `undefined`，
+  // 而 `undefined !== -1` 成立 → 这一列永远认不出来，且不报错。
+  // v3.5.0 加三列时正是靠这里少改一处。
+  const map = {} as ColumnMap
+  for (const column of COLUMN_ALIASES) map[column.key] = -1
   headerRow.forEach((cell, index) => {
     const text = normalizeHeader(cell)
     if (!text) return
@@ -316,7 +369,20 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
     const scopeText = at('scope')
     const scope = SCOPE_ALIASES[scopeText] ?? ''
     if (scopeText && !scope) warnings.push(`返家范围「${scopeText}」无法识别，本次留空`)
-    if (!scopeText) warnings.push('缺返家范围，导入后需在档案里补')
+
+    const prefecture = at('prefecture')
+    const county = at('county')
+    if (!scope) {
+      // 所属地区 / 县区与返家范围是 `familyLocation` 这一个对象的三条腿，`scope` 在模型里是
+      // **必填枚举**。缺了它，新建的档案存不进去这两个新列；此时既不静默丢掉，也不替教师
+      // 编一个默认分类（那会把「拉萨的学生」算进「昌都市其他县」，直接污染周末返家统计）。
+      // 更新已有档案时 scope 会沿用库里那份，所以这条提示里点明的是「新建的档案」。
+      warnings.push(
+        prefecture || county
+          ? '缺返家范围，导入后需在档案里补——新建的档案存不下所属地区 / 县区'
+          : '缺返家范围，导入后需在档案里补',
+      )
+    }
 
     const tags = at('tags')
       .split(/[,，、;；]/)
@@ -334,6 +400,9 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       // 同一行里重复写两遍的标签去掉；顺序保留教师的书写顺序（他大概是按重要性排的）
       tags: [...new Set(tags)],
       phone: at('phone'),
+      remark: at('remark'),
+      prefecture,
+      county,
       familyAddress: at('familyAddress'),
       scope,
       errors,
@@ -463,8 +532,10 @@ export function planStudentImport(rows: ParsedRow[], existing: Student[]): Stude
 
 /** 新增：整行照单全收；没填的字段留 undefined，与手工新增的空表单等价 */
 function toStudentInput(row: ParsedRow): StudentInput {
+  // `scope` 在模型里是必填枚举，缺了它整份家庭信息都存不下——落库侧与
+  // `parseStudentRows` 里那条警告是同一件事（那边说，这边照做）
   const familyLocation: FamilyLocation | undefined = row.scope
-    ? { prefecture: '', county: '', scope: row.scope }
+    ? { prefecture: row.prefecture, county: row.county, scope: row.scope }
     : undefined
   return {
     name: row.name,
@@ -475,6 +546,7 @@ function toStudentInput(row: ParsedRow): StudentInput {
     cadreRole: row.cadreRole || undefined,
     tags: row.tags,
     phone: row.phone || undefined,
+    remark: row.remark || undefined,
     familyAddress: row.familyAddress,
     familyLocation,
   }
@@ -492,14 +564,21 @@ function toPatch(row: ParsedRow, matched: Student): Partial<StudentInput> {
   if (row.cadreRole) patch.cadreRole = row.cadreRole
   if (row.tags.length > 0) patch.tags = row.tags
   if (row.phone) patch.phone = row.phone
+  if (row.remark) patch.remark = row.remark
   if (row.familyAddress) patch.familyAddress = row.familyAddress
-  if (row.scope) {
-    // 只换 scope：Excel 里没有「所属地区 / 县区」两列，整体替换会把教师已录的
-    // 地区与县区一起清掉（familyLocation 是三个字段一体的对象）
-    patch.familyLocation = {
-      prefecture: matched.familyLocation?.prefecture ?? '',
-      county: matched.familyLocation?.county ?? '',
-      scope: row.scope,
+  if (row.scope || row.prefecture || row.county) {
+    // familyLocation 是三个字段一体的对象，所以**逐格**合并：表格里空着的格子沿用库里那份，
+    // 与上面每个字段同一口径；整份替换会把教师已录的地区 / 县区一起清掉。
+    // scope 优先取表里的，表里没填则沿用库里的（v3.5.0 起才会走到这条：只填了
+    // 所属地区 / 县区、没填返家范围的行，对已有档案依然能把这两个字段存进去）；
+    // 两边都没有 scope 就真的建不出这个对象——跳过，解析阶段那条警告已经报过。
+    const scope = row.scope || matched.familyLocation?.scope
+    if (scope) {
+      patch.familyLocation = {
+        prefecture: row.prefecture || matched.familyLocation?.prefecture || '',
+        county: row.county || matched.familyLocation?.county || '',
+        scope,
+      }
     }
   }
   return patch

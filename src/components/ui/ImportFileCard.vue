@@ -2,24 +2,44 @@
 import { FileSpreadsheet } from 'lucide-vue-next'
 
 /**
- * SeatImportCard — Excel 座位导入上传卡（V2.0.4-alpha · Phase UI-4B）：
- * Card Upload 样式（Excel 图标 + 拖拽/点击提示 + 已选文件名），替代「普通按钮」。
- * 文件解析仍由父级完成：click → emit pick（父级触发 file input）；
- * drop → emit file（父级读取该 File，走同一条解析路径）。
+ * ImportFileCard — Excel 导入上传卡（V2.0.4-alpha · Phase UI-4B 起，
+ * v3.5.0 从 `views/Seats/components/SeatImportCard.vue` 上移到 UI Kit，
+ * 因为五个导入弹窗都要用它，放在座位目录里其余四个就只能各写一份）。
+ *
+ * 只做「看起来是个能拖能点的上传区」，**不碰 File**：
+ * click → emit pick（父级触发 file input）；drop → emit file（父级读取该 File，
+ * 走与 input 完全相同的解析路径）。
  */
-defineProps<{
-  /** 已选文件名（有值时显示文件状态而不是提示） */
-  filename?: string
-  /** 工作表说明（如「工作表Sheet1」） */
-  sheetNote?: string
-  busy?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    /** 已选文件名（有值时显示文件状态而不是提示） */
+    filename?: string
+    /** 工作表说明（如「工作表Sheet1」） */
+    sheetNote?: string
+    busy?: boolean
+    /** 未选文件时的主文案 */
+    title?: string
+    /** 未选文件时的次文案 */
+    hint?: string
+  }>(),
+  {
+    filename: '',
+    sheetNote: '',
+    busy: false,
+    title: '点击选择或拖入 Excel 文件',
+    hint: '支持 .xlsx / .xls · 数据仅在本机解析后预览确认',
+  },
+)
 
 const emit = defineEmits<{
   pick: []
   file: [file: File]
 }>()
 
+/**
+ * dragenter / dragleave 会在子元素之间反复触发，用计数而不是布尔量，
+ * 否则鼠标从卡片文字移到图标上就会闪一下「拖拽中」状态。
+ */
 let dragDepth = 0
 
 function onDrop(event: DragEvent) {
@@ -51,8 +71,8 @@ function onDrop(event: DragEvent) {
         <span v-else-if="busy" class="import-hint">读取中…</span>
       </template>
       <template v-else>
-        <span class="import-title">{{ busy ? '读取中…' : '点击选择或拖入 Excel 文件' }}</span>
-        <span class="import-hint">支持 .xlsx / .xls · 数据仅在本机解析后预览确认</span>
+        <span class="import-title">{{ busy ? '读取中…' : title }}</span>
+        <span class="import-hint">{{ hint }}</span>
       </template>
     </span>
   </button>

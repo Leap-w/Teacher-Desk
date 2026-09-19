@@ -24,6 +24,8 @@ import { describe, expect, it } from 'vitest'
 import { buildXlsxTemplate, templateFilename } from '@/utils/xlsxTemplate'
 import {
   STUDENT_IMPORT_HEADERS,
+  STUDENT_IMPORT_OPTIONAL,
+  STUDENT_IMPORT_REQUIRED,
   STUDENT_IMPORT_SAMPLE,
   parseStudentRows,
   readSheetRows,
@@ -141,9 +143,21 @@ describe('模板迁移的完成度：五个弹窗共用一份实现', () => {
   ]
 
   for (const modal of MODALS) {
-    it(`${modal} 走 TemplateDownloadLink，不再自己拼 CSV`, () => {
+    it(`${modal} 走共享导入 UI，模板入口不再各自手拼`, () => {
       const source = readFileSync(fileURLToPath(new URL(`../${modal}`, import.meta.url)), 'utf8')
-      expect(source).toContain('TemplateDownloadLink')
+      // v3.5.0：五个弹窗的外观（上传卡 / 说明区 / 已选文件行 / 统计卡 / 提示条 / 逐行预览表）
+      // 由 components/ui 里的共享组件提供，谁也不许再抄一套 `.stat` / `.preview-table`
+      expect(source).toContain('ImportIntro')
+      expect(source).toContain('ImportFileCard')
+      expect(source).toContain('ImportFileRow')
+      expect(source).toContain('ImportPreviewTable')
+      // 取文件的管道（input / 体积上限 / 文件名 / 工作表说明 / 两条入口同一路径）
+      // 也只有一份实现；自己再写一个 `pickFile` 就是第二套
+      expect(source).toContain('useSheetImport')
+      expect(source).not.toContain('function pickFile')
+      // 下载模板只有一条路：ImportIntro 内部的 TemplateDownloadLink。
+      // 弹窗里再直接调 downloadXlsxTemplate，就是「第二套实现」的开端
+      expect(source).not.toContain('downloadXlsxTemplate')
       // 手拼 CSV 的三件套：MIME 类型、BOM、`下载模板（CSV）`文案
       expect(source).not.toContain('text/csv')
       expect(source).not.toContain('下载模板（CSV）')
@@ -160,6 +174,66 @@ describe('模板迁移的完成度：五个弹窗共用一份实现', () => {
     )
     expect(util).toContain("bookType: 'xlsx'")
     expect(util).not.toContain('text/csv')
+  })
+
+  it('模板下载按钮只被 ImportIntro 使用（五个弹窗共用同一个入口）', () => {
+    const intro = readFileSync(
+      fileURLToPath(new URL('../components/ui/ImportIntro.vue', import.meta.url)),
+      'utf8',
+    )
+    expect(intro).toContain('TemplateDownloadLink')
+  })
+})
+
+/**
+ * 示例行的格子数必须与表头一致。
+ *
+ * 少写一格不会报错：解析器按**表头**取列，缺的格子读成空串——于是模板上明明看着有
+ * 「备注」列，示例里却一个字都没有，教师照着填会发现那一列像是没人要。
+ * v3.5.0 给学生模板加了 3 列，正是最容易漏改示例的那种改动。
+ */
+describe('模板示例的宽度必须与表头对齐', () => {
+  for (const template of TEMPLATES) {
+    it(`${template.name}模板：每一行示例的格子数与表头一致`, () => {
+      for (const [index, row] of template.sample.entries()) {
+        expect(row.length, `示例第 ${index + 1} 行`).toBe(template.headers.length)
+      }
+    })
+  }
+})
+
+/**
+ * 学生模板必须覆盖档案页能填的字段。
+ *
+ * 需求方报的就是这个洞：「学生档案导入模板缺少所属县市、备注等信息」——
+ * 导入只带 10 列，而表单能填 13 项，于是「用 Excel 建一批档案」之后
+ * 每个人都得再点开补一遍。这里把三个字段钉住，免得下次加字段时又漏。
+ */
+describe('学生模板覆盖档案页的字段', () => {
+  it('模板里有 备注 / 所属地区 / 所属县·区 三列（v3.5.0 补的洞）', () => {
+    expect(STUDENT_IMPORT_HEADERS).toContain('备注')
+    expect(STUDENT_IMPORT_HEADERS).toContain('所属地区')
+    expect(STUDENT_IMPORT_HEADERS).toContain('所属县/区')
+  })
+
+  it('必填与选填两份清单合起来正好是整套表头，不重不漏', () => {
+    const union = [...STUDENT_IMPORT_REQUIRED, ...STUDENT_IMPORT_OPTIONAL]
+    expect([...union].sort()).toEqual([...STUDENT_IMPORT_HEADERS].sort())
+    expect(STUDENT_IMPORT_REQUIRED).toEqual(['姓名', '性别'])
+  })
+
+  it('示例行里就带着这三个新字段的值（教师照着抄得出来）', () => {
+    const remarkIndex = STUDENT_IMPORT_HEADERS.indexOf('备注')
+    const prefectureIndex = STUDENT_IMPORT_HEADERS.indexOf('所属地区')
+    const countyIndex = STUDENT_IMPORT_HEADERS.indexOf('所属县/区')
+
+    const filled = STUDENT_IMPORT_SAMPLE.filter((row) => String(row[remarkIndex] ?? '').trim())
+    expect(filled.length).toBeGreaterThan(0)
+    // 所属地区 / 县区每一行都给出值：这两列是「照着填」最需要示范的
+    for (const row of STUDENT_IMPORT_SAMPLE) {
+      expect(String(row[prefectureIndex] ?? '').trim()).not.toBe('')
+      expect(String(row[countyIndex] ?? '').trim()).not.toBe('')
+    }
   })
 })
 

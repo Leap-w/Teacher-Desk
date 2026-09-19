@@ -338,6 +338,127 @@ describe('合并分流：学号命中更新、没命中新增，被拦的一律�
   })
 })
 
+/**
+ * v3.5.0 补的三列：备注 / 所属地区 / 所属县·区。
+ *
+ * 需求方报的洞：「学生档案导入模板缺少所属县市、备注等信息」——导入模板只认 10 列，
+ * 而档案页能填 13 项，于是 Excel 建完档还得逐个点开补。
+ *
+ * 这一节守两件事：
+ * ① 三个字段要真的能**写进去**（新增与更新两条路都算）；
+ * ② 所属地区 / 县区与返家范围同属 `familyLocation` 一个对象，**逐格合并**——
+ *    只填了县区的那一行，不能把教师已录的地区和范围一起抹掉。
+ */
+describe('所属地区 / 所属县·区 / 备注（v3.5.0 补齐的列）', () => {
+  /** 这一节的表头按新列的**语义**排，与位置无关（解析器按列名认列） */
+  const FULL_HEADER = [
+    '姓名',
+    '性别',
+    '学号',
+    '宿舍',
+    '班委',
+    '联系电话',
+    '标签',
+    '备注',
+    '返家范围',
+    '所属地区',
+    '所属县/区',
+    '家庭地址',
+  ]
+
+  function fullSheet(...rows: unknown[][]): unknown[][] {
+    return [FULL_HEADER, ...rows]
+  }
+
+  it('三个新字段能写进新增（含家庭地址与返家范围一起）', () => {
+    const result = parseOk(
+      fullSheet([
+        '甲',
+        '女',
+        '0101',
+        '女生2栋113',
+        '班长',
+        '13800000000',
+        '住校生',
+        '家长长期在外，由爷爷接送',
+        '昌都市其他县',
+        '昌都市',
+        '江达县',
+        '西藏自治区昌都市江达县岗托镇某村',
+      ]),
+    )
+    const row = result.rows[0]!
+
+    expect(row.remark).toBe('家长长期在外，由爷爷接送')
+    expect(row.prefecture).toBe('昌都市')
+    expect(row.county).toBe('江达县')
+
+    const input = planStudentImport(result.rows, []).plan.adds[0]!
+    expect(input.remark).toBe('家长长期在外，由爷爷接送')
+    expect(input.familyLocation).toEqual({
+      prefecture: '昌都市',
+      county: '江达县',
+      scope: 'changdu-county',
+    })
+  })
+
+  it('「备注」列的空格子不覆盖既有备注（与其它字段同一口径）', () => {
+    const existing = [makeStudent('s1', '甲', '0101', { remark: '班里的留守儿童' })]
+    const result = planStudentImport(parseOk(fullSheet(['甲', '女', '0101'])).rows, existing)
+    expect(result.plan.updates[0]!.patch.remark).toBeUndefined()
+  })
+
+  it('只填了「所属县/区」、没填返家范围时，仍能更新已有档案（scope 沿用库里那份）', () => {
+    const existing = [
+      makeStudent('s1', '甲', '0101', {
+        familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+      }),
+    ]
+    // 第 9 格（返家范围）留空，第 11 格（所属县/区）改成左贡县
+    const result = planStudentImport(
+      parseOk(fullSheet(['甲', '女', '0101', '', '', '', '', '', '', '', '左贡县'])).rows,
+      existing,
+    )
+    const patch = result.plan.updates[0]!.patch
+
+    expect(patch.familyLocation).toEqual({
+      prefecture: '昌都市', // 表里没填 → 沿用库里的
+      county: '左贡县', // 表里填了 → 以表为准
+      scope: 'changdu-city', // 表里没填 → 沿用库里的
+    })
+  })
+
+  it('新建的档案缺返家范围时，明说所属地区 / 县区存不下（不替教师编一个分类）', () => {
+    const result = parseOk(
+      fullSheet(['甲', '女', '0101', '', '', '', '', '', '', '昌都市', '江达县']),
+    )
+
+    // scope 是模型里的必填枚举。没有它，这两个字段无处安放——**不静默丢掉，也不默认成
+    // 「昌都市其他县」**（那会把拉萨的学生算进昌都，直接污染周末返家统计），而是说清楚
+    expect(result.rows[0]!.warnings.some((text) => text.includes('存不下'))).toBe(true)
+
+    const input = planStudentImport(result.rows, []).plan.adds[0]!
+    expect(input.familyLocation).toBeUndefined()
+  })
+
+  it('所属地区 / 县区的别名收得住（「所属县市」「所在地区」这类写法）', () => {
+    const result = parseOk([
+      ['姓名', '性别', '所在地区', '所属县市'],
+      ['甲', '女', '拉萨市', '城关区'],
+    ])
+    expect(result.rows[0]!.prefecture).toBe('拉萨市')
+    expect(result.rows[0]!.county).toBe('城关区')
+  })
+
+  it('「家庭住址」这个老写法照样认（这一版把模板标签改成了「家庭地址」）', () => {
+    const result = parseOk([
+      ['姓名', '性别', '家庭住址'],
+      ['甲', '女', '西藏自治区昌都市卡若区某村'],
+    ])
+    expect(result.rows[0]!.familyAddress).toBe('西藏自治区昌都市卡若区某村')
+  })
+})
+
 describe('readSheetRows：唯一碰 xlsx 的一层', () => {
   it('读得回一份真造的 xlsx，并说清读了哪个工作表', async () => {
     const workbook = XLSX.utils.book_new()

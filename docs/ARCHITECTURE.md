@@ -213,6 +213,14 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 > 页面**不许**直接 import `@/services/*`、`@/sync/autoSync`、`@/repositories`——
 > 前两者会把云 SDK 或底层实现拖进页面依赖图，后者会让「谁能碰数据源」变得说不清。
 > V3.0.0 起这条已经真实成立（views / components / stores 三层的越层引用为零）。
+>
+> **v3.5.0 起另有一条「导入弹窗」的收敛**（不属于上表那几个数据源口子，故单列）：
+> 五个导入弹窗的**取文件管道**（`file` → 二维数组，`services/studentImport::readSheetRows`）
+> 与**外观**（上传卡 / 说明区 / 已选文件行 / 统计卡 / 提示条 / 逐行预览表）分别收进
+> `composables/useSheetImport.ts` 与 `components/ui/Import*.vue`（六个组件 + `ui/importUi.ts`）。
+> 收益是可数的：`readSheetRows` 的 import 点从 5 处降到 1 处，各弹窗的 scoped CSS 从 ~90 行降到 6 行。
+> 各弹窗仍直接 import 各模块的**纯解析函数**（`parseSeatRows` / `parseStudentRows` / …）——
+> 那是把它们自己的业务规则接进来，与「谁碰数据源」无关。
 
 ## 下一步
 
