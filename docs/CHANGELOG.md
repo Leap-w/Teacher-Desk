@@ -52,8 +52,33 @@
 ### 自检
 
 - 常驻测试 758 → **774 项 / 35 个文件**；`prettier` / `eslint` / `vue-tsc` / `build` 全绿。
-- 无头 Chrome + CDP 真喂 `.xlsx` 跑六个弹窗（首屏 + 预览各截图，并断言上传卡 / 示例表列数 /
-  统计格数 / 预览行列数 / 面板无溢出）。上面两处渲染问题都是这一步抓出来的。
+- 无头 Chrome + CDP 跑 **7 个用例**：六个弹窗真喂 `.xlsx`（首屏 + 预览各截图，并断言上传卡 /
+  示例表列数 / 统计格数 / 预览行列数 / 被拦行数 / 面板无溢出）+ 一个反面（把 CSV 改名叫 `.xlsx`，
+  验红底整性错误那一屏）。上面两处渲染问题都是这一步抓出来的——**光跑测试看不见它们**。
+- `scripts/audit/layering-and-hygiene.cjs` 的「完全相同的函数体」一条抓出第一轮只统一了**外观**、
+  管道仍是五份（`pickFile` 在四个弹窗里逐字节相同），据此补了 `useSheetImport` 与
+  `ImportFileRow` 那一轮（见 §9.70 ③-b）；复跑后该条已无导入弹窗。
+
+### 上线（交付当日，2026-09-19）
+
+- 发布提交 `9528e65`，tag **`v3.5.0`**（带附注，`^{commit}` 解引用核实指向同一提交）。
+- **CI 两处均 success**（main push `35427122884` / tag push `35427125058`），结论取自
+  `gh run view` 与 `gh run watch --exit-status`，不是看本地六步。
+- `npm run deploy`（= `tcb deploy`，走 `cloudbaserc.json` 的声明式配置）：**108 + 25 个文件**
+  上传成功、`✔ Deployment completed: 1 resource(s) succeeded`，地址仍是
+  <https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com/>。
+- CLI 明确提示「检测到 `dist`，**跳过本地构建直接上传**」——所以线上是不是本次构建**必须另核**，
+  逐字节比对了三份关键 chunk（本机 `dist` vs 线上，尺寸逐字节相同）：
+  入口 `assets/index-C68JWEDI.js` **949,116**、版本号所在 `assets/index-Cfpl5iKM.js` **14,399**、
+  新模块 `assets/useSheetImport-DPMrgSq3.js` **16,187**。
+- **内容级复核**：线上那份新模块里搜得到本次新增的字段与文案「所属县/区」「存不下所属地区 / 县区」
+  ——线上跑的确实是含本次改动的一版，不只是版本号换了。
+- 五个导入入口的深链全部 200：`/students/`、`/class/seats/`、`/work/schedule/`、`/work/works/`、
+  `/class/duty/`；`/students/` 的占位 HTML 指向**本次**入口 chunk（不是上一版）；
+  `sw.js`、`manifest.webmanifest` 均 200。
+- **仍未做**：真机打开线上站点点一遍。两条老账重申：`curl` 通过 **!=** 浏览器打得开
+  （默认域名可能先出「风险提醒」中间页，点「确定访问」即可）；线上看着像旧版多半是 SW
+  预缓存，**刷两次**。
 
 ---
 
