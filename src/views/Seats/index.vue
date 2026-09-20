@@ -19,12 +19,15 @@ import {
   exportDateLabel,
   exportDateStamp,
   renderExportNode,
-  downloadPng,
   createPdf,
   embedPdfImage,
 } from '@/utils/seatExport'
 import type { SeatExportKind } from '@/utils/seatExport'
-import { buildSeatWorkbook, downloadXlsx } from '@/utils/xlsxSheet'
+import {
+  buildSeatWorkbookFromTemplate,
+  downloadXlsx,
+  loadSeatTemplate,
+} from '@/utils/seatTemplateXlsx'
 import { formatStudentShortName } from '@/utils/student'
 import StudentDetailModal from '@/views/Students/components/StudentDetailModal.vue'
 import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
@@ -951,51 +954,34 @@ async function runExport(kind: SeatExportKind) {
   exportedDateText.value = exportDateLabel()
   try {
     const base = baseFilename()
-    if (kind === 'png-teacher' || kind === 'png-student') {
-      const isTeacher = kind === 'png-teacher'
-      const node = isTeacher ? exportTeacherEl.value : exportStudentEl.value
-      const canvas = await captureNode(node)
-      downloadPng(canvas, `${base}-${isTeacher ? '老师视角' : '学生视角'}.png`)
-    } else if (kind === 'pdf-teacher') {
-      // 单视角整页（横向 A4；可用区由 embedPdfImage 的默认值给出 = 页宽 / 页高各减 20mm）
-      const pdf = createPdf()
-      const canvas = await captureNode(exportTeacherEl.value)
-      embedPdfImage(pdf, canvas, { y: 10 })
-      pdf.save(`${base}-老师视角.pdf`)
-    } else if (kind === 'pdf-dual') {
+    if (kind === 'pdf-dual') {
       // 双视角 PDF（v3.4.0）：**一个视角一页**，每页都是横向 A4 整页铺满。
       // 此前是一页上、下半各塞一张——横向页比竖版矮 87mm，再对半分就真的看不清了。
+      // v3.5.1：页序改成**老师视角在前**（验收标准口径）。v3.4.0 是学生视角在前，
+      // 那版顺序没有任何文档依据，两者只有先后的区别，版面完全一样。
       const pdf = createPdf()
-      const studentCanvas = await captureNode(exportStudentEl.value)
-      embedPdfImage(pdf, studentCanvas, { y: 10 })
-      pdf.addPage()
       const teacherCanvas = await captureNode(exportTeacherEl.value)
       embedPdfImage(pdf, teacherCanvas, { y: 10 })
+      pdf.addPage()
+      const studentCanvas = await captureNode(exportStudentEl.value)
+      embedPdfImage(pdf, studentCanvas, { y: 10 })
       pdf.save(`${base}-双视角.pdf`)
     } else {
-      // Excel（v3.4.0）：两个视角各一个工作表，照需求方模板 `docs/座位图-9.3.xlsx` 的版面
-      // 与打印设置（带边框的格子 + A4 横向）出图——为什么不用仓库的 `xlsx` 见 utils/xlsxSheet.ts 顶部
-      const buffer = buildSeatWorkbook([
-        {
-          sheetName: '学生视角',
-          config,
-          seats: seatStore.currentSeats,
-          students: studentMap.value,
-          view: 'student',
-          title: exportTitle.value,
-          subtitle: exportSubtitle('学生视角'),
-        },
-        {
-          sheetName: '老师视角',
-          config,
-          seats: seatStore.currentSeats,
-          students: studentMap.value,
-          view: 'teacher',
-          title: exportTitle.value,
-          subtitle: exportSubtitle('老师视角'),
-        },
-      ])
-      if (!downloadXlsx(buffer, base)) throw new Error('浏览器未接受下载')
+      // Excel（v3.5.1）：**复制需求方模板 `docs/座位图-9.3.xlsx` → 只改文字 → 导出**，
+      // 两个视角各一张工作表。样式一律来自模板本身，这里只给标题 / 日期 / 63 个姓名。
+      // 文件名照需求方口径走「{班级}座位图_{YYYY-MM-DD}.xlsx」（表内日期是点分格式，
+      // 两个格式都是需求方写死的，见 utils/seatExport.ts 的 exportDateDotted）
+      const buffer = await buildSeatWorkbookFromTemplate(await loadSeatTemplate(), {
+        title: `${config.name}座位图`,
+        date: new Date(),
+        sheets: [
+          { sheetName: '学生视角', seats: seatStore.currentSeats, students: studentMap.value },
+          { sheetName: '老师视角', seats: seatStore.currentSeats, students: studentMap.value },
+        ],
+      })
+      if (!downloadXlsx(buffer, `${config.name}座位图_${exportDateStamp()}.xlsx`)) {
+        throw new Error('浏览器未接受下载')
+      }
     }
     toast.success('已导出座位图')
   } catch (error) {

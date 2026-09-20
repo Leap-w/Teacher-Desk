@@ -597,7 +597,7 @@ export function clearAllKeys(
  * 导出 / 导入本身的纪律（原子写盘、读取异常不写盘）不受影响，一字未动。
  */
 
-/** 触发浏览器下载（与 utils/seatExport.ts 的 downloadPng 同一手法；用 Blob 而非 dataURL，避免大文件撑爆地址栏） */
+/** 触发浏览器下载（与 utils/seatTemplateXlsx.ts 的 downloadXlsx 同一手法；用 Blob 而非 dataURL，避免大文件撑爆地址栏） */
 export function downloadJson(text: string, filename: string): void {
   const blob = new Blob([text], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
@@ -605,6 +605,6 @@ export function downloadJson(text: string, filename: string): void {
   anchor.href = url
   anchor.download = filename
   anchor.click()
-  // 立刻 revoke 有概率打断下载，放到下一个宏任务再回收（与 seatExport 的 downloadPng 同处理）
+  // 立刻 revoke 有概率打断下载，放到下一个宏任务再回收（与 downloadXlsx 同处理）
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }

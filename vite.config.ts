@@ -44,7 +44,10 @@ export default defineConfig({
       },
       workbox: {
         // png 必须显式列出：图标进不了 precache 的话，离线启动会掉图标
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // xlsx 同理（v3.5.1）：座位图导出的模板 `docs/座位图-9.3.xlsx` 是构建产物里的
+        // 一个资产，漏了它离线点「Excel · 两个视角」就会 fetch 失败——**断网正是教室里
+        // 最常见的情形**，偏偏那条路径没有任何 runtime 缓存兜底（本配置没有 runtimeCaching）
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,xlsx}'],
         cleanupOutdatedCaches: true,
       },
       devOptions: {

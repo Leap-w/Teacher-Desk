@@ -211,7 +211,8 @@ TeacherDesk/
 │   │                   #   / leave / duty（轮换推进 / 说明文案 / 记录健壮化）/ weekend / point
 │   │                   #   / classroom（课堂工具元信息）/ work / backup（备份导出 / 校验 / 合并 / 清空）
 │   │                   #   / xlsxTemplate（导入模板生成与下载，v3.3.1：真 .xlsx，与导入器认的是同一种格式）
-│   ├── __tests__/      # 常驻回归自检（34 个测试文件 750 项，随仓库长期存在）
+│   │                   #   / seatTemplateXlsx（座位图导出，v3.5.1：打开 docs/座位图-9.3.xlsx 只换文字，exceljs 懒加载）
+│   ├── __tests__/      # 常驻回归自检（35 个测试文件 780 项，随仓库长期存在）
 │   │                   #   / helpers/env.ts（假浏览器底座：内存存储 / 假广播通道 / 假时钟 / 断网开关）
 │   ├── views/          # Home（工作台）/ Students / Seats / Schedule / Leave / Duty / Weekend / Works（工作清单）
 │   │                   #   / My（我的：个人信息 / 工作时光 / 设置入口 / 关于）

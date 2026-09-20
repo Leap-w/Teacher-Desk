@@ -31,13 +31,29 @@ export function exportDateStamp(date = new Date()): string {
 }
 
 /**
- * 导出种类：PNG（单视角）/ PDF（老师单页、双视角两页）/ Excel（两个视角各一个工作表）。
+ * 表内日期文案：`2026.09.21`。
  *
- * v3.4.0：PDF 全部改为**横向 A4**，`pdf-dual` 由「一页装两个视角」改为**一个视角一页**；
- * 新增 `xlsx-dual`（照需求方模板出的 .xlsx，见 `utils/xlsxSheet.ts`）。
+ * **与 `exportDateStamp`（文件名用）刻意分开**：文件名走 `-`、表内走 `.`，
+ * 两边都是需求方写死的口径——座位图 .xlsx 的日期格照模板就是点分格式，
+ * 换成 `-` 或 `/` 与模板对不上。别为了「统一」把这两个合成一个。
  */
-export type SeatExportKind =
-  'png-teacher' | 'png-student' | 'pdf-teacher' | 'pdf-dual' | 'xlsx-dual'
+export function exportDateDotted(date = new Date()): string {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  return `${date.getFullYear()}.${month}.${day}`
+}
+
+/**
+ * 导出种类。**v3.5.1 起只剩两项**：
+ *
+ * - `pdf-dual`：双视角 PDF（横向 A4、一个视角一整页，共 2 页）；
+ * - `xlsx-dual`：两个视角的 .xlsx（模板驱动，见 `utils/seatTemplateXlsx.ts`）。
+ *
+ * 砍掉的三项是 `png-teacher` / `png-student` / `pdf-teacher`——PNG 两个入口与
+ * PDF 老师视角入口都从菜单里撤了。**截画布的那套（`renderExportNode`）保留**：
+ * 双视角 PDF 仍然靠它把两个视角的渲染节点拍成图。
+ */
+export type SeatExportKind = 'pdf-dual' | 'xlsx-dual'
 
 /** 把（隐藏的）导出渲染节点快照为画布；等待字体就绪避免中文 / 图标缺失 */
 export async function renderExportNode(
@@ -52,15 +68,9 @@ export async function renderExportNode(
   })
 }
 
-/** 画布 → 浏览器下载 PNG（文件名示例：座位表-开学初-2026-09-10-老师视角.png） */
-export function downloadPng(canvas: HTMLCanvasElement, filename: string): void {
-  const anchor = document.createElement('a')
-  anchor.href = canvas.toDataURL('image/png')
-  anchor.download = filename
-  anchor.click()
-}
-
-/** 新建横向 A4 PDF（unit mm）。所有导出 PDF（单视角 / 双视角 / 方案对比）共用同一个页面口径 */
+/**
+ * 新建横向 A4 PDF（unit mm）。所有导出 PDF（双视角座位图 / 方案对比）共用同一个页面口径
+ */
 export function createPdf(): jsPDF {
   return new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 }
