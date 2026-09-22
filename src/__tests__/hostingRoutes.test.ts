@@ -39,11 +39,12 @@ describe('hosting routes（SPA 深链占位）', () => {
     expect(hostingRoutes.parseStaticPaths(source)).toEqual(flatten(appRoutes))
   })
 
-  it('解析覆盖全部 24 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
+  it('解析覆盖全部 25 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
     const source = readFileSync(path.resolve(process.cwd(), 'src/router/routes.ts'), 'utf8')
     expect(hostingRoutes.parseStaticPaths(source)).toEqual([
       '/class',
       '/class/duty',
+      '/class/fund',
       '/class/leave',
       '/class/seats',
       '/class/weekend',

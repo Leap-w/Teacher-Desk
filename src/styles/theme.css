@@ -338,22 +338,35 @@
 }
 
 /* ========== 17. 强制浅色作用域（打印 / 导出件） ==========
-   座位导出图 / 导出摘要是**发给别人的 PNG**，永远按浅色纸张渲染——
+   座位导出图 / 导出摘要 / 班费导出账页都是**发给别人的纸张**，永远按浅色渲染——
    在组件根元素挂 .theme-force-light，局部把深色里被翻转的颜色类令牌还原。
-   只重声明这两个组件实际引用的令牌（见组件源码），不复制整套。 */
+   只重声明这几个组件实际引用的令牌（见组件源码），不复制整套。
+   v3.6.0：班费导出账页加入消费方，补上它引用的文字 / 边框 / 收支双色。 */
 .theme-force-light {
   --bg-card: #ffffff;
   --color-surface: #ffffff;
+  --color-bg-white: #ffffff;
   --color-text: #101820;
+  --color-text-primary: #101820;
   --color-text-secondary: #5f6f71;
+  --color-text-tertiary: #67767a;
   --color-text-faint: #7d8d8f;
   --color-text-inverse: #ffffff;
   --color-border: rgba(15, 23, 42, 0.08);
+  --color-border-light: rgba(15, 23, 42, 0.05);
+  --color-border-divider: rgba(15, 23, 42, 0.06);
   --color-border-strong: rgba(15, 23, 42, 0.12);
   --color-fill-disabled: rgba(15, 23, 42, 0.04);
   --color-primary: #4a8c94;
   --color-primary-strong: #3a7175;
+  --color-primary-dark: #3a7175;
   --color-primary-soft: rgba(74, 140, 148, 0.12);
+  --color-primary-bg: rgba(74, 140, 148, 0.06);
+  --color-success-strong: #527a65;
+  --color-success-soft: rgba(107, 158, 133, 0.14);
+  --color-danger-strong: #a54f52;
+  --color-danger-soft: rgba(194, 103, 106, 0.12);
   --color-warning: #e8b04c;
   --color-warning-strong: #a6781f;
+  --color-warning-soft: rgba(232, 176, 76, 0.16);
 }

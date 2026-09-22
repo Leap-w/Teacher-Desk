@@ -10,14 +10,15 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                          视图层（Vue 3 SFC）                       │
 │   views/Home · Students · Seats · Leave · Duty · Weekend         │
-│   views/Schedule · Works · My · Toolbox                          │
+│   views/Schedule · Works · Fund · My · Toolbox                   │
 │   组件体系：components/ui（Design System）· dashboard/ · layout/  │
 └───────────────┬──────────────────────────────────────────────────┘
                 │ 只调用 Store（Pinia），不触碰任何存储
 ┌───────────────▼──────────────────────────────────────────────────┐
-│                     状态层（Pinia Stores ×9）                      │
+│                     状态层（Pinia Stores ×11）                     │
 │   student · seat(+constraint) · leave · duty · weekend            │
-│   timetable(schedule) · work(task) · dashboard · user             │
+│   timetable(schedule) · work(task) · fund(v3.6.0) · user          │
+│   appSettings（Hero 与时光中心共用）                                │
 │   业务规则 / 派生计算 / 动作校验；**不直接读写存储**                 │
 └───────────────┬──────────────────────────────────────────────────┘
                 │ 读写 + bind（唯一数据入口，Repository First）
@@ -36,7 +37,8 @@
 │  │ studentRepository · seatRepository · seatConstraintRepo     │   │
 │  │ leaveRepository · dutyRepository · weekendRepository        │   │
 │  │ scheduleRepository(lessons+exchanges) · taskRepository      │   │
-│  │ dashboardRepository · userProfileRepository                 │   │
+│  │ fundRepository · fundCollectionRepository · fundCategoryRepo │
+│  │ userProfileRepository · appSettingsRepository                │   │
 │  │  各自拥有：键名 · 复活规则(normalize) · 播种守卫 · 迁移       │   │
 │  └────────────────────────────────────────────────────────────┘   │
 └───────────────┬──────────────────────────────────────────────────┘
@@ -52,7 +54,8 @@
 │              持久化：localStorage（键名不变，零迁移）               │
 │  teacherdesk:students / seatPlans / seatConstraints / leaves      │
 │  teacherdesk:duty / weekendReturns / timetable(:exchanges)        │
-│  teacherdesk:works / dashboard:todos / profile                    │
+│  teacherdesk:works / profile                                     │
+│  teacherdesk:fund:records / fund:collections / fund:expenseCats   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

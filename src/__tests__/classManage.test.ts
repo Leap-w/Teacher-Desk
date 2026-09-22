@@ -45,12 +45,18 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect(children.map((child) => child.path)).toEqual(['schedule', 'works'])
   })
 
-  it('「班级管理」下挂四个子模块', () => {
+  it('「班级管理」下挂五个子模块（v3.6.0 起含班费管理）', () => {
     expect(classRoute).toBeDefined()
     const children = (classRoute?.children ?? []).filter(
       (child) => child.path !== '' && !child.redirect,
     )
-    expect(children.map((child) => child.path)).toEqual(['seats', 'leave', 'duty', 'weekend'])
+    expect(children.map((child) => child.path)).toEqual([
+      'seats',
+      'leave',
+      'duty',
+      'weekend',
+      'fund',
+    ])
   })
 
   it('学生档案是一级导航路由（不 hidden）', () => {

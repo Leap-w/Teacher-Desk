@@ -14,6 +14,7 @@
  *   ② `downloadXlsxTemplate()` —— 只做「字节 → 触发浏览器下载」。
  * 合成一个函数就只能在浏览器里点着试，而「模板自己导不进自家系统」恰恰是点不出来的那种错。
  */
+import { buildXlsxBook, downloadXlsxBuffer, xlsxFilename } from '@/utils/xlsxBook'
 
 export interface XlsxTemplateOptions {
   /** 文件名，可以不带扩展名（不带时补 `.xlsx`） */
@@ -27,72 +28,22 @@ export interface XlsxTemplateOptions {
 }
 
 /**
- * 列宽估算。**中日韩字符要按 2 个字宽算**：`wch` 的单位是「字符数」，
- * 一个汉字在 Excel 里占两格，按 `length` 算出来的列宽会让中文列窄得只看得见半个字。
- * 用码点判断而不是正则字面量：`\uXXXX` 转义在编辑/传输时容易被转成真字符，
- * 数字比较没有这个风险，读起来也更直白。
- */
-function displayWidth(text: string): number {
-  let width = 0
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0
-    const isWide =
-      (code >= 0x3000 && code <= 0x303f) || // CJK 标点
-      (code >= 0x4e00 && code <= 0x9fff) || // CJK 汉字
-      (code >= 0xff00 && code <= 0xffef) // 全角符号
-    width += isWide ? 2 : 1
-  }
-  return width
-}
-
-/**
  * 生成 .xlsx 字节。
+ *
+ * v3.6.0 起实现搬去了 `utils/xlsxBook.ts`（班费账本要出**两个工作表**，单表接口装不下），
+ * 这里只剩「单表 + 示例行」的这层包装，列宽 / 表头 / 工作表名规则不再有第二份。
  *
  * @returns 成功返回 ArrayBuffer；xlsx 模块加载失败（断网 / 首屏之后 chunk 没拉到）、
  *          表头为空或写文件抛错时返回 null——**调用方必须把 null 说出来，不能静默**
  */
 export async function buildXlsxTemplate(options: XlsxTemplateOptions): Promise<ArrayBuffer | null> {
   const { sheetName = '导入模板', headers, sample = [] } = options
-  if (headers.length === 0) return null
-
-  let XLSX: typeof import('xlsx')
-  try {
-    XLSX = await import('xlsx')
-  } catch {
-    return null
-  }
-
-  try {
-    // 第一行必须是表头（解析器认的就是第 0 行），所以示例只能往下排，前面不加任何说明行
-    const rows: string[][] = [headers.map((header) => String(header))]
-    for (const row of sample) {
-      rows.push(headers.map((_, index) => String(row[index] ?? '')))
-    }
-
-    const sheet = XLSX.utils.aoa_to_sheet(rows)
-    sheet['!cols'] = headers.map((header, index) => {
-      const widest = rows.reduce((max, row) => Math.max(max, displayWidth(row[index] ?? '')), 0)
-      // 上下各留一点余量；上限 40 免得一个长住址把表撑出屏幕
-      return { wch: Math.min(40, Math.max(8, displayWidth(header) + 2, widest + 2)) }
-    })
-
-    const workbook = XLSX.utils.book_new()
-    // 工作表名不能含 : \ / ? * [ ]，且不超过 31 字符
-    XLSX.utils.book_append_sheet(
-      workbook,
-      sheet,
-      sheetName.replace(/[:\\/?*[\]]/g, ' ').slice(0, 31),
-    )
-
-    return XLSX.write(workbook, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
-  } catch {
-    return null
-  }
+  return buildXlsxBook([{ sheetName, headers, rows: sample }])
 }
 
 /** 文件名补扩展名。教师看到的下载文件名必须一眼看出是什么格式 */
 export function templateFilename(filename: string): string {
-  return filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`
+  return xlsxFilename(filename)
 }
 
 /**
@@ -103,19 +54,5 @@ export function templateFilename(filename: string): string {
 export async function downloadXlsxTemplate(options: XlsxTemplateOptions): Promise<boolean> {
   const data = await buildXlsxTemplate(options)
   if (!data) return false
-
-  try {
-    const blob = new Blob([data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = templateFilename(options.filename)
-    anchor.click()
-    URL.revokeObjectURL(url)
-    return true
-  } catch {
-    return false
-  }
+  return downloadXlsxBuffer(data, options.filename)
 }

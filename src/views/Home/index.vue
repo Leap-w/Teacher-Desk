@@ -7,6 +7,7 @@ import {
   Paintbrush,
   PlaneLanding,
   UsersRound,
+  Wallet,
 } from 'lucide-vue-next'
 
 import ActivityTimeline from '@/components/dashboard/ActivityTimeline.vue'
@@ -145,6 +146,15 @@ const quickActions: QuickAction[] = [
     description: '一周安排',
     to: '/work/schedule',
     tone: 'green',
+  },
+  {
+    // v3.6.0：班费管理。第五张卡——栅格同时从 4 列改 5 列（见 QuickActionGrid），
+    // 否则第五张会单独掉到第二行、左边空一大块
+    icon: Wallet,
+    label: '班费管理',
+    description: '收支流水',
+    to: '/class/fund',
+    tone: 'neutral',
   },
 ]
 </script>

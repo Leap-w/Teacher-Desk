@@ -167,13 +167,25 @@ describe('模板迁移的完成度：五个弹窗共用一份实现', () => {
     })
   }
 
-  it('共享实现本身只有一处：CSV 那套已经没有残留', () => {
-    const util = readFileSync(
+  it('共享实现本身只有一处：写字节的那一半在 xlsxBook，CSV 那套已经没有残留', () => {
+    // v3.6.0：写字节的实现从 `xlsxTemplate.ts` 搬到了 `utils/xlsxBook.ts`
+    //（班费账本要出两个工作表，单表接口装不下）。钉子跟着实现走，并且**加一条**：
+    // 模板这一层只许转发，不许再自己写一遍工作表 / 列宽 / 下载
+    const book = readFileSync(
+      fileURLToPath(new URL('../utils/xlsxBook.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(book).toContain("bookType: 'xlsx'")
+    expect(book).not.toContain('text/csv')
+
+    const template = readFileSync(
       fileURLToPath(new URL('../utils/xlsxTemplate.ts', import.meta.url)),
       'utf8',
     )
-    expect(util).toContain("bookType: 'xlsx'")
-    expect(util).not.toContain('text/csv')
+    expect(template).not.toContain("bookType: 'xlsx'")
+    expect(template).not.toContain('aoa_to_sheet')
+    expect(template).not.toContain('createObjectURL')
+    expect(template).not.toContain('text/csv')
   })
 
   it('模板下载按钮只被 ImportIntro 使用（五个弹窗共用同一个入口）', () => {

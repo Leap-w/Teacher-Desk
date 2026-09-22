@@ -75,6 +75,14 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Weekend/index.vue'),
         meta: { title: '周末管理' },
       },
+      {
+        // v3.6.0：班费管理（班级电子流水账）。排在四个既有子模块之后——
+        // 二级导航的顺序由本表决定，插在中间会让教师习惯的位置整体挪一格。
+        path: 'fund',
+        name: 'fund',
+        component: () => import('@/views/Fund/index.vue'),
+        meta: { title: '班费管理' },
+      },
     ],
   },
   {

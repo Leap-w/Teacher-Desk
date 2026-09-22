@@ -56,9 +56,11 @@ const TONE_STYLE: Record<QuickActionTone, { bg: string; fg: string }> = {
 </template>
 
 <style scoped>
+/* v3.6.0：4 列 → 5 列，与首页快捷入口的项数对齐（班费管理是第 5 张）。
+   组件注释从第一天起就写着「桌面 5 列」，CSS 一直是 4 列——项数到 5 才显出来。 */
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: var(--card-gap);
 }
 
