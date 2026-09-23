@@ -709,9 +709,12 @@ node scripts/audit/runtime-check.cjs
 - [ ] 六步全绿（`prettier` / `eslint` / `vue-tsc` / `test` / `build`）；`npm run test`
       **861 项 / 37 个文件**（其中 `fund.test.ts` 58 项、`fundExportXlsx.test.ts` 23 项）。
 - [ ] `LC_ALL=en_US.UTF-8 npm run test` 同样全绿。
-- [ ] ⚠️ **`rm -rf dist` 后全新构建**，再确认 `dist/` 里**没有带「 2」后缀的重复文件**
-      （`ls dist | grep " 2"` 应为空）。本轮曾在旧产物里发现 34 个这类文件——它们会被原样
-      传上去；`emptyOutDir` 本身正常，是更早一次手工复制留下的。
+- [ ] ⚠️ **`rm -rf dist` 后全新构建**，再确认 `dist/` 里**没有带「 2」后缀的重复文件**：
+      `find dist -name "* 2.*"` 应为空。**别用 `ls dist | grep " 2"`——它只看顶层**：
+      v3.6.0 这轮就是这么漏掉的 41 个（全在 `dist/assets/`、`dist/icons/` 和深链目录里，
+      已经随部署原样传上去了）。这批副本与原件**逐字节相同**，站点不受影响，只白占一份 CDN
+      空间；`node_modules/` 里有同款 138 个（9-15 08:58 那一批），**成因未查明**——两次都只
+      出现在工具生成的目录里，而 `emptyOutDir` 本身是好的（往 `dist` 塞探针文件会被正常删掉）。
 - [ ] 构建产物里有 `dist/class/fund/index.html`，且与 `dist/index.html` **逐字节相同**
       （`cmp` 无输出）——CloudBase 静态托管没有 SPA 回退，漏了它 `/class/fund` 直接刷新就是 404。
 - [ ] `dist/sw.js` 的预缓存清单里**含班费页分块**（本轮为 `index-Gaqr4c35.js`，**49,835 字节**；
@@ -720,6 +723,9 @@ node scripts/audit/runtime-check.cjs
 - [ ] `git rev-parse 'v3.6.0^{commit}'` 应等于 `git rev-parse HEAD`（tag 落在交付末提交）。
 - [ ] 部署后：`/class/fund/` 深链 200；页脚版本号 `v3.6.0`；`/` 引用的入口 chunk 与本机
       `dist/` 逐字节一致；浏览器里 SW 预缓存要**刷两次**才看得到新版（见 CHANGELOG 2026-09-14）。
+- [ ] 线上若还挂着「 2」后缀的副本（`tcb hosting list /assets` 能看见，`curl` 那个带 `%202`
+      的路径也是 200），`tcb deploy` 是**纯上传、不删孤儿**——要清就逐个
+      `tcb hosting delete "/assets/xxx 2.js"`。v3.6.0 这次把 41 个全传上去了（见 CHANGELOG）。
 
 **退路**：
 
