@@ -130,9 +130,12 @@
 
 ### 上线（交付当日，2026-09-23）
 
-- 发布提交 `51d7937`，tag **`v3.6.0`**（`^{commit}` 解引用指向同一提交）。⚠️ **tag 尚未推上
-  GitHub**：当天两次 push 都被网络挡下（`Error in the HTTP2 framing layer` / 连 github.com:443
-  超时 75 s），`main` 稍后补推成功——远端 `main` 已在 `065fb2b`，**只缺这个 tag**。
+- 发布提交 `51d7937`，tag **`v3.6.0`**（`^{commit}` 解引用指向同一提交）。推送当天**连败四次**
+  （`Error in the HTTP2 framing layer` ×2；换 `-c http.version=HTTP/1.1` 后反而退化成
+  `Failed to connect to github.com port 443 after 75024 ms`）——**与沙箱无关，是这台机器到
+  GitHub 的链路时好时坏**（同一时段 CloudBase 与线上 curl 全程正常）。链路恢复后
+  `git push origin main` 与 `git push origin v3.6.0` 各一次即过：远端 `main` → `c713041`、
+  tag `v3.6.0` 新建（`git ls-remote` 核实指向 `51d7937`）。
 - 文档更正提交 `065fb2b`（本文件与 checklist 里关于「 2」副本的更正）落在 tag **之后**，
   纯文档，tag 未移动。
 - `npm run deploy`（= `tcb deploy`，走 `cloudbaserc.json` 的声明式配置）：CLI 明确提示
@@ -157,15 +160,14 @@
 - 首次探到班费页时出现过一次 `Unable to preload CSS for /assets/index-BxhfEHcQ.css`
   （Vite 预加载助手抛的），随后两次重跑**都没复现**，该文件本机与线上都是 200 / 27,320 字节
   ——记为**瞬时失败**，既不当缺陷记，也不作「已通过」记。
-- CI 结论这次**未取**（沙箱内连不上 GitHub，`gh` 跑不了）——与 v3.5.1 那条「CI 两处 success」
-  相比是个空缺。
+- **CI 两处均 success**（main push `35801540276` / tag push `35801542532`，各约 1m30s；
+  稍早那条文档更正 `065fb2b` 是 `35800274670`），结论取自 `gh run list`，不是看本地六步。
 
 ### 仍未做
 
 - 导出的 PDF / Excel 在本机（WPS / Numbers）双击打开的人工核对仍未做，与 v3.5.1 那条
   同性质，不作「已通过」记。
 - 触屏设备上真机点一遍导出，仍未做。
-- **`v3.6.0` 的 tag 还需补推**：`git push origin v3.6.0`。
 
 ---
 
