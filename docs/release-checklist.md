@@ -35,7 +35,7 @@ npm run build
 - [ ] `prettier --check` 无输出（有输出就 `npx prettier --write .` 后重跑）
 - [ ] `eslint` 零 error
 - [ ] `vue-tsc` 零 error（**注意**：`declare const` 在模板表达式里不可见，全局常量走 `import.meta.env`）
-- [ ] `npm run test` 全绿（当前 **973** 条 / 40 个文件）
+- [ ] `npm run test` 全绿（当前 **974** 条 / 40 个文件）
 - [ ] **SPA 深链占位**：`npm run build` 已自动生成 `<路由>/index.html`
       （`scripts/hosting-routes.cjs`；`src/__tests__/hostingRoutes.test.ts` 守护路由表一致性）；
       部署后抽查两个子路由：直接刷新不 404、返回的 HTML 指向**本次**构建的 chunk
@@ -852,11 +852,15 @@ node scripts/audit/runtime-check.cjs
 - [ ] **孤儿提示（只有云端 / 备份只到达一份文档时才会出现）**：列表底部一行
       「另有 N 条登记属于已不在列表的假期」+「清理」。**它不自动删**——自动删会误伤
       「假期还没同步到这台设备」这种正常情况（§五 #26）。
+- [ ] **点「清理」要先弹确认**（交付后补的一处）：弹窗写明将清理几条、并提示「要是不确定，
+      先到工具箱点一次『立即同步』再回来看」，确认按钮才是 `danger`。
+      ⚠️ 这是本模块唯一一处「一次删任意多条、且条数在点之前看不见」的动作——删假期与批量登记
+      弹窗里都写明条数，只有它是「底部一行小字 + 一个链接」。
 
 ### I.7 工程
 
 - [ ] 六步全绿（`prettier` / `eslint` / `vue-tsc` / `test` / `build`）；`npm run test`
-      **973 项 / 40 个文件**。
+      **974 项 / 40 个文件**。
 - [ ] `LC_ALL=en_US.UTF-8 npm run test` 同样全绿。
 - [ ] **SPA 深链占位 25 → 26 条**：`npm run build` 的输出里能看到数量，
       `dist/class/holiday/index.html` 存在；`dist/class/weekend/index.html` 同样存在

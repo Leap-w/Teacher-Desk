@@ -492,6 +492,34 @@ describe('列表派生与孤儿登记', () => {
     expect(store.orphanCount).toBe(0)
     expect(rawArray(RECORDS_KEY)).toEqual([])
   })
+
+  /**
+   * 源码级哨兵（同上一条冻结老键那条的性质）。
+   *
+   * 「清理孤儿」是本模块唯一一处**一次删任意多条、且条数在点之前看不见**的动作：
+   * 删假期删的是确定的那一个假期（弹窗里写明联带几条），批量登记删的是刚选中的那些人
+   * （弹窗里写明几个人），只有孤儿清理是「底部一行字 + 一个「清理」链接」，点下去删几条
+   * 取决于硬盘上攒了多少。而它删的又是**判定本身可能出错**的那一类——「孤儿」的定义是
+   * 「假期不在本机列表里」，而列表可能只是还没同步过来（那正是它最常见的成因）。
+   *
+   * 这条断言盯的是源码文本，因为它要防的正是「以后有人顺手把 click 直接接到 store 的
+   * `clearOrphans` 上」：那样改**行为测试照样全绿**——store 没变、功能也没坏，只是
+   * 少了一次确认，而少掉的这次确认正好落在唯一一个真正需要它的地方。
+   */
+  it('「清理孤儿」走二次确认，且弹窗里给出「先同步一次」这条退路（源码哨兵）', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('../views/Holiday/index.vue', import.meta.url)),
+      'utf8',
+    )
+    // 按钮接的是页面里的 askClearOrphans，不许直接接到 store 的 clearOrphans
+    expect(source).toContain('@click="askClearOrphans"')
+    expect(source).not.toContain('@click="clearOrphans"')
+    // 确认弹窗真在，且确认后才调 store
+    expect(source).toContain('title="清理登记"')
+    expect(source).toContain('confirmClearOrphans')
+    // 退路必须写在弹窗里：不确定的人得知道「先同步一次再回来看」
+    expect(source).toContain('立即同步')
+  })
 })
 
 /* ==================== 本月人次 ==================== */

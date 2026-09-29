@@ -63,7 +63,7 @@
 
 ### 自检
 
-- 常驻测试 861 → **973 项 / 40 个文件**（新增 `holiday.test.ts` 36 项、`holidayStore.test.ts` 30 项、
+- 常驻测试 861 → **974 项 / 40 个文件**（新增 `holiday.test.ts` 36 项、`holidayStore.test.ts` 31 项、
   `holidayExport.test.ts` 21 项，另有 `studentImport.test.ts` +13、`revive.test.ts` +3、
   `importTemplate.test.ts` +1、`multiDevice.test.ts` 与 `classManage.test.ts` 随口径改写）；
   `prettier` / `vue-tsc` / `eslint` / `test` / `build` 五项全绿。
@@ -80,10 +80,15 @@
   （`toPatch` 是导入器里唯一的「空白 = 清除」）。
 - 导出侧：**九列按序**、`undefined` 写**空串而不是「无」**、含未登记、不含已退档。
 - 构建产物（`rm -rf dist` 后全新构建）：入口 chunk 949,907 → **950,081 字节**；
-  假期页分块 **25,626 字节**（`index-B7pjNwim.js`，哈希随构建变），**懒加载且已进 SW 预缓存**
+  假期页分块 **26,642 字节**（哈希随构建变，交付后补确认弹窗那一版为 `index-Cyo7wLML.js`），**懒加载且已进 SW 预缓存**
   （断网进假期页不白屏）；正经产物 145 个文件（assets 106 + 26 条深链占位 + 根 `index.html`
   与图标 / manifest / sw）；Service Worker 预缓存 123 项（5,376.77 KiB）。
 - **`find dist -name "* 2.*"` 为空**（本次全新构建没再产生「 2」副本；成因与线上清理见下一条）。
+- 交付后补的一处：「清理孤儿」原本是**一次点击即不可撤销地批量删除**（条数点之前看不见），
+  而它是本模块唯一一处这种动作——删假期与批量登记弹窗里都写明条数。现在补上二次确认，
+  弹窗里除条数外还写明退路（「要是不确定，先到工具箱点一次『立即同步』再回来看」），
+  并加了一条**源码级哨兵**钉住「按钮不许直接接到 store 的 `clearOrphans`」——
+  它防的那种改动（顺手把 click 接到 store 上）行为测试照样全绿，只是少了一次确认。
 
 ### 遗留
 

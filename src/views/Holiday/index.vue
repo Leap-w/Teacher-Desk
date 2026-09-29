@@ -123,7 +123,27 @@ function confirmRemove(): void {
 
 /* ---------- 孤儿登记 ---------- */
 
-function clearOrphans(): void {
+/**
+ * 待清理的孤儿条数。**和删除假期同一套写法**：确认后不清空这个数字——弹窗的淡出动画
+ * 期间它仍在渲染，清掉会让「N 条」先变成 0 再消失（§9.8 记录项）。
+ */
+const orphanOpen = ref(false)
+const orphanPending = ref(0)
+
+function askClearOrphans(): void {
+  orphanPending.value = holidayStore.orphanCount
+  if (orphanPending.value === 0) return
+  orphanOpen.value = true
+}
+
+/**
+ * 清理孤儿**必须是二次确认**：它一次删掉的条数在点之前看不见，而这是本模块唯一
+ * 一处「一条命令删任意多条」的动作（删假期删的是确定的那一个假期，批量登记删的是
+ * 刚选中的那些人）。它删的又是**判定本身可能出错**的那一类——「孤儿」的定义是
+ * 「假期不在列表里」，而列表可能只是还没同步过来，所以弹窗里要给出这条退路。
+ */
+function confirmClearOrphans(): void {
+  orphanOpen.value = false
   const cleared = holidayStore.clearOrphans()
   if (cleared === 0) {
     toast.info('没有需要清理的登记')
@@ -184,7 +204,7 @@ function clearOrphans(): void {
 
       <p v-if="holidayStore.orphanCount" class="orphan-note">
         另有 {{ holidayStore.orphanCount }} 条登记属于已不在列表的假期（可能是云端只同步到了一半）。
-        <button type="button" class="orphan-link" @click="clearOrphans">清理</button>
+        <button type="button" class="orphan-link" @click="askClearOrphans">清理</button>
       </p>
     </template>
 
@@ -204,6 +224,21 @@ function clearOrphans(): void {
       <template #footer>
         <AppButton variant="ghost" @click="confirmOpen = false">取消</AppButton>
         <AppButton variant="danger" @click="confirmRemove">删除</AppButton>
+      </template>
+    </AppModal>
+
+    <AppModal v-model="orphanOpen" title="清理登记" :width="380">
+      <p class="confirm-text">
+        确定清理这
+        <strong>{{ orphanPending }}</strong>
+        条登记吗？
+        <br />它们的假期已不在本机列表里——可能是云端只同步到了一半，也可能是那个假期已经被删了。
+        <strong>要是不确定，先到工具箱点一次「立即同步」再回来看。</strong>
+        <br />此操作不可撤销。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="orphanOpen = false">取消</AppButton>
+        <AppButton variant="danger" @click="confirmClearOrphans">清理</AppButton>
       </template>
     </AppModal>
   </div>
