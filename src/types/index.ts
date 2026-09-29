@@ -87,6 +87,26 @@ export interface Student {
   familyAddress?: string
   /** 家庭所在地行政区划；历史数据可能缺失（load 时经 normalizeStudent 补全） */
   familyLocation?: FamilyLocation
+  /**
+   * 昌都市内是否有亲属（v3.6.1）。**三态，不可折叠成两态**：
+   * `true` = 有，`false` = 明确没有，`undefined` = 没问过 / 没填。
+   * 「明确无」与「未填」在导出名单里是空单元格与「无」的区别，教师据此知道哪些还要去问；
+   * 折成一个取值就再也分不回来了（`normalizeStudent` 因此**不能**照 `isTemporary === true`
+   * 那种写法——那会把 `false` 一并折成 `undefined`）。
+   *
+   * 与 `familyLocation` 严格分开（v3.6.1 规格第 6 节）：那里说的是学生**家在哪儿**，
+   * 这里说的是**市里有没有能搭把手的人**。有亲属不等于家在市区，家在市区也不等于有亲属。
+   */
+  hasChangduRelative?: boolean
+  /**
+   * 亲属关系（自由文本，如「舅舅」「姑姑」）。**只在 `hasChangduRelative === true` 时有意义**，
+   * 否则 `normalizeStudent` 会剔除这个键——「没有市内亲属，关系是舅舅」是一句自相矛盾的数据。
+   *
+   * 刻意不做固定下拉：亲属称谓在藏东各地的说法差异很大（舅舅 / 阿舅 / 娘舅…），
+   * 给一串候选项等于把教师的原话改写成我们的词表。规格第 6 节明确**只要「有无」与「什么关系」**，
+   * 姓名 / 电话 / 住址 / 单位 / 身份证一律不进模型。
+   */
+  changduRelativeRelation?: string
   /** 软删除时间（ISO）；非空表示已删除 */
   deletedAt?: string
 }

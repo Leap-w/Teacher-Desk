@@ -25,7 +25,11 @@ const SETTINGS_MODULE_GROUP: Record<string, string> = {
   seats: 'teaching',
   leave: 'class',
   duty: 'class',
+  // v3.6.1：「周末管理」改名为「假期管理」，`holiday` 是模块页新用的 id。
+  // `weekend` **必须留着**——旧书签与各模块页右上角 ⚙ 带的是老 id，删掉它
+  // 那些入口会静默落到「我的」首页（`myCenter.test.ts` 钉着这一条）。
   weekend: 'class',
+  holiday: 'class',
 }
 
 /** 一级导航项顺序由本表驱动：首页 / 学生档案 / 班级管理 / 工作管理 / 我的 */
@@ -70,10 +74,18 @@ export const routes: RouteRecordRaw[] = [
         meta: { title: '值日管理' },
       },
       {
+        // v3.6.1：「周末管理」升级为「假期管理」（自定义假期 + 三态登记）。
+        // 沿用原位置（第四个），二级导航的先后因此不变。
+        path: 'holiday',
+        name: 'holiday',
+        component: () => import('@/views/Holiday/index.vue'),
+        meta: { title: '假期管理' },
+      },
+      {
+        // 旧路径留在表里：旧书签与 PWABadge / 缓存里的深链点进来不能 404。
+        // 它是一条**静态路径**，`scripts/hosting-routes.cjs` 仍会为它生成占位。
         path: 'weekend',
-        name: 'weekend',
-        component: () => import('@/views/Weekend/index.vue'),
-        meta: { title: '周末管理' },
+        redirect: '/class/holiday',
       },
       {
         // v3.6.0：班费管理（班级电子流水账）。排在四个既有子模块之后——
@@ -114,7 +126,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/seats', redirect: '/class/seats' },
   { path: '/leave', redirect: '/class/leave' },
   { path: '/duty', redirect: '/class/duty' },
-  { path: '/weekend', redirect: '/class/weekend' },
+  { path: '/weekend', redirect: '/class/holiday' },
   {
     // 「我的」个人中心；工具箱整页在 /my/tools，设置统一在 /my/settings
     path: '/my',

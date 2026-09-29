@@ -18,10 +18,9 @@ import { EmptyState } from '@/components/ui'
 import { useNow } from '@/composables/useToday'
 import { greetingByHour, formatDateLabel } from '@/utils/date'
 import { useDutyStore } from '@/stores/duty'
+import { useHolidayStore } from '@/stores/holiday'
 import { useLeaveStore } from '@/stores/leave'
-import { useTimetableStore } from '@/stores/timetable'
 import { useUserStore } from '@/stores/user'
-import { useWeekendStore } from '@/stores/weekend'
 import { isLeaveToday } from '@/utils/leave'
 import TodayScheduleCard from './components/TodayScheduleCard.vue'
 import SyncHintBar from './components/SyncHintBar.vue'
@@ -42,10 +41,9 @@ import ClassroomEntryCard from '@/views/Toolbox/components/ClassroomEntryCard.vu
  * 本版删除：今日待办统计、工作清单入口、最近活动占位（均非 TeacherDesk 设计过的模块）。
  */
 const dutyStore = useDutyStore()
+const holidayStore = useHolidayStore()
 const leaveStore = useLeaveStore()
-const timetableStore = useTimetableStore()
 const userStore = useUserStore()
-const weekendStore = useWeekendStore()
 const now = useNow()
 
 const profile = computed(() => userStore.profile)
@@ -69,12 +67,32 @@ const heroBadges = computed(() =>
 )
 
 /* ---- Layer 3：班级动态（全部真实数据） ---- */
-const isWeekend = computed(() => timetableStore.todayWeekday >= 6)
 const todayLeaveCount = computed(
   () => leaveStore.leaves.filter((r) => isLeaveToday(r, dutyStore.todayKey)).length,
 )
 
 const dutyNeedsSetup = computed(() => dutyStore.groups.length > 0 && !dutyStore.settings.startDate)
+
+/**
+ * 「今天在过什么假」——首页那张假期卡片的唯一数据来源（v3.6.1 取代旧的周末卡片）。
+ *
+ * 三态计数一律走 `holidayStore.countsOf()`，**不能用「在读 − 已返家」这个补集算留校**：
+ * 那是旧周末页的口径，它把「未登记」也并进了留校，卡片会报出一个看着合理、
+ * 实则多出一档的数字（全班 42 个没登记的都被算成留校）。
+ *
+ * `currentEntry` 的语义正是「今天在过的假期」：落在哪个自定义假期里就是它，
+ * 否则是本周末——`weekendKeys` 恒定含本周末，所以退不到「列表首项」那条保底分支
+ * （那条一旦走到，首页会报出下个月的某个假期）。
+ */
+const holidayToday = computed(() => {
+  const entry = holidayStore.currentEntry
+  if (!entry) return undefined
+  const counts = holidayStore.countsOf(entry.holiday.id)
+  // 自定义假期**正在进行中**时，一个人都没登记也要说——「还有多少人没登记」正是教师
+  // 此刻要看的数字；周末卡片沿用旧口径：没有任何登记就不占一条动态
+  if (entry.kind !== 'custom' && counts.home + counts.stay === 0) return undefined
+  return { name: entry.holiday.name, counts }
+})
 
 const classEvents = computed(() => {
   const events: {
@@ -111,13 +129,15 @@ const classEvents = computed(() => {
       desc: '去值日管理设置后开始轮换',
     })
   }
-  if (isWeekend.value && weekendStore.currentCount > 0) {
+  const holiday = holidayToday.value
+  if (holiday) {
     events.push({
-      id: 'weekend',
+      id: 'holiday',
       icon: PlaneLanding,
-      tone: 'success',
-      title: `周末返校 · 已登记 ${weekendStore.currentCount} 人`,
-      desc: `留校 ${weekendStore.currentStayCount} 人`,
+      // 有人还没登记时用「注意」色：这一条正是要他去登记的信号
+      tone: holiday.counts.unregistered > 0 ? 'warning' : 'success',
+      title: `${holiday.name} · 回家 ${holiday.counts.home} 人`,
+      desc: `留校 ${holiday.counts.stay} 人 · 未登记 ${holiday.counts.unregistered} 人`,
     })
   }
   return events
@@ -186,7 +206,7 @@ const quickActions: QuickAction[] = [
         v-else
         :icon="CalendarDays"
         title="今天没有班级动态"
-        description="有新请假、值日安排或周末返校时，会第一时间出现在这里。"
+        description="有新请假、值日安排或假期登记时，会第一时间出现在这里。"
       />
     </DashboardSection>
 

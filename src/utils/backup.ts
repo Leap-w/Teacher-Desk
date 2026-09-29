@@ -48,6 +48,14 @@ const PROFILE_KEY = `${appConfig.storageKeyPrefix}:profile`
 const LEAVE_KEY = `${appConfig.storageKeyPrefix}:leaves`
 const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
 const WEEKEND_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
+/**
+ * v3.6.1：假期管理。
+ * `HOLIDAYS_KEY` 装自定义假期，`HOLIDAY_RECORDS_KEY` 装**周末的留校 + 全部自定义假期**的记录。
+ * 旧键 `WEEKEND_KEY` **一个字节不动**——它仍是「周末回家」那一份，
+ * 旧版本客户端只认得它，混着写会让长驻的旧标签页把新记录整批抹掉（见 stores/holiday.ts 顶部）。
+ */
+const HOLIDAYS_KEY = `${appConfig.storageKeyPrefix}:holidays`
+const HOLIDAY_RECORDS_KEY = `${appConfig.storageKeyPrefix}:holidayRecords`
 /** v3.6.0：班费管理的三个键（流水 / 收费批次 / 自定义支出类型），见 types/fund.ts */
 const FUND_RECORDS_KEY = `${appConfig.storageKeyPrefix}:fund:records`
 const FUND_COLLECTIONS_KEY = `${appConfig.storageKeyPrefix}:fund:collections`
@@ -70,7 +78,12 @@ export const BACKUP_MODULES: BackupModule[] = [
   { key: LEAVE_KEY, label: '请假记录', unit: '条' },
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
   { key: DUTY_KEY, label: '值日安排', unit: '条' },
-  { key: WEEKEND_KEY, label: '周末返家', unit: '条' },
+  // v3.6.1：这一行**只改 label，键不动**——它装的还是那份周末回家记录，
+  // 改了键等于让所有已发布的客户端与既有备份都找不到自己的数据
+  { key: WEEKEND_KEY, label: '周末回家', unit: '条' },
+  // 自定义假期丢了，下面那份登记记录就全成孤儿（还能导出，但归不到任何假期名下）
+  { key: HOLIDAYS_KEY, label: '自定义假期', unit: '个' },
+  { key: HOLIDAY_RECORDS_KEY, label: '假期登记', unit: '条' },
   // 班费三块：自定义支出类型是教师自己攒的分类（丢了他要一个个重敲），因此也进备份
   { key: FUND_RECORDS_KEY, label: '班费流水', unit: '笔' },
   { key: FUND_COLLECTIONS_KEY, label: '收费批次', unit: '个' },

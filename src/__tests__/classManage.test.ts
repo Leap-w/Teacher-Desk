@@ -1,7 +1,7 @@
 /**
  * V1.1.5 自检：班级管理路由结构 + 请假记录语义。
  *
- * 路由：/class 下四个子模块、旧路径（/seats /leave /duty /weekend）重定向兼容。
+ * 路由：/class 下的子模块、旧路径（/seats /leave /duty /weekend）重定向兼容。
  * 请假：记录口径（无审批）——状态标签、旧数据归一、筛选、排序、store 行为。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,7 +45,7 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect(children.map((child) => child.path)).toEqual(['schedule', 'works'])
   })
 
-  it('「班级管理」下挂五个子模块（v3.6.0 起含班费管理）', () => {
+  it('「班级管理」下挂五个子模块（v3.6.1 起 weekend 换成 holiday）', () => {
     expect(classRoute).toBeDefined()
     const children = (classRoute?.children ?? []).filter(
       (child) => child.path !== '' && !child.redirect,
@@ -54,9 +54,18 @@ describe('班级管理路由（V1.3.0 IA）', () => {
       'seats',
       'leave',
       'duty',
-      'weekend',
+      'holiday',
       'fund',
     ])
+  })
+
+  it('「假期管理」排在原「周末管理」的位置上，二级导航顺序不变', () => {
+    const children = (classRoute?.children ?? []).filter(
+      (child) => child.path !== '' && !child.redirect,
+    )
+    // 索引 3 是原来 weekend 的位置：插在中间会让教师习惯的位置整体挪一格
+    expect(children[3]?.path).toBe('holiday')
+    expect(children[3]?.meta?.title).toBe('假期管理')
   })
 
   it('学生档案是一级导航路由（不 hidden）', () => {
@@ -71,7 +80,10 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect(redirectOf('/seats')).toMatchObject({ redirect: '/class/seats' })
     expect(redirectOf('/leave')).toMatchObject({ redirect: '/class/leave' })
     expect(redirectOf('/duty')).toMatchObject({ redirect: '/class/duty' })
-    expect(redirectOf('/weekend')).toMatchObject({ redirect: '/class/weekend' })
+    // v3.6.1：周末管理改名假期管理，两级旧路径都要跟过去（旧书签 / 缓存里的深链不 404）
+    expect(redirectOf('/weekend')).toMatchObject({ redirect: '/class/holiday' })
+    const weekendChild = (classRoute?.children ?? []).find((child) => child.path === 'weekend')
+    expect(weekendChild).toMatchObject({ redirect: '/class/holiday' })
   })
 
   it('四个子模块各自带名称（次级导航渲染靠它）', () => {

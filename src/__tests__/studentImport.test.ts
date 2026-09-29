@@ -459,6 +459,208 @@ describe('所属地区 / 所属县·区 / 备注（v3.5.0 补齐的列）', () =
   })
 })
 
+/**
+ * 昌都市内亲属 / 亲戚关系（v3.6.1）。
+ *
+ * 这一列有两个与其它列不同的性质，两条都只能在数据层验：
+ *  ① 它是**三态**的（有 / 无 / 没问过），而 Excel 只有「格子空着」一种表达「没问过」的方式。
+ *     `undefined` 与 `false` 在导出名单上是空单元格与「无」的区别，混起来就再也分不回来。
+ *  ② 它是**唯一一处「空 = 清空」**：填「无」时必须连关系一起抹掉，否则留下「无（舅舅）」。
+ *     其余所有列的「空 = 本次没填」，这一条反过来写就会静默丢数据。
+ */
+describe('昌都市内亲属 / 亲戚关系（v3.6.1）', () => {
+  let browser: FakeBrowser
+  beforeEach(() => {
+    browser = installFakeBrowser()
+    setActivePinia(createPinia())
+  })
+
+  /** 模板的真实列序：两列在**最后**（家庭地址之后），老表头在前 */
+  const V361_HEADER = [...HEADER, '昌都市内亲属', '亲戚关系']
+
+  /**
+   * v3.6.1 表头下的一行：前 9 格对齐 HEADER，后两格是新列。
+   * 学号与返家范围都给上——**默认填满**，这样用例里那条「一条提示都没有」的断言
+   * 才只可能被新列的逻辑弄红，而不是被「学号为空」「缺返家范围」这两条无关的提示搅和。
+   */
+  function row361(name: string, flag: string, relation: string, studentNo: string): string[] {
+    return [name, '女', studentNo, '', '', '', '', '', '昌都市区', flag, relation]
+  }
+
+  function parseV361(...rows: unknown[][]) {
+    return parseOk([V361_HEADER, ...rows])
+  }
+
+  /** 落库路径就是 `JSON.stringify` —— 用它断言「这个字段压根没写」，与盘上的形状一致 */
+  function persisted(value: unknown): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+  }
+
+  it('两列都认得出，且列序排在家庭地址之后（与模板列序一致）', () => {
+    const result = parseV361(row361('甲', '有', '舅舅', '0101'))
+    expect(result.columns.slice(-2)).toEqual(['昌都市内亲属', '亲戚关系'])
+    expect(result.rows[0]!.hasChangduRelative).toBe(true)
+    expect(result.rows[0]!.changduRelativeRelation).toBe('舅舅')
+  })
+
+  it('常见写法都认得出：有 / 是 / TRUE / 1 / ✓ / √ / yes 与它们的反面', () => {
+    const yes = ['有', '是', 'TRUE', '1', '✓', '√', 'yes']
+    const no = ['无', '否', '没有', 'false', '0', '×', 'no']
+
+    for (const text of yes) {
+      const parsed = parseV361(row361('甲', text, '', '0101'))
+      expect(parsed.rows[0]!.hasChangduRelative, `「${text}」应认作有`).toBe(true)
+    }
+    for (const text of no) {
+      const parsed = parseV361(row361('甲', text, '', '0101'))
+      expect(parsed.rows[0]!.hasChangduRelative, `「${text}」应认作无`).toBe(false)
+    }
+  })
+
+  it('空着 = 没问过（三态的第三态），既不报错也不猜', () => {
+    const result = parseV361(row361('甲', '', '', '0101'), row361('乙', '   ', '', '0102'))
+
+    expect(result.rows[0]!.hasChangduRelative).toBeUndefined()
+    expect(result.rows[1]!.hasChangduRelative).toBeUndefined()
+    // 空着不是问题，一条提示都不该有——否则一份老名单导入会弹出满屏警告
+    expect(result.rows.flatMap((row) => row.warnings)).toEqual([])
+  })
+
+  it('认不出的写法**不猜**：按未填处理并点名那一格（猜错的方向正好是「有亲属的记成没有」）', () => {
+    const result = parseV361(row361('甲', '不知道', '', '0101'), row361('乙', '有一点', '', '0102'))
+
+    expect(result.rows[0]!.hasChangduRelative).toBeUndefined()
+    expect(result.rows[1]!.hasChangduRelative).toBeUndefined()
+    expect(result.rows[0]!.warnings.join()).toContain('不知道')
+    expect(result.rows[0]!.warnings.join()).toContain('无法识别')
+  })
+
+  it('交叉规则：填了关系却空着有无列 → 按「有」记，并说明是我们替他定的', () => {
+    const result = parseV361(row361('甲', '', '舅舅', '0101'))
+
+    expect(result.rows[0]!.hasChangduRelative).toBe(true)
+    expect(result.rows[0]!.changduRelativeRelation).toBe('舅舅')
+    expect(result.rows[0]!.warnings.join()).toContain('按「有」处理')
+  })
+
+  it('交叉规则：有无列写着「无」→ 关系一律丢弃，不留「无（舅舅）」这种自相矛盾的行', () => {
+    const result = parseV361(row361('甲', '无', '舅舅', '0101'))
+
+    expect(result.rows[0]!.hasChangduRelative).toBe(false)
+    expect(result.rows[0]!.changduRelativeRelation).toBe('')
+    expect(result.rows[0]!.warnings.join()).toContain('舅舅')
+  })
+
+  it('交叉规则：写着「有」没写关系 → 合法，不提示（追问得到答案但答不出细节是常事）', () => {
+    const result = parseV361(row361('甲', '有', '', '0101'))
+
+    expect(result.rows[0]!.hasChangduRelative).toBe(true)
+    expect(result.rows[0]!.changduRelativeRelation).toBe('')
+    expect(result.rows[0]!.warnings).toEqual([])
+  })
+
+  it('老文件（没有这两列）一条错误一条提示都没有，也不写这两个字段', () => {
+    // 旧模板就是这 9 列。缺列必须静默——教师手上几十份老名单，弹一句「没找到某列」
+    // 都不该出现；更不能顺手把档案里已有的值清成「没问过」
+    const parsed = parseOk(sheet(['甲', '女', '0101', '', '', '', '', '', '昌都市区']))
+    expect(parsed.rows[0]!.errors).toEqual([])
+    expect(parsed.rows[0]!.warnings).toEqual([])
+
+    const existing = [
+      makeStudent('s1', '甲', '0101', {
+        hasChangduRelative: true,
+        changduRelativeRelation: '舅舅',
+      }),
+    ]
+    const result = planStudentImport(parsed.rows, existing)
+
+    // 命中学号 → 更新：**一个字段都不进 patch**。进了 patch 就等于「本次没提」变成
+    // 「按 undefined 写」，档案里那份「有(舅舅)」会被老名单静默抹掉
+    expect(result.plan.updates).toHaveLength(1)
+    const patch = persisted(result.plan.updates[0]!.patch)
+    expect(patch).not.toHaveProperty('hasChangduRelative')
+    expect(patch).not.toHaveProperty('changduRelativeRelation')
+
+    // 没命中学号 → 新增：同样是「没问过」，不是「没有」
+    const added = persisted(planStudentImport(parsed.rows, []).plan.adds[0])
+    expect(added).not.toHaveProperty('hasChangduRelative')
+    expect(added).not.toHaveProperty('changduRelativeRelation')
+  })
+
+  it('新增：有亲属带关系照单全收；「无」不留下关系字段', () => {
+    const parsed = parseV361(row361('甲', '有', ' 姑姑 ', '0101'), row361('乙', '无', '', '0102'))
+    const result = planStudentImport(parsed.rows, [])
+
+    const withRelative = persisted(result.plan.adds[0])
+    expect(withRelative.hasChangduRelative).toBe(true)
+    expect(withRelative.changduRelativeRelation).toBe('姑姑')
+
+    const without = persisted(result.plan.adds[1])
+    expect(without.hasChangduRelative).toBe(false)
+    expect(without).not.toHaveProperty('changduRelativeRelation')
+  })
+
+  it('更新：填「有」但关系空着时**沿用**既有关系（与其它列同一口径：空 = 本次没填）', () => {
+    const existing = [
+      makeStudent('s1', '甲', '0101', {
+        hasChangduRelative: true,
+        changduRelativeRelation: '舅舅',
+      }),
+    ]
+    const parsed = parseV361(row361('甲', '有', '', '0101'))
+    const result = planStudentImport(parsed.rows, existing)
+
+    const patch = persisted(result.plan.updates[0]!.patch)
+    expect(patch.hasChangduRelative).toBe(true)
+    expect(patch).not.toHaveProperty('changduRelativeRelation')
+  })
+
+  it('落库：「有(舅舅)」改成「无」时关系一起清掉，盘上不留「无（舅舅）」', async () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        makeStudent('s1', '甲', '0101', {
+          hasChangduRelative: true,
+          changduRelativeRelation: '舅舅',
+        }),
+      ]),
+    )
+    const store = useStudentStore()
+    const parsed = parseV361(row361('甲', '无', '', '0101'))
+    const result = planStudentImport(parsed.rows, store.students)
+
+    store.applyStudentImport(result.plan)
+    await nextTick()
+
+    const updated = store.students.find((student) => student.id === 's1')!
+    expect(updated.hasChangduRelative).toBe(false)
+    expect(updated.changduRelativeRelation).toBeUndefined()
+    // 盘上的形状也要干净：JSON 会丢掉 undefined 键，「设成 undefined」与「没有这个键」
+    // 在落库这一层必须收敛成同一个结果，否则每次读回来都要重新判断一次
+    const onDisk = JSON.parse(browser.localStorage.getItem(STUDENTS_KEY)!) as Array<
+      Record<string, unknown>
+    >
+    expect(onDisk[0]).not.toHaveProperty('changduRelativeRelation')
+  })
+
+  it('落库：「无」改成「有(姑姑)」时两个字段都写进去', async () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([makeStudent('s1', '甲', '0101', { hasChangduRelative: false })]),
+    )
+    const store = useStudentStore()
+    const parsed = parseV361(row361('甲', '有', '姑姑', '0101'))
+    const result = planStudentImport(parsed.rows, store.students)
+
+    store.applyStudentImport(result.plan)
+    await nextTick()
+
+    const updated = store.students.find((student) => student.id === 's1')!
+    expect(updated.hasChangduRelative).toBe(true)
+    expect(updated.changduRelativeRelation).toBe('姑姑')
+  })
+})
+
 describe('readSheetRows：唯一碰 xlsx 的一层', () => {
   it('读得回一份真造的 xlsx，并说清读了哪个工作表', async () => {
     const workbook = XLSX.utils.book_new()

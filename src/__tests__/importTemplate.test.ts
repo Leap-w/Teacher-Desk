@@ -228,6 +228,20 @@ describe('学生模板覆盖档案页的字段', () => {
     expect(STUDENT_IMPORT_HEADERS).toContain('所属县/区')
   })
 
+  it('模板里有 昌都市内亲属 / 亲戚关系 两列（v3.6.1 补的洞）', () => {
+    expect(STUDENT_IMPORT_HEADERS).toContain('昌都市内亲属')
+    expect(STUDENT_IMPORT_HEADERS).toContain('亲戚关系')
+    // 两列都是**选填**：老名单一份都填不了这两项，做成必填等于让所有存量文件都导不进来
+    expect(STUDENT_IMPORT_OPTIONAL).toContain('昌都市内亲属')
+    expect(STUDENT_IMPORT_OPTIONAL).toContain('亲戚关系')
+
+    // 示例行里「有」与「无」各示范一次（教师照着抄得出来），且与列序对齐
+    const flagIndex = STUDENT_IMPORT_HEADERS.indexOf('昌都市内亲属')
+    const relationIndex = STUDENT_IMPORT_HEADERS.indexOf('亲戚关系')
+    expect(STUDENT_IMPORT_SAMPLE.map((row) => String(row[flagIndex] ?? ''))).toEqual(['有', '无'])
+    expect(String(STUDENT_IMPORT_SAMPLE[0]![relationIndex] ?? '').trim()).not.toBe('')
+  })
+
   it('必填与选填两份清单合起来正好是整套表头，不重不漏', () => {
     const union = [...STUDENT_IMPORT_REQUIRED, ...STUDENT_IMPORT_OPTIONAL]
     expect([...union].sort()).toEqual([...STUDENT_IMPORT_HEADERS].sort())

@@ -21,6 +21,7 @@ import { createSeedLessons } from '@/services/mock'
 import { readRaw } from '@/services/storage'
 import { useConstraintStore } from '@/stores/constraint'
 import { useDutyStore } from '@/stores/duty'
+import { useHolidayStore } from '@/stores/holiday'
 import { useLeaveStore } from '@/stores/leave'
 import { useSeatStore } from '@/stores/seat'
 import { useStudentStore } from '@/stores/student'
@@ -98,6 +99,23 @@ const DOMAINS: Domain[] = [
     load: () => void useWeekendStore(),
     count: () => useWeekendStore().records.length,
     seedsWhenMissing: true,
+  },
+  // v3.6.1 的两个新键。**都不播种**（同班费：假期是教师自己定义的时间容器，
+  // 凭空种一个「国庆」他只会以为自己上次建过），所以 `seedsWhenMissing: false`，
+  // 且「键不存在 → 一个字节都不写」——新设备据此走「本地无此键 → 采纳云端」
+  {
+    label: '自定义假期',
+    key: `${prefix}:holidays`,
+    load: () => void useHolidayStore(),
+    count: () => useHolidayStore().holidays.length,
+    seedsWhenMissing: false,
+  },
+  {
+    label: '假期登记',
+    key: `${prefix}:holidayRecords`,
+    load: () => void useHolidayStore(),
+    count: () => useHolidayStore().records.length,
+    seedsWhenMissing: false,
   },
 ]
 
@@ -254,6 +272,79 @@ describe('逐域最小规范化：认得出的留下，认不出的丢弃，缺�
     // 而界面上只表现为「宿舍又没了」，看不出是谁清的
     setActivePinia(createPinia())
     expect(useStudentStore().students[0]!.dormitory).toBe('女生2栋114')
+  })
+
+  it('学生：昌都市内亲属是**三态**，读回来不许被折叠成两态', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        { id: 's1', name: '甲', hasChangduRelative: true },
+        { id: 's2', name: '乙', hasChangduRelative: false },
+        { id: 's3', name: '丙' },
+        // 盘上写了别的东西（旧版本 / 手工改过）→ 当作没填，不猜一个
+        { id: 's4', name: '丁', hasChangduRelative: 'yes' },
+        { id: 's5', name: '戊', hasChangduRelative: 1 },
+      ]),
+    )
+
+    const students = useStudentStore().students
+
+    expect(students.map((item) => item.hasChangduRelative)).toEqual([
+      true,
+      false,
+      undefined,
+      undefined,
+      undefined,
+    ])
+    // 「明确没有」与「**没问过**」在导出名单里是「无」与空格的区别，折成一个就再也分不回来。
+    // 这条防的是有人照 `isTemporary === true` 那种写法把它写成「真才留、其余删」
+    expect(students[1]).toHaveProperty('hasChangduRelative', false)
+    expect(students[2]).not.toHaveProperty('hasChangduRelative')
+  })
+
+  it('学生：亲戚关系只在「有亲属」时留下——「无（舅舅）」这种自相矛盾的数据不许存在', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        { id: 's1', name: '甲', hasChangduRelative: true, changduRelativeRelation: ' 舅舅 ' },
+        { id: 's2', name: '乙', hasChangduRelative: false, changduRelativeRelation: '舅舅' },
+        { id: 's3', name: '丙', changduRelativeRelation: '舅舅' },
+        { id: 's4', name: '丁', hasChangduRelative: true, changduRelativeRelation: '   ' },
+        { id: 's5', name: '戊', hasChangduRelative: true, changduRelativeRelation: 42 },
+      ]),
+    )
+
+    const students = useStudentStore().students
+
+    // 有亲属：关系去空白后留下
+    expect(students[0]!.changduRelativeRelation).toBe('舅舅')
+    // 明确「无」/ 未填：关系整个删掉（不是留个空串——空串在云端比对里是另一个值）
+    expect(students[1]).not.toHaveProperty('changduRelativeRelation')
+    expect(students[2]).not.toHaveProperty('changduRelativeRelation')
+    // 空白 / 非字符串同样删掉，不臆造
+    expect(students[3]).not.toHaveProperty('changduRelativeRelation')
+    expect(students[4]).not.toHaveProperty('changduRelativeRelation')
+  })
+
+  it('学生：两个新字段都不进 `familyLocation`（有亲属 ≠ 家在市区，规格要求严格分开）', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        {
+          id: 's1',
+          name: '甲',
+          hasChangduRelative: true,
+          changduRelativeRelation: '舅舅',
+          familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+        },
+      ]),
+    )
+
+    const student = useStudentStore().students[0]!
+
+    // 家在昌都市外、市里却有亲属——两件事各自独立，一个不能推导出另一个
+    expect(student.hasChangduRelative).toBe(true)
+    expect(student.familyLocation?.scope).toBe('outside-changdu')
   })
 
   it('学生：空学号不参与查重——第二个还没填学号的学生也要能存进去', () => {

@@ -34,6 +34,15 @@ export interface ParsedRow {
   county: string
   familyAddress: string
   scope: FamilyScope | ''
+  /**
+   * 昌都市内亲属（v3.6.1）。**三态**：`true` 有 / `false` 明确没有 / `undefined` 本次没填。
+   * 空单元格与「认不出的写法」都落在 `undefined`（后者另记 warning）——
+   * 认不出时**不猜**：猜成「有」或「无」都是一半概率写错一条档案，而错的那半
+   * 只有教师拿着原表逐行核对才看得出来。
+   */
+  hasChangduRelative: boolean | undefined
+  /** 亲戚关系（自由文本）。经过交叉规则后仍为空 = 本次不写这个字段 */
+  changduRelativeRelation: string
   /** 拦截原因：非空表示这一行不会入库 */
   errors: string[]
   /** 提示：不拦截，只是让教师知道 */
@@ -60,6 +69,8 @@ interface ColumnMap {
   county: number
   familyAddress: number
   scope: number
+  changduRelative: number
+  relativeRelation: number
 }
 
 /**
@@ -109,6 +120,21 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
     label: '家庭地址',
     aliases: ['家庭地址', '家庭住址', '住址', '地址'],
   },
+  // v3.6.1：两列排在**最后**（家庭地址之后）。插在中间会让所有老文件里「家庭地址」
+  // 右边的列整体错位吗？不会——本导入器按**表头名**认列，不按位置（见 mapColumns），
+  // 所以列的先后对识别没有影响；排在这里纯粹是因为它俩在档案表单里就在最后。
+  {
+    key: 'changduRelative',
+    label: '昌都市内亲属',
+    // 不收裸「亲属」「亲戚」：这两个词太泛，撞上别的列名会把无关内容写进这个字段，
+    // 而且写进来的多半不是「有 / 无」两个字——那就成了每行一条 warning 的噪音
+    aliases: ['昌都市内亲属', '市内亲属', '昌都亲属', '是否有昌都市内亲属'],
+  },
+  {
+    key: 'relativeRelation',
+    label: '亲戚关系',
+    aliases: ['亲戚关系', '亲属关系', '亲戚', '与本人关系'],
+  },
 ]
 
 /**
@@ -141,11 +167,14 @@ export const STUDENT_IMPORT_OPTIONAL: readonly string[] = STUDENT_IMPORT_HEADERS
 )
 
 /**
- * 模板示例（v3.3.1 起，v3.5.0 随列一起扩到 13 列）。三行的取舍：
+ * 模板示例（v3.3.1 起，v3.5.0 扩到 13 列，v3.6.1 再扩到 15 列）。三行的取舍：
  * ① 一行女生、一行男生——宿舍按性别分列，示例里各举一间才说明得清；
  * ② 第一行**故意留空「备注」**、第二行**故意留空「身份证尾号」与「班委」**，
  *    让教师看见选填列可以空着（空着不等于清空既有值，这条口径见 `toPatch`）；
- * ③ 「标签」写成 `住校生,体育委员`——逗号分隔这件事光靠文字说明容易被忽略。
+ * ③ 「标签」写成 `住校生,体育委员`——逗号分隔这件事光靠文字说明容易被忽略；
+ * ④ 两行的「昌都市内亲属」分别写「有」与「无」，第二行的「亲戚关系」跟着空着——
+ *    唯一没有示范到的是**整列留空**（＝本次没问，不动档案里已有的值），
+ *    这一条交给 `ImportIntro` 的说明文字去讲。
  * 学号与姓名沿用座位模板里的那两个（0101/0102），两份模板填起来是同一个班的故事。
  */
 export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
@@ -163,6 +192,8 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '昌都市',
     '卡若区',
     '西藏自治区昌都市卡若区城关镇某村',
+    '有',
+    '舅舅',
   ],
   [
     '扎西顿珠',
@@ -178,6 +209,8 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '昌都市',
     '江达县',
     '西藏自治区昌都市江达县岗托镇某村',
+    '无',
+    '',
   ],
 ]
 
@@ -209,6 +242,35 @@ const SCOPE_ALIASES: Record<string, FamilyScope> = {
   市外: 'outside-changdu',
   区外: 'outside-changdu',
   外地: 'outside-changdu',
+}
+
+/**
+ * 「昌都市内亲属」列的取值表（v3.6.1）。规格给的写法原样收下，**一种都不加**：
+ * 多收一个写法就多一分把一个词误判成另一个意思的机会，而这里判错的代价是
+ * 「明明有亲属的学生被记成没有」——那正好是这一列要回答的问题。
+ *
+ * 比对前 trim + 转小写，所以 `TRUE` / `Yes` 这类写法照样认得出；
+ * 其余一律不认（记 warning、按未填处理，见 `parseStudentRows`）。
+ */
+const RELATIVE_YES: ReadonlySet<string> = new Set(['有', '是', 'true', '1', '✓', '√', 'yes'])
+const RELATIVE_NO: ReadonlySet<string> = new Set(['无', '否', '没有', 'false', '0', '×', 'no'])
+
+/** 空 → `undefined`（本次没填）；认得出 → `true` / `false`；认不出 → `undefined`（由调用方记 warning） */
+function parseRelativeFlag(text: string): boolean | undefined {
+  const key = text.trim().toLowerCase()
+  if (!key) return undefined
+  if (RELATIVE_YES.has(key)) return true
+  if (RELATIVE_NO.has(key)) return false
+  return undefined
+}
+
+/**
+ * 亲戚关系只在「有亲属」时才写（v3.6.1）。与 `normalizeStudent` 的不变式是同一条：
+ * 没有市内亲属却留着「舅舅」，导出名单上就是「无（舅舅）」这种自相矛盾的行。
+ */
+function relativeRelationOf(row: ParsedRow): string | undefined {
+  if (row.hasChangduRelative !== true) return undefined
+  return row.changduRelativeRelation || undefined
 }
 
 /* ------------------------------------------------------------------ 第 1 层 */
@@ -384,6 +446,29 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       )
     }
 
+    // ---- 昌都市内亲属 / 亲戚关系（v3.6.1）----
+    // 三态：空 → undefined（不写字段）；有 / 无 → true / false。**认不出的写法不猜**，
+    // 按未填处理并记一条 warning——猜错的方向恰好是「有亲属的被记成没有」。
+    const relativeText = at('changduRelative')
+    let hasChangduRelative = parseRelativeFlag(relativeText)
+    let changduRelativeRelation = at('relativeRelation').trim()
+
+    if (relativeText.trim() && hasChangduRelative === undefined) {
+      warnings.push(`昌都市内亲属「${relativeText}」无法识别（请填「有」或「无」），本次按未填处理`)
+    } else if (changduRelativeRelation && hasChangduRelative === undefined) {
+      // 关系填了、有无列空着：教师显然是知道这回事的，按「有」记。
+      // 但他没明说过，所以我们替他定了，就必须让他看见
+      hasChangduRelative = true
+      warnings.push('填了亲戚关系却空着「昌都市内亲属」，本次按「有」处理')
+    }
+
+    if (changduRelativeRelation && hasChangduRelative !== true) {
+      // 只有两种可能走到这里：有无列写着「无」，或者写了个认不出的值。
+      // 两者都留下「没有市内亲属，关系是舅舅」这种自相矛盾的数据，所以关系一律丢弃
+      warnings.push(`亲戚关系「${changduRelativeRelation}」已忽略：昌都市内亲属不是「有」`)
+      changduRelativeRelation = ''
+    }
+
     const tags = at('tags')
       .split(/[,，、;；]/)
       .map((tag) => tag.trim())
@@ -405,6 +490,8 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       county,
       familyAddress: at('familyAddress'),
       scope,
+      hasChangduRelative,
+      changduRelativeRelation,
       errors,
       warnings,
       dormitoryRejected,
@@ -460,7 +547,8 @@ export interface StudentImportResult {
  * **字段覆盖口径**：更新时**只覆盖这一行确实填了的字段**——空单元格视为「本次没填」，
  * 而不是「清空」。教师第二遍导入一份只列「姓名 + 新宿舍」的表，不该把标签和班委抹掉。
  * 代价是导入无法清空字段，需要手工编辑；这个方向的错误（丢数据）比另一个方向（清不掉）
- * 严重得多，所以选它。
+ * 严重得多，所以选它。唯一的例外是「昌都市内亲属」填「无」时连带清掉亲戚关系——
+ * 见 `applyRelativeFields`。
  *
  * 每次调用都重新按当前学生表算一遍：预览数字与真正落库的计划必须来自同一次计算，
  * 否则教师在预览上看到的「新增 40」和落库时的 41 就对不上了。
@@ -549,6 +637,8 @@ function toStudentInput(row: ParsedRow): StudentInput {
     remark: row.remark || undefined,
     familyAddress: row.familyAddress,
     familyLocation,
+    hasChangduRelative: row.hasChangduRelative,
+    changduRelativeRelation: relativeRelationOf(row),
   }
 }
 
@@ -581,7 +671,31 @@ function toPatch(row: ParsedRow, matched: Student): Partial<StudentInput> {
       }
     }
   }
+  applyRelativeFields(patch, row)
   return patch
+}
+
+/**
+ * 「昌都市内亲属」的两个字段进 patch 的口径（v3.6.1）。
+ *
+ * 三态在这里**必须分三种处置**，少一种就会写坏数据：
+ * - `undefined`（整列没填 / 整列认不出）→ **两个字段都不进 patch**。
+ *   `applyStudentImport` 是浅合并，不进 patch 就等于「本次没提」，档案里原有的值原样保留。
+ *   这正是老文件（没有这两列）导进来一条错都不报、一个字段都不改的原因。
+ * - `true` → 写 `hasChangduRelative`；关系填了才一起写，空着沿用既有值
+ *   （与 `备注`/`班委` 那一列同一口径：空单元格 = 本次没填，不是清空）。
+ * - `false` → **关系必须显式写 `undefined`**。这是本文件里唯一一处「空 = 清空」，
+ *   因为不写就等于「本次没提」，会留下一个写着「无」却带着「舅舅」的人——
+ *   导出名单上就是「无（舅舅）」，而教师只会看到自己填的明明是「无」。
+ */
+function applyRelativeFields(patch: Partial<StudentInput>, row: ParsedRow): void {
+  if (row.hasChangduRelative === undefined) return
+  patch.hasChangduRelative = row.hasChangduRelative
+  if (row.hasChangduRelative === true) {
+    if (row.changduRelativeRelation) patch.changduRelativeRelation = row.changduRelativeRelation
+    return
+  }
+  patch.changduRelativeRelation = undefined
 }
 
 /** 预览用：固定宿舍清单，教师看到「不在清单内」时能立刻知道该怎么改 */

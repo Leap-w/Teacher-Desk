@@ -39,14 +39,18 @@ describe('hosting routes（SPA 深链占位）', () => {
     expect(hostingRoutes.parseStaticPaths(source)).toEqual(flatten(appRoutes))
   })
 
-  it('解析覆盖全部 25 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
+  it('解析覆盖全部 26 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
     const source = readFileSync(path.resolve(process.cwd(), 'src/router/routes.ts'), 'utf8')
     expect(hostingRoutes.parseStaticPaths(source)).toEqual([
       '/class',
       '/class/duty',
       '/class/fund',
+      '/class/holiday',
       '/class/leave',
       '/class/seats',
+      // v3.6.1：`/class/weekend` 已改成重定向，但它仍是一条**静态路径**——
+      // 旧书签与缓存里的深链直接落到这个地址上，没有占位文件就会 404。
+      // 所以 26 条里两条都在：新的 holiday 是页面，老的 weekend 是重定向。
       '/class/weekend',
       '/duty',
       '/leave',

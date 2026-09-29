@@ -71,6 +71,11 @@ const PREVIEW_COLUMNS: readonly ImportPreviewColumn[] = [
   { key: 'scope', label: '返家范围' },
   { key: 'prefecture', label: '所属地区' },
   { key: 'county', label: '所属县/区' },
+  // v3.6.1：这两列的取值是**被解析器翻译过的**（「是」→「有」、「√」→「有」…），
+  // 教师没法从原表反推系统认成了什么。表格里已经横着滚了，多两列不改变什么，
+  // 但少了它，那两条交叉规则（关系有值却没写有无…）就只剩一句警告，无从核对
+  { key: 'relative', label: '昌都市内亲属' },
+  { key: 'relation', label: '亲戚关系' },
   { key: 'remark', label: '备注', wrap: true },
 ]
 
@@ -155,6 +160,10 @@ const previewRows = computed<ImportPreviewRow[]>(() =>
       scope: row.scope ? FAMILY_SCOPE_LABELS[row.scope] : '',
       prefecture: row.prefecture,
       county: row.county,
+      // 三态各自有写法：空着（本次没问）不能显示成「无」——那正是这一列要区分的东西
+      relative:
+        row.hasChangduRelative === true ? '有' : row.hasChangduRelative === false ? '无' : '',
+      relation: row.changduRelativeRelation,
       remark: row.remark,
     },
     errors: row.errors,
@@ -205,7 +214,7 @@ const hints = computed<ImportHint[]>(() => {
   if (current.missingScope > 0) {
     list.push({
       tone: 'info',
-      text: `${current.missingScope} 行缺返家范围，导入后需在档案里逐个补（周末返家统计要用）`,
+      text: `${current.missingScope} 行缺返家范围，导入后需在档案里逐个补（假期名单的「家庭所在地」一列要用）`,
     })
   }
   return list
@@ -248,7 +257,7 @@ function close(): void {
         sheet-name="学生名单"
         :headers="STUDENT_IMPORT_HEADERS"
         :sample="STUDENT_IMPORT_SAMPLE"
-        note="上面的例子表示：学号 0101 的旦增卓玛住女生2栋113、返家范围是昌都市区；第二行故意空着「身份证尾号」和「班委」——选填列留空没问题，留空只表示这次没填，不会把档案里已有的值清掉。"
+        note="上面的例子表示：学号 0101 的旦增卓玛住女生2栋113、返家范围是昌都市区；第二行故意空着「身份证尾号」和「班委」——选填列留空没问题，留空只表示这次没填，不会把档案里已有的值清掉。「昌都市内亲属」填「有」或「无」，填「有」时可在「亲戚关系」里写是哪位（如「舅舅」）；这一项要改回「没问过」（空白），只能到学生档案里去改。"
       >
         <li><strong>必填列</strong>：{{ STUDENT_IMPORT_REQUIRED.join('、') }}</li>
         <li><strong>选填列</strong>：{{ STUDENT_IMPORT_OPTIONAL.join('、') }}</li>

@@ -5,7 +5,8 @@
  * 通过「快照 A 的存储 → 清空 → 写入 B 的存储 → `vi.resetModules()` 重建模块图」切换设备；
  * 云端（内存假云端）跨切换存活——这正是两台真机共用同一个云端账号的形状。
  *
- * 覆盖八个模块的键（学生 / 座位 / 请假 / 值日 / 周末 / 课表 / 工作清单 / 我的），
+ * 覆盖十个模块的键（学生 / 座位 / 请假 / 值日 / 周末回家 / 自定义假期 / 假期登记 /
+ * 课表 / 工作清单 / 我的），
  * 每个模块至少验一次「A 新增 → B 同步看到」。
  */
 import { ref } from 'vue'
@@ -59,6 +60,9 @@ const KEYS = {
   leave: `${prefix}:leaves`,
   duty: `${prefix}:duty`,
   weekend: `${prefix}:weekendReturns`,
+  // v3.6.1：假期管理的两个新键（周末回家仍是上面那个老键，一个字节不动）
+  holidays: `${prefix}:holidays`,
+  holidayRecords: `${prefix}:holidayRecords`,
   schedule: `${prefix}:timetable`,
   tasks: `${prefix}:works`,
   profile: `${prefix}:profile`,
@@ -130,15 +134,27 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/* ==================== ① 双设备同步（八个模块） ==================== */
+/* ==================== ① 双设备同步（十个模块） ==================== */
 
-describe('双设备同步 · 八个模块「A 新增 → B 看到」', () => {
+describe('双设备同步 · 十个模块「A 新增 → B 看到」', () => {
   const moduleFixtures: { name: string; key: string; a: unknown[]; b: unknown[] }[] = [
     { name: '学生档案', key: KEYS.students, a: [{ id: 's-1', name: '新增学生' }], b: [] },
     { name: '座位管理', key: KEYS.seats, a: [{ id: 'p-1', name: '开学初' }], b: [] },
     { name: '请假', key: KEYS.leave, a: [{ id: 'l-1', studentId: 's-1' }], b: [] },
     { name: '值日', key: KEYS.duty, a: [{ id: 'g-1', name: '第 1 组' }], b: [] },
-    { name: '周末管理', key: KEYS.weekend, a: [{ id: 'w-1', studentId: 's-1' }], b: [] },
+    { name: '周末回家', key: KEYS.weekend, a: [{ id: 'w-1', studentId: 's-1' }], b: [] },
+    {
+      name: '自定义假期',
+      key: KEYS.holidays,
+      a: [{ id: 'h-1', name: '国庆假期', startDate: '2026-10-01', endDate: '2026-10-07' }],
+      b: [],
+    },
+    {
+      name: '假期登记',
+      key: KEYS.holidayRecords,
+      a: [{ id: 'r-1', holidayId: 'h-1', studentId: 's-1', returnHome: true }],
+      b: [],
+    },
     { name: '课程表', key: KEYS.schedule, a: [{ id: 'c-1', subject: '数学' }], b: [] },
     { name: '工作清单', key: KEYS.tasks, a: [{ id: 't-1', title: '批改作业' }], b: [] },
     { name: '我的（资料）', key: KEYS.profile, a: [{ nickname: '测试教师' }], b: [] },

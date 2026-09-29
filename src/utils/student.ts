@@ -129,7 +129,33 @@ export function normalizeStudent(raw: Student): Student {
   const suffix = typeof normalized.idCardSuffix === 'string' ? normalized.idCardSuffix.trim() : ''
   if (suffix) normalized.idCardSuffix = suffix.slice(0, 4)
   else delete normalized.idCardSuffix
+  // 昌都市内亲属（v3.6.1）——与上面那条**刻意不同**：这里**保留 `false`**。
+  // 照 `isTemporary === true` 那句写会把「明确没有」折成「没填」，而这两者在导出名单里
+  // 是「无」与空单元格的区别，教师据此知道谁还没问过（见 Student 类型上的说明）。
+  // 非布尔一律剔键：`'有'` / `1` 这类来自手改缓存的值不可信，留着会让 `=== true` 的判定全落空
+  if (typeof normalized.hasChangduRelative !== 'boolean') delete normalized.hasChangduRelative
+  const relation =
+    typeof normalized.changduRelativeRelation === 'string'
+      ? normalized.changduRelativeRelation.trim()
+      : ''
+  // 关系只在「有亲属」时留下：没有亲属却有关系，是一句自相矛盾的数据。
+  // 这条不变式放在数据层而不是表单里——导入、备份恢复、跨端同步三条路径都会经过这里，
+  // 表单只管得住其中一条（同宿舍白名单为什么要用白名单而不是「升级时清一次」）
+  if (relation && normalized.hasChangduRelative === true)
+    normalized.changduRelativeRelation = relation
+  else delete normalized.changduRelativeRelation
   return normalized
+}
+
+/**
+ * 「昌都市内亲属」一列的显示文案（导出名单与档案页共用这一份）：
+ * 有 / 无 / **空串**（未填）。空串而不是「—」或「不详」：规格要求「未填」与「无」可区分，
+ * 而导出到 Excel 后空单元格正是教师一眼扫出「还没问过」的那批人的方式。
+ */
+export function hasChangduRelativeLabel(student: Pick<Student, 'hasChangduRelative'>): string {
+  if (student.hasChangduRelative === true) return '有'
+  if (student.hasChangduRelative === false) return '无'
+  return ''
 }
 
 /** 返家范围中文文案；家庭信息缺失时返回 undefined（由展示层决定占位） */

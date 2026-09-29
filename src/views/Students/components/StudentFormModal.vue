@@ -35,6 +35,12 @@ const GENDER_OPTIONS: SelectOption<Gender>[] = [
   { label: '男', value: 'male' },
 ]
 
+/** 只有两档且可以**都不选**——所以不走 AppSegmented（它要求必选一档），见 FormState.relative */
+const RELATIVE_OPTIONS: { label: string; value: 'yes' | 'no' }[] = [
+  { label: '有', value: 'yes' },
+  { label: '无', value: 'no' },
+]
+
 interface FormState {
   name: string
   studentNo: string
@@ -53,6 +59,16 @@ interface FormState {
   county: string
   /** 返家范围；空串表示未选择（提交时必选） */
   scope: string
+  /**
+   * 昌都市内亲属（v3.6.1）：`'yes'` / `'no'` / `''`。
+   *
+   * **空串是真正的第三态**（没问过 / 没填），不是「默认否」——所以这里不用 AppSelect
+   * （它总得有个选中项）、也不用 AppSegmented（它要求必选一档），而是一组可以不选的
+   * radio，旁边配一个「清除」把已选的撤回来。三态在界面上必须真的有三条路。
+   */
+  relative: '' | 'yes' | 'no'
+  /** 哪位亲属（自由文本）；只在 `relative === 'yes'` 时参与提交 */
+  relativeRelation: string
 }
 
 function blankForm(): FormState {
@@ -71,6 +87,8 @@ function blankForm(): FormState {
     prefecture: '',
     county: '',
     scope: '',
+    relative: '',
+    relativeRelation: '',
   }
 }
 
@@ -127,7 +145,23 @@ watch(
       prefecture: props.student.familyLocation?.prefecture ?? '',
       county: props.student.familyLocation?.county ?? '',
       scope: props.student.familyLocation?.scope ?? '',
+      // 三态回填：`undefined` 必须落回空串（也就是「未填」），不能折成「无」
+      relative:
+        props.student.hasChangduRelative === true
+          ? 'yes'
+          : props.student.hasChangduRelative === false
+            ? 'no'
+            : '',
+      relativeRelation: props.student.changduRelativeRelation ?? '',
     })
+  },
+)
+
+/** 选了「无」或「未填」时关系栏要清掉——留着它就会出现「无（舅舅）」这种自相矛盾的回填 */
+watch(
+  () => form.relative,
+  (relative) => {
+    if (relative !== 'yes') form.relativeRelation = ''
   },
 )
 
@@ -179,6 +213,14 @@ function submit() {
       county: form.county.trim(),
       scope: form.scope as FamilyScope,
     },
+    // 两个字段成对提交，且**都显式写出来**（含 undefined）：
+    // `updateStudent` 是浅合并，漏掉某个键就等于「保留原值」——
+    // 把「有(舅舅)」改成「无」时若不显式清掉关系，落库的就是「无」+「舅舅」。
+    hasChangduRelative: form.relative === '' ? undefined : form.relative === 'yes',
+    changduRelativeRelation:
+      form.relative === 'yes' && form.relativeRelation.trim()
+        ? form.relativeRelation.trim()
+        : undefined,
   }
   // 刻意不带 seatNumber：档案已不维护座位号（Phase 5A），updateStudent 是浅合并，
   // 不传这个键就会原样保留既有值，座位方案的自动就座因此不受影响
@@ -263,6 +305,50 @@ function close() {
           placeholder="如：西藏自治区昌都市卡若区××乡××村"
         />
       </AppField>
+
+      <!--
+        昌都市内亲属（v3.6.1）：与上面的「返家范围」**是两件事**——那里说的是
+        「家在哪儿」，这里说的是「市里有没有能搭把手的人」。有亲属不等于家在市区。
+        两个都不选 = 未填，这是与「明确无」不同的第三态，所以给「清除」留了位置。
+      -->
+      <AppField label="昌都市内亲属" hint="有没有能临时照应学生的亲属；没问过就两个都不选">
+        <div class="relative-row">
+          <div class="relative-radios" role="radiogroup" aria-label="昌都市内亲属">
+            <label
+              v-for="option in RELATIVE_OPTIONS"
+              :key="option.value"
+              class="relative-option"
+              :class="{ 'is-active': form.relative === option.value }"
+            >
+              <input
+                type="radio"
+                class="relative-radio"
+                name="changdu-relative"
+                :value="option.value"
+                :checked="form.relative === option.value"
+                @change="form.relative = option.value"
+              />
+              {{ option.label }}
+            </label>
+          </div>
+          <button
+            v-if="form.relative !== ''"
+            type="button"
+            class="relative-clear"
+            @click="form.relative = ''"
+          >
+            清除（改为未填）
+          </button>
+        </div>
+      </AppField>
+
+      <AppField
+        v-if="form.relative === 'yes'"
+        label="哪位亲属"
+        hint="选填，自由填写，如：舅舅 / 姑姑"
+      >
+        <AppInput v-model="form.relativeRelation" placeholder="如：舅舅" />
+      </AppField>
     </form>
 
     <template #footer>
@@ -297,6 +383,68 @@ function close() {
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-text-secondary);
+}
+
+/* 昌都市内亲属：两个可都不选的档位 + 一个「清除」 */
+.relative-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.relative-radios {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.relative-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* 触控目标 ≥44px（与名单行同口径） */
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.relative-option:hover {
+  background: var(--color-fill-disabled);
+}
+
+.relative-option.is-active {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
+.relative-radio {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.relative-clear {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--font-caption);
+  color: var(--color-primary-dark);
+  cursor: pointer;
+}
+
+.relative-clear:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+  border-radius: var(--radius-xs);
 }
 
 @media (max-width: 560px) {

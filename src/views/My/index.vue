@@ -93,7 +93,7 @@ const menuItems = computed<ProfileMenuItem[]>(() => [
   {
     key: 'class',
     label: '班级设置',
-    desc: '请假 · 值日 · 周末返校',
+    desc: '请假 · 值日 · 假期登记',
     icon: UsersRound,
     tone: 'class',
     to: '/my/settings/class',
