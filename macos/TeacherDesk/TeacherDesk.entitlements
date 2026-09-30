@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    宿主 App 的 entitlements —— **刻意是空的（不开 App Sandbox）**。
+
+    理由只有一条，但它是本方案成立的前提：**宿主 App 必须能把快照写进 Widget 扩展的沙盒容器**
+    （~/Library/Containers/com.teacherdesk.mac.widget/Data/...）。开了沙盒之后，它就只能写自己的
+    容器，而扩展（沙盒）读的是**扩展自己的**容器——两边对不上，快照永远传不过去。
+    macOS 的 Widget 扩展**必须**沙盒（不开的表现是「编译过了、小组件库里没有」），
+    所以「扩展沙盒 + 宿主不沙盒」是本机（0 个签名身份、ad-hoc 签名、无 App Group）唯一能跑通的组合。
+
+    代价说清楚（与 v1.0.0 那版 macOS 工程同一条）：宿主 App 没有被系统隔离。
+    它不联网、不登录、不碰业务数据，源码里只有「读快照 / 写快照 / 打开浏览器」三件事，
+    但这是**代码纪律**，不是系统强制。真要系统级隔离，就得走 App Group + 开发者账号
+    （见 README 的「以后要换成 App Group 的话」）。
+-->
+<plist version="1.0">
+<dict/>
+</plist>

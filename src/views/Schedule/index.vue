@@ -33,6 +33,7 @@ import ScheduleWeekGrid from './components/ScheduleWeekGrid.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import TodaySchedule from './components/TodaySchedule.vue'
 import WeekView from './components/WeekView.vue'
+import WidgetBridgeCard from './components/WidgetBridgeCard.vue'
 
 const toast = useToast()
 const timetableStore = useTimetableStore()
@@ -365,6 +366,9 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         <h2 class="layer-title">课时统计</h2>
         <ScheduleStats :stats="stats" />
       </section>
+
+      <!-- macOS 桌面小组件：把这份课表写成 Widget 能读的快照（v3.7.0，只读单向） -->
+      <WidgetBridgeCard />
     </div>
 
     <!-- 编辑抽屉 -->

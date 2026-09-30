@@ -1,0 +1,68 @@
+# project.yml —— XcodeGen 的工程描述（**备用**）
+#
+# 平时用不到它：`TeacherDesk.xcodeproj` 已经提交在仓库里，双击打开即可。
+# 这份文件是给「pbxproj 被改坏了 / 合并冲突解不干净 / 想从头重建工程」准备的退路：
+#
+#     brew install xcodegen
+#     cd macos && xcodegen generate
+#
+# 两边的设置必须一致（target 名、bundle id、entitlements、部署目标），
+# 否则「用 XcodeGen 重建之后小组件消失了」这种问题会浪费一晚上。
+# Tools/verify.sh 会核对两边的关键字段。
+#
+name: TeacherDesk
+options:
+  bundleIdPrefix: com.teacherdesk
+  deploymentTarget:
+    macOS: '14.0'
+  createIntermediateGroups: true
+  developmentLanguage: zh-Hans
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    MARKETING_VERSION: '3.7.0'
+    CURRENT_PROJECT_VERSION: '1'
+    # 本机 0 个签名身份（ad-hoc），所以**不要**要求 hardened runtime
+    ENABLE_HARDENED_RUNTIME: NO
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: '-'
+    DEVELOPMENT_TEAM: ''
+    GENERATE_INFOPLIST_FILE: NO
+    SWIFT_EMIT_LOC_STRINGS: NO
+    ALWAYS_SEARCH_USER_PATHS: NO
+
+targets:
+  TeacherDesk:
+    type: application
+    platform: macOS
+    sources:
+      - path: TeacherDesk
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teacherdesk.mac
+        PRODUCT_NAME: TeacherDesk
+        INFOPLIST_FILE: TeacherDesk/Info.plist
+        CODE_SIGN_ENTITLEMENTS: TeacherDesk/TeacherDesk.entitlements
+        COMBINE_HIDPI_IMAGES: YES
+    dependencies:
+      # 宿主 App 必须把 Widget 扩展嵌进自己的 .app 里，小组件才会被系统收录
+      - target: TeacherDeskWidget
+        embed: true
+        codeSign: true
+
+  TeacherDeskWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: TeacherDeskWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.teacherdesk.mac.widget
+        PRODUCT_NAME: TeacherDeskWidget
+        INFOPLIST_FILE: TeacherDeskWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: TeacherDeskWidget/TeacherDeskWidget.entitlements
+        SKIP_INSTALL: YES

@@ -1,0 +1,451 @@
+// !$*UTF8*$!
+//
+//  TeacherDesk.xcodeproj/project.pbxproj —— 手写的工程文件（v3.7.0）
+//
+//  为什么手写而不是让 Xcode 生成完提交：这个工程只有两个 target、三个源码目录，
+//  而手写版本里每一行都能在 `project.yml` 找到对应项（XcodeGen 重建时两边一致）。
+//  用 Xcode 打开后随便改一次设置，Xcode 会把它重排成自己的顺序——那之后 diff 就没法看了，
+//  所以 README 里写明：**要改工程设置，先改 project.yml，再决定要不要手动同步这里。**
+//
+//  结构（对应 `macos/` 目录）：
+//    · TeacherDesk/        宿主 App（无沙盒：要能写进扩展容器）
+//    · TeacherDeskWidget/  Widget 扩展（**沙盒**：不开沙盒小组件不会出现在库里）
+//    · Shared/             两个 target 各编一份（快照契约 / 路径 / 派生 / 设计变量）
+//
+//  三个源码目录都用 **PBXFileSystemSynchronizedRootGroup**（Xcode 16+ 的「同步文件夹」）：
+//  新增 .swift 文件直接扔进目录即可，不必回工程文件里登记——这套工程最容易忘的一步就是
+//  「文件加了、没加进 target」，表现是编译通过但功能没生效。
+//
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000012 /* TeacherDeskWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000005 /* TeacherDeskWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000013 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000003;
+			remoteInfo = TeacherDeskWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0000000000000000000011 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0000000000000000000012 /* TeacherDeskWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000004 /* TeacherDesk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TeacherDesk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000005 /* TeacherDeskWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TeacherDeskWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000000008 /* TeacherDesk */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA000000000000000000001E /* Exceptions for "TeacherDesk" folder in "TeacherDesk" target */,
+			);
+			path = TeacherDesk;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000009 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		AA000000000000000000000A /* TeacherDeskWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA000000000000000000001F /* Exceptions for "TeacherDeskWidget" folder in "TeacherDeskWidget" target */,
+			);
+			path = TeacherDeskWidget;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA000000000000000000001E /* Exceptions for "TeacherDesk" folder in "TeacherDesk" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				TeacherDesk.entitlements,
+			);
+			target = AA0000000000000000000002 /* TeacherDesk */;
+		};
+		AA000000000000000000001F /* Exceptions for "TeacherDeskWidget" folder in "TeacherDeskWidget" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				TeacherDeskWidget.entitlements,
+			);
+			target = AA0000000000000000000003 /* TeacherDeskWidget */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA000000000000000000000C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000000000000000000000F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000000000000000000006 = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000009 /* Shared */,
+				AA0000000000000000000008 /* TeacherDesk */,
+				AA000000000000000000000A /* TeacherDeskWidget */,
+				AA0000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000004 /* TeacherDesk.app */,
+				AA0000000000000000000005 /* TeacherDeskWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000000000000000000002 /* TeacherDesk */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000016 /* Build configuration list for PBXNativeTarget "TeacherDesk" */;
+			buildPhases = (
+				AA000000000000000000000B /* Sources */,
+				AA000000000000000000000C /* Frameworks */,
+				AA000000000000000000000D /* Resources */,
+				AA0000000000000000000011 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000014 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000008 /* TeacherDesk */,
+				AA0000000000000000000009 /* Shared */,
+			);
+			name = TeacherDesk;
+			packageProductDependencies = (
+			);
+			productName = TeacherDesk;
+			productReference = AA0000000000000000000004 /* TeacherDesk.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AA0000000000000000000003 /* TeacherDeskWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000017 /* Build configuration list for PBXNativeTarget "TeacherDeskWidget" */;
+			buildPhases = (
+				AA000000000000000000000E /* Sources */,
+				AA000000000000000000000F /* Frameworks */,
+				AA0000000000000000000010 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA000000000000000000000A /* TeacherDeskWidget */,
+				AA0000000000000000000009 /* Shared */,
+			);
+			name = TeacherDeskWidget;
+			packageProductDependencies = (
+			);
+			productName = TeacherDeskWidget;
+			productReference = AA0000000000000000000005 /* TeacherDeskWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					AA0000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					AA0000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = AA0000000000000000000015 /* Build configuration list for PBXProject "TeacherDesk" */;
+			developmentRegion = zh-Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh-Hans,
+				en,
+				Base,
+			);
+			mainGroup = AA0000000000000000000006;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AA0000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000000000000000000002 /* TeacherDesk */,
+				AA0000000000000000000003 /* TeacherDeskWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA000000000000000000000D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000010 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA000000000000000000000B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000000000000000000000E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000014 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000003 /* TeacherDeskWidget */;
+			targetProxy = AA0000000000000000000013 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000018 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000019 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AA000000000000000000001A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TeacherDesk/TeacherDesk.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TeacherDesk/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.teacherdesk.mac;
+				PRODUCT_NAME = TeacherDesk;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		AA000000000000000000001B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TeacherDesk/TeacherDesk.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TeacherDesk/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.teacherdesk.mac;
+				PRODUCT_NAME = TeacherDesk;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+		AA000000000000000000001C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TeacherDeskWidget/TeacherDeskWidget.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TeacherDeskWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.teacherdesk.mac.widget;
+				PRODUCT_NAME = TeacherDeskWidget;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		AA000000000000000000001D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = TeacherDeskWidget/TeacherDeskWidget.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TeacherDeskWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 3.7.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.teacherdesk.mac.widget;
+				PRODUCT_NAME = TeacherDeskWidget;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000000000000000000015 /* Build configuration list for PBXProject "TeacherDesk" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000018 /* Debug */,
+				AA0000000000000000000019 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000016 /* Build configuration list for PBXNativeTarget "TeacherDesk" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000001A /* Debug */,
+				AA000000000000000000001B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000017 /* Build configuration list for PBXNativeTarget "TeacherDeskWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000001C /* Debug */,
+				AA000000000000000000001D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA0000000000000000000001 /* Project object */;
+}

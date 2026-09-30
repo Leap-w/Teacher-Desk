@@ -5,6 +5,7 @@ import App from './App.vue'
 import router from './router'
 import { startAutoSync } from './sync/autoSync'
 import { probeCloudSession } from './services/cloudSync'
+import { startWidgetSnapshotSync } from './composables/useWidgetSnapshot'
 import { onSyncReload } from './services/sync'
 
 import 'virtual:uno.css'
@@ -49,7 +50,22 @@ void probeCloudSession()
 
 const app = createApp(App)
 
-app.use(createPinia())
+/**
+ * Pinia 实例要**留一个引用**：下面的 Widget 快照同步需要它。
+ * 不是为了拿 store（那条路会实例化课表 store、进而触发首次播种），而是为了**监听**
+ * 已经存在的 store 状态——见 `composables/useWidgetSnapshot.ts` 顶部的说明。
+ */
+const pinia = createPinia()
+
+app.use(pinia)
 app.use(router)
 
 app.mount('#app')
+
+/**
+ * macOS 桌面小组件的快照同步（v3.7.0，规格 §二十一：启动时检查并更新一次）。
+ *
+ * 它是**尽力而为**的：没连过就等于不做事，连过但权限不在就安静跳过；
+ * 任何失败都只 `console.warn`，绝不打扰教师，更不影响应用启动。
+ */
+startWidgetSnapshotSync(pinia)

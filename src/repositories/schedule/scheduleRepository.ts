@@ -261,6 +261,34 @@ export const scheduleRepository = {
     }
   },
 
+  /**
+   * 读课程，但**一个字节都不写**（v3.7.0，给 macOS 小组件生成快照用）。
+   *
+   * 与 `loadLessons()` 的差别只有两处，都是为「应用启动时替小组件生成一份快照」这条路准备的：
+   *
+   * - **不播种**。`loadLessons()` 在键不存在时会写入示例课表；而快照同步发生在**应用启动**，
+   *   用它等于把「第一次打开课程表才播种」变成「一开机就播种」。播种时机是数据安全的一环
+   *   （§9.21：示例数据必须落在同步引擎看得见的时刻），不该被一个桌面小组件顺手改掉。
+   * - **不迁移**。旧键（`timetable:lessons`）迁移是一次写盘动作，只应发生在教师真正打开
+   *   课程表时。这里旧键**照读**——教师升级后还没打开过课程页，小组件也该显示他那份旧课表。
+   *
+   * 数据本身与 `loadLessons()` 同一套 normalize / revive（同一个 `lessonsRepository`），
+   * 所以快照里的课表与页面上看到的一模一样，只是这条路径永不落盘。
+   */
+  peekLessons(): Lesson[] {
+    try {
+      const stored = lessonsRepository.load()
+      if (stored !== null) return stored
+      const legacy = localStorageAdapter.readRaw(LEGACY_LESSONS_KEY)
+      if (legacy === null) return []
+      const migrated = parseRawList(legacy, normalizeLesson)
+      return migrated === null ? [] : migrated.items
+    } catch (error) {
+      console.warn('[timetable] 只读课程失败：', error)
+      return []
+    }
+  },
+
   /** 读换课记录：损坏即空数组（换课记录只是「为什么这节在这」的说明，丢了不该让课表打不开） */
   loadExchanges(): CourseExchange[] {
     try {

@@ -20,6 +20,8 @@ export default defineConfigWithVueTs(
       'scripts/**',
       '.tmp-*',
       '.claude/**',
+      // macOS Widget 工程的构建产物（macos/Tools/verify.sh 生成）：同 dist 的理由
+      'macos/.build/**',
     ],
   },
   js.configs.recommended,

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Widget 扩展的 entitlements —— **只开沙盒，什么权限都不给**。
+
+    两条都是有意为之：
+
+    ① `com.apple.security.app-sandbox = true` 是**必须**的：macOS 的 Widget 扩展不开沙盒
+       就不会出现在小组件库里（构建能过、库里没有）。这也是本方案选「扩展容器」而不是
+       App Group 的原因——沙盒扩展读**自己的**容器不需要任何额外 entitlement。
+
+    ② **没有 `com.apple.security.network.client`**：于是「Widget 不联网、不登录、不碰 CloudBase」
+       （规格 §七 / §二十二）是**系统强制**的，不是代码纪律——这份源码里就算有人写了一句
+       URLSession，系统也会拒绝。这是本版相对 v1.0.0 那版（宿主与扩展都不开沙盒）实打实的改进。
+
+    以后要换成 App Group（例如真要分发）：这里加
+        com.apple.security.application-groups = [ group.com.teacherdesk.mac ]
+    并同步改宿主 App 的 entitlements 与 Shared/SnapshotStore.swift 的路径实现。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+</dict>
+</plist>

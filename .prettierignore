@@ -2,3 +2,6 @@ dist
 dev-dist
 node_modules
 package-lock.json
+# macOS Widget 工程的构建产物（macos/Tools/verify.sh 生成；git 由 macos/.gitignore 忽略，
+# 而 prettier 不读嵌套 .gitignore —— 不排除的话 `prettier --check .` 会去检查 .appex 里的 JSON）
+macos/.build

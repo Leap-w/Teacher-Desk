@@ -1,0 +1,11 @@
+# 构建产物（本机自检与 Xcode 都用这个目录，见 Tools/verify.sh）
+.build/
+
+# Xcode 的个人设置：`xcodebuild` / GUI 打开工程时会生成，不入库
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+
+# 本机 ad-hoc 签名产物
+*.dSYM/
