@@ -1,10 +1,10 @@
 /**
- * 假期管理的纯函数（v3.6.1）。
+ * 假期管理的纯函数（v3.6.2）。
  *
  * 本模块只做三件事，都不碰存储、不碰 Vue：
  * 1. **虚拟周末假期**的派生与识别（周末没有实体，`id` 由周六日期键现算）；
  * 2. 假期与登记的**复活规则**（`normalizeHoliday` / `normalizeHolidayRecord`）；
- * 3. **三态**（回家 / 留校 / 未登记）的判定与计数——口径只在这里实现一次，
+ * 3. **二态**（离校 / 留校）的判定与计数——口径只在这里实现一次，
  *    首页卡片、详情页统计、导出名单全从这里取（§11.1）。
  *
  * 日期比较一律走字符串字典序（`YYYY-MM-DD` 的字典序即时间序），与 `utils/date.ts` 同源。
@@ -12,6 +12,7 @@
 import { addDaysToDateKey, formatMonthDay, isDateKey } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { currentWeekendKey, isWeekendKey } from '@/utils/weekend'
+import type { FamilyScope, Student } from '@/types'
 import type { Holiday, HolidayEntry, HolidayRecord, HolidayStatus } from '@/types/holiday'
 
 /**
@@ -120,10 +121,13 @@ export function reviveHolidays(raw: unknown[]): Holiday[] {
  *
  * 与 `normalizeWeekendReturn` 有三处**故意不同**：
  * - `date` 可以是任意日期（自定义假期不是周六），只要求是真实存在的日期；
- * - `returnHome` 必须是**布尔**：缺了它这条记录既不能说回家也不能说留校，
+ * - `returnHome` 必须是**布尔**：缺了它这条记录既不能说离校也不能说留校，
  *   补 `false` 会把一条坏数据变成「留校」这个事实 → **丢弃该条**；
  * - 假期 id 只要是非空字符串即可，**不校验日期部分**：这里没有足够信息判断
  *   一条 id 该不该存在（假期可能还没同步到本机），留到派生层当「孤儿」处理。
+ *
+ * `note`（v3.6.2 学生级假期备注）可选：非字符串一律当没有；trim 后为空**不写这个字段**
+ * （与 `Holiday.note` 同口径——空串与「没有备注」在云端比对里是两回事）。
  */
 export function normalizeHolidayRecord(raw: unknown): HolidayRecord | null {
   if (!raw || typeof raw !== 'object') return null
@@ -132,6 +136,7 @@ export function normalizeHolidayRecord(raw: unknown): HolidayRecord | null {
   if (typeof item.studentId !== 'string' || !item.studentId) return null
   if (!isDateKey(item.date)) return null
   if (typeof item.returnHome !== 'boolean') return null
+  const note = typeof item.note === 'string' ? item.note.trim() : ''
   return {
     id: typeof item.id === 'string' && item.id ? item.id : createId(),
     holidayId: item.holidayId,
@@ -139,6 +144,7 @@ export function normalizeHolidayRecord(raw: unknown): HolidayRecord | null {
     studentName: typeof item.studentName === 'string' ? item.studentName.trim() : '',
     date: item.date,
     returnHome: item.returnHome,
+    ...(note ? { note } : {}),
     createdAt:
       typeof item.createdAt === 'string' && item.createdAt
         ? item.createdAt
@@ -148,8 +154,8 @@ export function normalizeHolidayRecord(raw: unknown): HolidayRecord | null {
 
 /**
  * 盘上的登记列表 → 内存值。两重去重，都只保留首条：同一 `id`；
- * 同一「学生 + 假期」——本模块的不变量是一个学生在一个假期里只有一个去向
- * （回家 / 留校 / 未登记三态以此为前提，两处各有一条记录就成了第四态）。
+ * 同一「学生 + 假期」——本模块的不变量是一个学生在一个假期里只有一条记录
+ * （两处各有一条就成了「既离校又留校」）。
  */
 export function reviveHolidayRecords(raw: unknown[]): HolidayRecord[] {
   const seenIds = new Set<string>()
@@ -228,13 +234,17 @@ export function sortHolidayRecords(records: HolidayRecord[]): HolidayRecord[] {
   })
 }
 
-/* ---------- 三态 ---------- */
+/* ---------- 二态 ---------- */
 
-/** 三态的中文标签。导出名单的「假期去向」列与页面徽标共用这一份 */
+/**
+ * 二态的中文标签。导出名单的「假期去向」列与页面徽标共用这一份。
+ *
+ * `home` 的文案是**离校**（v3.6.2 起）：规格里的核心规则是「回家的人登记离校」，
+ * 教师口中的动作也是「离校」，页头统计卡片同样写「离校」。
+ */
 export const HOLIDAY_STATUS_LABELS: Record<HolidayStatus, string> = {
-  home: '回家',
+  home: '离校',
   stay: '留校',
-  unregistered: '未登记',
 }
 
 /** 「学生 + 假期」的唯一键（去重与状态查表共用） */
@@ -256,14 +266,15 @@ export function buildStatusIndex(records: HolidayRecord[]): Map<string, boolean>
 /**
  * 一个学生在某个假期里的去向——**逐人求值，不用补集减**。
  *
- * 规格把「留校 = 在读人数 − 已返家人数」那条补集口径废掉了：补集把「未登记」也算成留校，
- * 而这正是本次要改的东西。改为先看有没有记录：
+ * v3.6.2 的口径只有一句话：**有离校记录就是离校，没有就是留校**。
  *
- * - 查表命中 → 按 `returnHome`；查不到 → `unregistered`（**没有任何记录**才是未登记）；
+ * - 查表命中 `returnHome: true` → `home`；命中 `false` → `stay`；
+ * - **查不到记录 → `stay`**。这正是本版要的：v3.6.1 的第三态「未登记」被彻底删掉，
+ *   它留下的旧数据（没有任何记录）升级后**直接就是留校**，不需要迁移、不弹确认；
  * - `weekendRegisteredIds` 是**周末专属**的旁路：老键 `teacherdesk:weekendReturns` 里的
- *   回家记录（v3.6.1 之前的全部历史 + 之后每一次周末回家登记）。命中即 `home`，
- *   哪怕新键里同一个人同一个周末还有一条留校标记——**回家优先**，因为老键那条是教师
- *   在先前的界面里明确登记过的，而留校标记只可能是跨版本打架留下的影子。
+ *   离校记录（v3.6.1 之前的全部历史 + 之后每一次周末离校登记）。命中即 `home`，
+ *   哪怕新键里同一个人同一个周末还有一条留校/备注影子——**离校优先**，因为老键那条是教师
+ *   在先前的界面里明确登记过的，而影子只可能是备注载体或跨版本打架留下的。
  *   这里只读不写：影子记录被**遮蔽**，不会被自动清掉（见 stores/holiday.ts 的说明）。
  */
 export function statusOf(
@@ -274,22 +285,47 @@ export function statusOf(
 ): HolidayStatus {
   if (weekendRegisteredIds?.has(studentId)) return 'home'
   const flag = index.get(recordPairKey(holidayId, studentId))
-  if (flag === undefined) return 'unregistered'
+  if (flag === undefined) return 'stay'
   return flag ? 'home' : 'stay'
 }
 
-/** 三态计数。分母由调用方给（一律在读学生，口径在 store 里），这里只做分组 */
+/** 二态计数。分母由调用方给（一律在读学生，口径在 store 里），这里只做分组 */
 export function countStatuses(
   holidayId: string,
   studentIds: string[],
   index: Map<string, boolean>,
   weekendRegisteredIds?: Set<string>,
 ): Record<HolidayStatus, number> {
-  const counts: Record<HolidayStatus, number> = { home: 0, stay: 0, unregistered: 0 }
+  const counts: Record<HolidayStatus, number> = { home: 0, stay: 0 }
   for (const studentId of studentIds) {
     counts[statusOf(holidayId, studentId, index, weekendRegisteredIds)] += 1
   }
   return counts
+}
+
+/**
+ * 「离校 ∩ 某个返家范围」的人数（v3.6.2 规格第七节的第三张卡片：昌都市外离校）。
+ *
+ * 它**不是第三种状态**——只是「离校」里的一个筛选维度，所以这里数的是
+ * 「状态是 `home` 且 `familyLocation.scope === scope`」的在读学生，
+ * 分母同 `countStatuses`（一律在读学生）。`familyLocation` 缺失的学生自然不进这个数
+ * （家庭所在地没填 ≠ 昌都市外）。
+ *
+ * `scope` 由调用方给（页面写 `'outside-changdu'`），**不修改 `FamilyScope` 的定义**。
+ */
+export function countHomeInScope(
+  holidayId: string,
+  students: readonly Student[],
+  index: Map<string, boolean>,
+  scope: FamilyScope,
+  weekendRegisteredIds?: Set<string>,
+): number {
+  let count = 0
+  for (const student of students) {
+    if (student.familyLocation?.scope !== scope) continue
+    if (statusOf(holidayId, student.id, index, weekendRegisteredIds) === 'home') count += 1
+  }
+  return count
 }
 
 /* ---------- 列表与当前项 ---------- */

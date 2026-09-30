@@ -10,6 +10,7 @@ import { formatDateKey, isDateKey } from '@/utils/date'
 import {
   buildHolidayEntries,
   buildStatusIndex,
+  countHomeInScope,
   countStatuses,
   isWeekendHolidayId,
   pickCurrentEntry,
@@ -20,7 +21,7 @@ import {
   weekendHolidayId,
   weekendKeyOfHolidayId,
 } from '@/utils/holiday'
-import { isEmptyPlan, planStatusChange } from '@/utils/holidayQuery'
+import { OUTSIDE_CHANGDU_SCOPE, isEmptyPlan, planStatusChange } from '@/utils/holidayQuery'
 import { createId } from '@/utils/id'
 import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
 import type { Holiday, HolidayInput, HolidayRecord, HolidayStatus } from '@/types/holiday'
@@ -35,33 +36,37 @@ function withStudentNames(records: HolidayRecord[], students: Student[]): Holida
 }
 
 /**
- * 假期管理（v3.6.1）：**假期与假期登记的唯一读写入口**。
+ * 假期管理（v3.6.2）：**假期与假期登记的唯一读写入口**。
  *
  * 三份数据、三个键，合成一个 store：
- * - `teacherdesk:holidays`        自定义假期（本模块新增）
- * - `teacherdesk:holidayRecords`  假期登记（本模块新增）
- * - `teacherdesk:weekendReturns`  **周末的回家记录（老键，本模块只读不写形状）**
+ * - `teacherdesk:holidays`        自定义假期
+ * - `teacherdesk:holidayRecords`  假期登记（含 v3.6.2 的学生级备注）
+ * - `teacherdesk:weekendReturns`  **周末的离校记录（老键，本模块只读不写形状）**
  *
  * 为什么不是一个「HolidayStore + WeekendStore + HolidayRecordStore」的三件套：三者在同一个页面、
- * 同一份名单上被同时使用（一个学生的三态要同时看新键与老键），拆开就要互相 import 对方的 state
+ * 同一份名单上被同时使用（一个学生的去向要同时看新键与老键），拆开就要互相 import 对方的 state
  * 才能回答「这个学生现在算什么」，反而把「一个口径一个来源」拆成三处。值日与班费同样是一个 store
  * 装多份数据。
  *
  * ## 周末为什么是两个键
  *
  * 周末在家列表里是一个**虚拟假期**（`id = 'weekend:<周六键>'`，由日期派生，不落库）。
- * 但它的登记记录**分两处装**：回家进老键，留校进新键。理由见 `types/holiday.ts` 顶部的说明——
+ * 但它的记录**分两处装**：离校进老键，留校 / 备注进新键。理由见 `types/holiday.ts` 顶部的说明——
  * 老键的形状一旦被新字段污染，混合版本期间可能整批丢数据。由此带来本模块的两条读法：
  *
- * - **回家优先**：周末的某一期，老键里有这个学生的记录就是「回家」，哪怕新键里还有一条留校标记。
- *   影子记录只被**遮蔽**（派生层忽略），不会自动清掉——教师没点按钮，数据就不该动。
+ * - **离校优先**：周末的某一期，老键里有这个学生的记录就是「离校」，哪怕新键里还有一条
+ *   留校 / 备注影子。影子记录只被**遮蔽**（派生层忽略），不会自动清掉——教师没点按钮，数据就不该动。
  * - 老键的写入仍然只经 `weekendStore.addReturns` / `removeReturn`，本模块不碰它的形状。
  *
- * ## 三态（回家 / 留校 / 未登记）
+ * ## 二态（离校 / 留校）
  *
- * v3.6.1 废掉了「留校 = 在读人数 − 已返家人数」那条**补集口径**——它把「未登记」也算成留校，
- * 而这两件事对班主任是两回事：一个是「问过了，留校」，一个是「还没问」。现在逐人求值：
- * 有记录按记录，没记录才是未登记（`utils/holiday.ts` 的 `statusOf`）。
+ * v3.6.2 删掉了 v3.6.1 的第三态「未登记」：**有离校记录就是离校，没有就是留校**
+ * （`utils/holiday.ts` 的 `statusOf`）。于是「学生总数 = 离校 + 留校」恒成立，
+ * 旧数据里那些「未登记」的学生升级后直接算留校，不迁移、不弹确认。
+ *
+ * 「留校」**不需要**一条记录（`setStatuses` 把某人设为留校时只删他的离校事实，不建新记录）：
+ * 新键里那些 `returnHome: false` 的记录只有两个来源——**学生级备注**（备注必须挂在一条记录上，
+ * 见 `setNote`），以及 v3.6.1 留下的存量记录（本版不做迁移去删它们）。
  *
  * **所有计数一律只算在读学生**（与请假 / 周末同一条纪律）：分母是 `activeStudents`，
  * 已退档学生的记录仍能读出来（历史不该被抹掉，页面用 stale 计数说出来），但不进任何人数。
@@ -93,7 +98,7 @@ export const useHolidayStore = defineStore('holiday', () => {
    * 列表里要出现的周末：**老键有记录的 ∪ 新键有登记的 ∪ 本周末 ∪ 下周末**。
    *
    * 前两项缺一不可——只取老键那份（`weekendStore.weekendKeys`），一个「全员留校、
-   * 无一人回家」的周末就会因为没有回家记录而从列表里消失，而它恰恰是教师刚登记过的那一期。
+   * 无一人离校」的周末就会因为没有离校记录而从列表里消失，而它恰恰是教师刚登记过的那一期。
    */
   const weekendKeys = computed(() => {
     const keys = new Set<string>(weekendStore.weekendKeys)
@@ -112,15 +117,24 @@ export const useHolidayStore = defineStore('holiday', () => {
   /** 打开页面时的默认项：今天落在哪个自定义假期就看它，否则本周末 */
   const currentEntry = computed(() => pickCurrentEntry(entries.value, todayKey.value))
 
-  /** 新键登记的状态查表（`学生 + 假期` → 是否回家），每次改动后重算一次 */
+  /** 新键登记的状态查表（`学生 + 假期` → 是否离校），每次改动后重算一次 */
   const statusIndex = computed(() => buildStatusIndex(records.value))
+
+  /** 学生级备注查表（`学生 + 假期` → 备注），名单逐行取用时不必各自 find 一遍 */
+  const noteIndex = computed(() => {
+    const index = new Map<string, string>()
+    for (const record of records.value) {
+      if (record.note) index.set(recordPairKey(record.holidayId, record.studentId), record.note)
+    }
+    return index
+  })
 
   /** 列表里所有假期的 id（含虚拟周末）——孤儿判定用 */
   const knownHolidayIds = computed(() => new Set(entries.value.map((entry) => entry.holiday.id)))
 
-  /* ---------- 三态 ---------- */
+  /* ---------- 二态 ---------- */
 
-  /** 周末专属：老键里这一期已回家的学生 id；自定义假期返回 undefined（老键只在周末参与判定） */
+  /** 周末专属：老键里这一期已离校的学生 id；自定义假期返回 undefined（老键只在周末参与判定） */
   function weekendRegisteredOf(holidayId: string): Set<string> | undefined {
     const weekendKey = weekendKeyOfHolidayId(holidayId)
     return weekendKey ? weekendStore.registeredIdsOf(weekendKey) : undefined
@@ -134,7 +148,9 @@ export const useHolidayStore = defineStore('holiday', () => {
     return statusOf(holidayId, studentId, statusIndex.value, weekendRegisteredOf(holidayId))
   }
 
-  /** 某个假期的三态人数。分母一律在读学生，三数之和恒等于在读人数 */
+  /**
+   * 某个学生的二态人数。分母一律在读学生，两数之和恒等于在读人数。
+   */
   function countsOf(holidayId: string): Record<HolidayStatus, number> {
     return countStatuses(
       holidayId,
@@ -142,6 +158,39 @@ export const useHolidayStore = defineStore('holiday', () => {
       statusIndex.value,
       weekendRegisteredOf(holidayId),
     )
+  }
+
+  /**
+   * 第三张统计卡片的人数：**离校 ∩ 昌都市外**（规格第 7 节）。
+   *
+   * 它不是第三种状态，只是「离校」里的一个筛选维度，所以这里复用同一个
+   * `statusOf` 出口（`countHomeInScope`），不另写一套判定。
+   */
+  function outsideHomeCountOf(holidayId: string): number {
+    return countHomeInScope(
+      holidayId,
+      activeStudents.value,
+      statusIndex.value,
+      OUTSIDE_CHANGDU_SCOPE,
+      weekendRegisteredOf(holidayId),
+    )
+  }
+
+  /** 某个学生在这个假期里的备注（没有就是空串） */
+  function noteIn(holidayId: string, studentId: string): string {
+    return noteIndex.value.get(recordPairKey(holidayId, studentId)) ?? ''
+  }
+
+  /**
+   * 这个假期有没有任何登记（含老键里的周末离校）。
+   * 首页那张卡片用它区分「教师已经登记过这一期」与「这一期一个人都没动过」——
+   * 计数现在是「离校 + 留校 = 全班」，光看数字分不出这两种情况。
+   */
+  function hasRegistrationsOf(holidayId: string): boolean {
+    if (records.value.some((item) => item.holidayId === holidayId)) return true
+    const weekendKey = weekendKeyOfHolidayId(holidayId)
+    if (!weekendKey) return false
+    return weekendStore.records.some((item) => item.weekendDate === weekendKey)
   }
 
   /**
@@ -163,7 +212,7 @@ export const useHolidayStore = defineStore('holiday', () => {
   }
 
   /**
-   * 本月**回家**人次：老键里周末落在本月的回家记录 ＋ 新键里 `returnHome` 且代表日在本月的记录，
+   * 本月**离校**人次：老键里周末落在本月的离校记录 ＋ 新键里 `returnHome` 且代表日在本月的记录，
    * 都只算在读学生，最后按「学生 + 假期」去重。
    *
    * 为什么要去重：正常情况下同一个学生同一个假期只可能在一处有记录（写入动作保证互斥），
@@ -259,6 +308,10 @@ export const useHolidayStore = defineStore('holiday', () => {
   /**
    * 删除假期会连带的登记数（确认文案用，删除前问）。
    * 只数新键：自定义假期的登记全在新键里，老键不属于任何一个可删的假期。
+   *
+   * 注意它数的是**记录条数**，不是学生人数：留校学生可以没有任何记录（没有记录就是留校），
+   * 所以「全班 62 人、40 人离校」的假期被删时，这里报的是那 40 条离校记录加上显式点过
+   * 「设为留校」/ 写过备注的那几条。文案里写的也是「条登记记录」，不是「人」。
    */
   function cascadeCountOf(id: string): { total: number; home: number; stay: number } {
     let home = 0
@@ -291,11 +344,78 @@ export const useHolidayStore = defineStore('holiday', () => {
     return true
   }
 
+  /* ---------- 学生级备注 ---------- */
+
+  /**
+   * 写入 / 清空某个学生在这个假期里的备注（v3.6.2 规格第 15–20 节），返回是否真的改了。
+   *
+   * 三件事值得说明：
+   * - **备注与去向无关**：留校学生照样能写（没有记录时就为它建一条 `returnHome: false` 的
+   *   记录来装备注——这条记录不参与状态推导，`statusOf` 本来就把「没有记录」当留校）。
+   * - **清空备注**：自定义假期那条记录还可能是「离校」的事实所在（`returnHome: true`），
+   *   那就只摘备注字段、留记录；要是它本来就只为装备注而生（`returnHome: false`），
+   *   整条删掉——「有记录 ⇔ 有离校事实或有备注」这条不变量由此保持干净。
+   * - **幂等**：内容没变就一个字节都不写（同批量登记的纪律），返回 false。
+   *
+   * 调用方（页面）必须把它包在 `runLockedOperation` 里：它有可能是「写一个键」的短动作，
+   * 也可能顺带建 / 删一条记录，与批量登记同一套上云纪律。
+   */
+  function setNote(holidayId: string, studentId: string, note: string): boolean {
+    const weekendKey = weekendKeyOfHolidayId(holidayId)
+    const holiday = weekendKey ? undefined : holidays.value.find((item) => item.id === holidayId)
+    // 假期已被别处删掉（或 id 根本不存在）时拒绝写入：这时候连「代表日」都定不下来
+    if (!weekendKey && !holiday) return false
+
+    const student = activeStudents.value.find((row) => row.id === studentId)
+    if (!student) return false
+
+    const clean = typeof note === 'string' ? note.trim() : ''
+    const index = records.value.findIndex(
+      (item) => item.holidayId === holidayId && item.studentId === studentId,
+    )
+    const current = index === -1 ? undefined : records.value[index]
+    if ((current?.note ?? '') === clean) return false
+
+    if (current && index !== -1) {
+      // 清空一条「只为备注而生」的记录（自定义假期的留校、周末的影子）→ 整条删掉
+      if (!clean && !current.returnHome) {
+        records.value = records.value.filter((_, i) => i !== index)
+        return true
+      }
+      const next: HolidayRecord = { ...current }
+      if (clean) next.note = clean
+      else delete next.note
+      records.value = [...records.value.slice(0, index), next, ...records.value.slice(index + 1)]
+      return true
+    }
+
+    // 没有记录、也没有要写的备注 → 什么都不做（不给留校学生凭空造记录）
+    if (!clean) return false
+
+    const date = weekendKey ?? holiday?.startDate
+    if (!date || !isDateKey(date)) return false
+    records.value = [
+      ...records.value,
+      {
+        id: createId(),
+        holidayId,
+        studentId: student.id,
+        studentName: formatStudentShortName(student, studentStore.nameCounts),
+        date,
+        // 只承载备注的记录：自定义假期里「没有回家记录 = 留校」，这里不额外声明什么
+        returnHome: false,
+        note: clean,
+        createdAt: new Date().toISOString(),
+      },
+    ]
+    return true
+  }
+
   /* ---------- 批量登记 ---------- */
 
   /**
    * 把若干学生的当前处境摊成一次可执行的增删清单（**只读，不写盘**）。
-   * 页面用它写确认文案（「其中 3 人原为回家」），确认之后再调 `setStatuses` 真正落库。
+   * 页面用它写确认文案（「其中 3 人原为离校」），确认之后再调 `setStatuses` 真正落库。
    */
   function previewStatusChange(holidayId: string, studentIds: string[], target: HolidayStatus) {
     const weekendKey = weekendKeyOfHolidayId(holidayId)
@@ -307,18 +427,20 @@ export const useHolidayStore = defineStore('holiday', () => {
           weekendRecordIdByStudent.set(record.studentId, record.id)
       }
     }
-    const holidayRecordIdByStudent = new Map<string, string>()
+    const holidayRecordByStudent = new Map<string, HolidayRecord>()
     for (const record of records.value) {
-      if (record.holidayId === holidayId) holidayRecordIdByStudent.set(record.studentId, record.id)
+      if (record.holidayId === holidayId) holidayRecordByStudent.set(record.studentId, record)
     }
     const inputs = studentIds.map((studentId) => {
       const weekendRecordId = weekendRecordIdByStudent.get(studentId)
-      const holidayRecordId = holidayRecordIdByStudent.get(studentId)
+      const holidayRecord = holidayRecordByStudent.get(studentId)
       return {
         studentId,
         status: statusIn(holidayId, studentId),
         ...(weekendRecordId ? { weekendRecordId } : {}),
-        ...(holidayRecordId ? { holidayRecordId } : {}),
+        ...(holidayRecord ? { holidayRecordId: holidayRecord.id } : {}),
+        // 改向时备注跟着人走：离校改留校不该把教师写的备注顺手丢掉
+        ...(holidayRecord?.note ? { note: holidayRecord.note } : {}),
       }
     })
     return planStatusChange(inputs, target, { isWeekend: weekendKey !== undefined })
@@ -355,7 +477,7 @@ export const useHolidayStore = defineStore('holiday', () => {
     }
     for (const item of weekendRemovals) weekendStore.removeReturn(item.recordId)
 
-    // 2) 再建：周末的回家仍走老键那条既有路径，其余进新键
+    // 2) 再建：周末的离校仍走老键那条既有路径，其余进新键
     if (plan.addWeekend.length && weekendKey) {
       weekendStore.addReturns(weekendKey, plan.addWeekend)
     }
@@ -372,6 +494,7 @@ export const useHolidayStore = defineStore('holiday', () => {
           studentName: formatStudentShortName(student, studentStore.nameCounts),
           date,
           returnHome: item.returnHome,
+          ...(item.note ? { note: item.note } : {}),
           createdAt,
         })
       }
@@ -418,9 +541,13 @@ export const useHolidayStore = defineStore('holiday', () => {
     orphanRecords,
     statusIn,
     countsOf,
+    outsideHomeCountOf,
+    noteIn,
+    hasRegistrationsOf,
     staleCountOf,
     previewStatusChange,
     setStatuses,
+    setNote,
     createHoliday,
     updateHoliday,
     removeHoliday,
@@ -429,7 +556,7 @@ export const useHolidayStore = defineStore('holiday', () => {
   }
 })
 
-/** 计划里「原来的三态」各有多少人 → 总改动人数 */
+/** 计划里「原来的二态」各有多少人 → 总改动人数 */
 function countFrom(counts: Record<HolidayStatus, number>): number {
-  return counts.home + counts.stay + counts.unregistered
+  return counts.home + counts.stay
 }

@@ -6,12 +6,17 @@ import { AppButton } from '@/components/ui'
 /**
  * HolidayBatchBar — 批量登记条（选中若干学生之后出现在底部）。
  *
- * ## 为什么是三个动作而不是规格里的两个
+ * ## 两个动作，正好对应二态
  *
- * 规格第 5 节只写了「批量设为回家 / 批量设为留校」。这两个按钮无法把学生改回**未登记**——
- * 而「未登记」是这次升级的核心概念（旧版的补集口径正是把它混进了留校），教师一定会遇到
- * 「这几个我问过了要撤回」的场景。留着它不可达，等于逼教师去单条删记录。
- * 所以补了第三个「清空登记」，用幽灵样式与两个主操作分开（它撤销信息，不是登记信息）。
+ * v3.6.2 只剩「离校 / 留校」两个去向，所以这里就是两颗按钮：**设为离校 / 设为留校**。
+ * v3.6.1 补的第三颗「清空登记」（退回未登记）随「未登记」一起删掉了——
+ * 撤销一条离校记录的等价动作就是「设为留校」，不需要第三个按钮。
+ *
+ * ## 「全选」不在这里
+ *
+ * 全选是名单顶部那一行（`HolidaySelectAllBar`）的职责：它要带三态（未选 / 部分 / 全选）
+ * 与「已选 X 人」，而这一条只在有选中时才浮出来，做不了「从零开始全选」这件事。
+ * 这里只留「反选 / 取消」这两个**作用于已有选中**的快捷动作。
  *
  * ## 选中跨筛选保留
  *
@@ -24,15 +29,14 @@ const props = defineProps<{
   selectedCount: number
   /** 选中但**不在当前筛选结果里**的人数（正常为 0） */
   outsideCount: number
-  /** 正在落库：三个动作按钮整体禁用，防连点 */
+  /** 正在落库：两个动作按钮整体禁用，防连点 */
   busy?: boolean
 }>()
 
 const emit = defineEmits<{
-  selectAll: []
   clear: []
   invert: []
-  apply: [target: 'home' | 'stay' | 'unregistered']
+  apply: [target: 'home' | 'stay']
 }>()
 
 const DISABLED = computed(() => props.busy || props.selectedCount === 0)
@@ -49,7 +53,6 @@ const DISABLED = computed(() => props.busy || props.selectedCount === 0)
           </span>
         </p>
         <div class="batch-picker">
-          <button type="button" class="batch-link" @click="emit('selectAll')">全选</button>
           <button
             type="button"
             class="batch-link"
@@ -71,18 +74,10 @@ const DISABLED = computed(() => props.busy || props.selectedCount === 0)
 
       <div class="batch-actions">
         <AppButton variant="primary" size="sm" :disabled="DISABLED" @click="emit('apply', 'home')">
-          设为回家
+          设为离校
         </AppButton>
         <AppButton variant="primary" size="sm" :disabled="DISABLED" @click="emit('apply', 'stay')">
           设为留校
-        </AppButton>
-        <AppButton
-          variant="ghost"
-          size="sm"
-          :disabled="DISABLED"
-          @click="emit('apply', 'unregistered')"
-        >
-          清空登记
         </AppButton>
       </div>
     </div>

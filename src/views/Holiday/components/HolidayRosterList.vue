@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Users } from 'lucide-vue-next'
+import { Users, Pencil } from 'lucide-vue-next'
 
 import { EmptyState } from '@/components/ui'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
@@ -7,11 +7,17 @@ import HolidayStatusBadge from './HolidayStatusBadge.vue'
 import type { HolidayRosterRow } from '@/utils/holidayQuery'
 
 /**
- * HolidayRosterList — 假期名单（可多选）。
+ * HolidayRosterList — 假期名单（可多选 + 学生级备注）。
  *
  * **整行就是勾选目标**，不再单独放一个 16px 的小方框：手机上点那个小框是常见误操作，
  * 而这里每一次点选都直接决定接下来「批量设为」会改到谁，点偏一行的代价是改错一个人的去向。
  * 复选框仍然画着，但它是**状态显示**（`pointer-events: none`），点击由整行接管。
+ *
+ * v3.6.2 在这一行里加了**备注**：
+ * - 有备注时在名字下面以一行摘要显示（`备注：由姐姐接回`），**单行截断**——
+ *   长备注不撑高列表（规格第 18 节），要看全文就点右边的备注按钮；
+ * - 右侧那颗小按钮是**独立于选中的编辑入口**（`@click.stop`），
+ *   留校学生同样有它（规格第 20 节）。
  *
  * 学号为空时不显示那一截（真实班级里学号大面积空缺，写一个空的「学号：」更难读）。
  */
@@ -23,7 +29,10 @@ defineProps<{
   filtered: boolean
 }>()
 
-const emit = defineEmits<{ toggle: [studentId: string] }>()
+const emit = defineEmits<{
+  toggle: [studentId: string]
+  editNote: [studentId: string]
+}>()
 </script>
 
 <template>
@@ -57,9 +66,26 @@ const emit = defineEmits<{ toggle: [studentId: string] }>()
             {{ familyScopeLabel(row.student.familyLocation) }}
           </span>
         </span>
+        <span v-if="row.note" class="row-note" :title="row.note">备注：{{ row.note }}</span>
       </span>
 
       <HolidayStatusBadge :status="row.status" />
+
+      <button
+        type="button"
+        class="row-note-btn"
+        :class="{ 'has-note': !!row.note }"
+        :aria-label="
+          row.note ? `编辑 ${row.student.name} 的假期备注` : `为 ${row.student.name} 添加假期备注`
+        "
+        :title="row.note ? '编辑假期备注' : '添加假期备注'"
+        @click.stop="emit('editNote', row.student.id)"
+        @keydown.space.stop
+        @keydown.enter.stop
+      >
+        <Pencil :size="14" :stroke-width="2" aria-hidden="true" />
+        <span v-if="row.note" class="row-note-btn-text">备注</span>
+      </button>
     </div>
   </div>
 
@@ -68,7 +94,9 @@ const emit = defineEmits<{ toggle: [studentId: string] }>()
       :icon="Users"
       :title="filtered ? '没有符合条件的学生' : '还没有在读学生'"
       :description="
-        filtered ? '换个条件再筛，或点「重置」看回全部名单。' : '先到「学生档案」添加学生。'
+        filtered
+          ? '换个条件再筛，或再点一次统计卡片取消筛选看回全部名单。'
+          : '先到「学生档案」添加学生。'
       "
     />
   </div>
@@ -164,6 +192,51 @@ const emit = defineEmits<{ toggle: [studentId: string] }>()
   gap: var(--space-2);
   font-size: var(--font-caption);
   color: var(--color-text-faint);
+}
+
+/* 备注摘要：单行截断，绝不撑高列表（长备注点备注按钮看全文） */
+.row-note {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-note-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* 触控目标：高度 40px，配合行高不会把小屏挤坏 */
+  min-height: 40px;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-button);
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: var(--font-caption);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.row-note-btn:hover {
+  background: var(--color-primary-bg);
+  color: var(--color-primary-dark);
+}
+
+.row-note-btn.has-note {
+  color: var(--color-primary-dark);
+  border-color: var(--color-border-light);
+  background: var(--color-primary-bg);
+}
+
+.row-note-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
 }
 
 .roster-empty {

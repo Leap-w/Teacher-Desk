@@ -74,11 +74,11 @@ const todayLeaveCount = computed(
 const dutyNeedsSetup = computed(() => dutyStore.groups.length > 0 && !dutyStore.settings.startDate)
 
 /**
- * 「今天在过什么假」——首页那张假期卡片的唯一数据来源（v3.6.1 取代旧的周末卡片）。
+ * 「今天在过什么假」——首页那张假期卡片的唯一数据来源。
  *
- * 三态计数一律走 `holidayStore.countsOf()`，**不能用「在读 − 已返家」这个补集算留校**：
- * 那是旧周末页的口径，它把「未登记」也并进了留校，卡片会报出一个看着合理、
- * 实则多出一档的数字（全班 42 个没登记的都被算成留校）。
+ * 二态计数一律走 `holidayStore.countsOf()`：v3.6.2 起「留校」就是**没有离校记录**的学生，
+ * 「离校 + 留校 = 全班」恒成立。**不能用「在读 − 已离校」这个补集算留校**——
+ * 那是旧周末页的口径，它把已经删掉的第三态「未登记」也并进了留校。
  *
  * `currentEntry` 的语义正是「今天在过的假期」：落在哪个自定义假期里就是它，
  * 否则是本周末——`weekendKeys` 恒定含本周末，所以退不到「列表首项」那条保底分支
@@ -88,9 +88,12 @@ const holidayToday = computed(() => {
   const entry = holidayStore.currentEntry
   if (!entry) return undefined
   const counts = holidayStore.countsOf(entry.holiday.id)
-  // 自定义假期**正在进行中**时，一个人都没登记也要说——「还有多少人没登记」正是教师
-  // 此刻要看的数字；周末卡片沿用旧口径：没有任何登记就不占一条动态
-  if (entry.kind !== 'custom' && counts.home + counts.stay === 0) return undefined
+  // 自定义假期**正在进行中**时，一个人都没登记也要说——「这一期大概什么情况」正是教师
+  // 此刻要看的数字；周末卡片沿用旧口径：**一个人都没动过**就不占一条动态
+  // （计数现在是「离校 + 留校 = 全班」，光看数字分不出「没动过」与「都登记过了」，
+  //   所以问 store 一句「这一期有没有任何登记」）
+  if (entry.kind !== 'custom' && !holidayStore.hasRegistrationsOf(entry.holiday.id))
+    return undefined
   return { name: entry.holiday.name, counts }
 })
 
@@ -134,10 +137,10 @@ const classEvents = computed(() => {
     events.push({
       id: 'holiday',
       icon: PlaneLanding,
-      // 有人还没登记时用「注意」色：这一条正是要他去登记的信号
-      tone: holiday.counts.unregistered > 0 ? 'warning' : 'success',
-      title: `${holiday.name} · 回家 ${holiday.counts.home} 人`,
-      desc: `留校 ${holiday.counts.stay} 人 · 未登记 ${holiday.counts.unregistered} 人`,
+      // 有人离校时用成功色（这一期已经有明确去向），全员留校用信息色
+      tone: holiday.counts.home > 0 ? 'success' : 'info',
+      title: `${holiday.name} · 离校 ${holiday.counts.home} 人`,
+      desc: `留校 ${holiday.counts.stay} 人`,
     })
   }
   return events

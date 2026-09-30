@@ -1,5 +1,5 @@
 /**
- * 假期 store 的写入口自检（v3.6.1）。
+ * 假期 store 的写入口自检（v3.6.2）。
  *
  * 这一层盯的是**跨两个存储键的那几条不变量**——纯函数的自检（`holiday.test.ts`）看不到它们：
  *
@@ -16,7 +16,10 @@
  * ③ **幂等**。重复点同一个按钮 = 零写盘、零广播。跨端冲突面随每次写入变大，
  *    一个「点了没反应」的按钮不该在后台推两次云。
  *
- * ④ **回家优先**：老键里的回家记录压过同期的留校影子，且影子只被遮蔽、不被自动清掉。
+ * ④ **离校优先**：老键里的离校记录压过同期的留校影子，且影子只被遮蔽、不被自动清掉。
+ *
+ * ⑤ **v3.6.2**：二态（离校 / 留校，没有记录就是留校）、学生级备注的增改清、
+ *    以及旧数据（没有任何记录的「未登记」学生）升级后直接算留校、不迁移不写盘。
  */
 import { nextTick } from 'vue'
 import { readFileSync } from 'node:fs'
@@ -100,8 +103,8 @@ describe('空数据不写盘（云同步据此走「采纳云端」）', () => {
 
 /* ==================== 三态 ==================== */
 
-describe('三态派生与计数', () => {
-  it('三数之和恒等于在读人数；未登记就是**没有记录**', async () => {
+describe('二态派生与计数', () => {
+  it('离校 + 留校恒等于在读人数；**没有记录就是留校**（旧「未登记」数据直接算留校）', async () => {
     const store = openHoliday()
     const created = store.createHoliday({
       name: '国庆',
@@ -111,19 +114,87 @@ describe('三态派生与计数', () => {
     expect(created).toBeTruthy()
     const id = created!.id
 
-    expect(store.countsOf(id)).toEqual({ home: 0, stay: 0, unregistered: 10 })
+    // 一条记录都没有：全班留校
+    expect(store.countsOf(id)).toEqual({ home: 0, stay: 10 })
+    expect(store.statusIn(id, 's9')).toBe('stay')
 
     store.setStatuses(id, ['s1', 's2', 's3'], 'home')
     store.setStatuses(id, ['s4', 's5'], 'stay')
     await nextTick()
 
-    expect(store.countsOf(id)).toEqual({ home: 3, stay: 2, unregistered: 5 })
+    expect(store.countsOf(id)).toEqual({ home: 3, stay: 7 })
     expect(store.statusIn(id, 's1')).toBe('home')
     expect(store.statusIn(id, 's4')).toBe('stay')
-    expect(store.statusIn(id, 's9')).toBe('unregistered')
-    // 分母永远是在读学生：三数之和 = 10
+    expect(store.statusIn(id, 's9')).toBe('stay')
+    // 分母永远是在读学生：两数之和 = 10
     const counts = store.countsOf(id)
-    expect(counts.home + counts.stay + counts.unregistered).toBe(10)
+    expect(counts.home + counts.stay).toBe(10)
+  })
+
+  it('**「未登记」不再存在**：任何输入都只能得到 home / stay 两种取值', async () => {
+    const store = openHoliday()
+    const created = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!
+    store.setStatuses(created.id, ['s1'], 'home')
+    await nextTick()
+
+    for (const studentId of ['s1', 's2', 's3']) {
+      expect(['home', 'stay']).toContain(store.statusIn(created.id, studentId))
+    }
+    expect(Object.keys(store.countsOf(created.id)).sort()).toEqual(['home', 'stay'])
+  })
+
+  it('第三张卡片（昌都市外离校）= 离校 ∩ 市外，且恒 ≤ 离校', async () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        {
+          id: 's1',
+          name: '甲',
+          studentNo: '01',
+          gender: 'male',
+          familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+        },
+        {
+          id: 's2',
+          name: '乙',
+          studentNo: '02',
+          gender: 'female',
+          familyLocation: { prefecture: '拉萨市', county: '堆龙德庆区', scope: 'outside-changdu' },
+        },
+        {
+          id: 's3',
+          name: '丙',
+          studentNo: '03',
+          gender: 'male',
+          familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+        },
+      ]),
+    )
+    const store = useHolidayStore()
+    const created = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!
+
+    expect(store.outsideHomeCountOf(created.id)).toBe(0)
+
+    store.setStatuses(created.id, ['s1', 's2', 's3'], 'home')
+    await nextTick()
+    expect(store.countsOf(created.id)).toEqual({ home: 3, stay: 0 })
+    expect(store.outsideHomeCountOf(created.id)).toBe(2)
+
+    // 把两位市外学生改成留校：市外离校随之变成 0，而「留校 + 离校 = 全班」不受影响
+    store.setStatuses(created.id, ['s1', 's2'], 'stay')
+    await nextTick()
+    expect(store.outsideHomeCountOf(created.id)).toBe(0)
+    const counts = store.countsOf(created.id)
+    expect(counts.home + counts.stay).toBe(3)
+    expect(store.outsideHomeCountOf(created.id)).toBeLessThanOrEqual(counts.home)
   })
 
   it('已退档学生不进任何人数，但记录仍读得出来（页面用 stale 计数说出来）', async () => {
@@ -141,7 +212,7 @@ describe('三态派生与计数', () => {
     studentStore.removeStudent('s1')
     await nextTick()
 
-    expect(store.countsOf(id)).toEqual({ home: 2, stay: 0, unregistered: 7 })
+    expect(store.countsOf(id)).toEqual({ home: 2, stay: 7 })
     expect(store.staleCountOf(id)).toBe(1)
   })
 
@@ -153,7 +224,8 @@ describe('三态派生与计数', () => {
       endDate: '2026-10-07',
     })
     store.setStatuses(created!.id, ['s1'], 'home')
-    store.setStatuses(WEEKEND_ID, ['s2'], 'stay')
+    // 周末那条新键记录由备注产生（留校本身不落记录，见「设为留校零写盘」那两条）
+    store.setNote(WEEKEND_ID, 's2', '家长来接')
     await nextTick()
 
     const rows = rawArray(RECORDS_KEY)
@@ -165,6 +237,7 @@ describe('三态派生与计数', () => {
       holidayId: WEEKEND_ID,
       date: SAT,
       returnHome: false,
+      note: '家长来接',
     })
   })
 })
@@ -189,17 +262,24 @@ describe('老键 teacherdesk:weekendReturns 的形状冻结', () => {
     expect(rawArray(RECORDS_KEY)).toEqual([])
   })
 
-  it('周末的留校进**新键**，老键一个字节都不动', async () => {
+  it('**设为留校不建任何记录**：撤掉离校事实即可，状态由「没有记录」推导', async () => {
     const store = openHoliday()
+    store.setStatuses(WEEKEND_ID, ['s1'], 'home')
+    await nextTick()
+    expect(rawArray(WEEKEND_KEY)).toHaveLength(1)
+
+    const writesBefore = browser.localStorage.writesFor(RECORDS_KEY)
     store.setStatuses(WEEKEND_ID, ['s1'], 'stay')
     await nextTick()
 
     expect(rawArray(WEEKEND_KEY)).toEqual([])
-    expect(rawArray(RECORDS_KEY)).toHaveLength(1)
-    expect(rawArray(RECORDS_KEY)[0]).toMatchObject({ holidayId: WEEKEND_ID, returnHome: false })
+    // 新键一个字节都没写：没有记录就是留校，不需要为「留校」落一条记录
+    expect(rawArray(RECORDS_KEY)).toEqual([])
+    expect(browser.localStorage.writesFor(RECORDS_KEY)).toBe(writesBefore)
+    expect(store.statusIn(WEEKEND_ID, 's1')).toBe('stay')
   })
 
-  it('回家 → 留校 → 未登记 走一遍：老键里一条不剩（删是因为教师撤了，不是被踩踏）', async () => {
+  it('离校 → 留校 走一遍：老键里一条不剩（删是因为教师撤了，不是被踩踏）', async () => {
     const store = openHoliday()
     store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'home')
     await nextTick()
@@ -209,21 +289,22 @@ describe('老键 teacherdesk:weekendReturns 的形状冻结', () => {
     await nextTick()
     expect(rawArray(WEEKEND_KEY)).toEqual([])
     expect(rawArray(RECORDS_KEY).every((row) => row.returnHome === false)).toBe(true)
+    expect(store.statusIn(WEEKEND_ID, 's1')).toBe('stay')
 
-    store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'unregistered')
+    // 再点一次「设为留校」：已经是留校 → 计划为空 → 一个字节都不写
+    expect(store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'stay')).toBe(0)
     await nextTick()
     expect(rawArray(WEEKEND_KEY)).toEqual([])
-    expect(rawArray(RECORDS_KEY)).toEqual([])
   })
 
-  it('本来就没有登记的周末设为「未登记」：**一个字节都不写**，不凭空造出这个键', async () => {
+  it('本来就没有登记的周末设为「留校」：**一个字节都不写**，不凭空造出这个键', async () => {
     const store = openHoliday()
     expect(readRaw(WEEKEND_KEY)).toBeNull()
 
-    // 计划为空（本来就都是未登记）→ 直接返回 0，两次调用都不该留下任何痕迹
-    expect(store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'unregistered')).toBe(0)
+    // 没有记录就是留校 → 计划为空 → 直接返回 0，两次调用都不该留下任何痕迹
+    expect(store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'stay')).toBe(0)
     await nextTick()
-    expect(store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'unregistered')).toBe(0)
+    expect(store.setStatuses(WEEKEND_ID, ['s1', 's2'], 'stay')).toBe(0)
     await nextTick()
 
     expect(readRaw(WEEKEND_KEY)).toBeNull()
@@ -297,12 +378,220 @@ describe('老键 teacherdesk:weekendReturns 的形状冻结', () => {
   })
 })
 
+/* ==================== 学生级备注（v3.6.2） ==================== */
+
+describe('学生级假期备注', () => {
+  it('自定义假期：新增 / 修改 / 清空备注，状态与去向都不受影响', async () => {
+    const store = openHoliday()
+    const id = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!.id
+
+    // 离校学生写备注：备注挂在同一条记录上，returnHome 不变
+    store.setStatuses(id, ['s1'], 'home')
+    await nextTick()
+    expect(store.setNote(id, 's1', '由姐姐接回')).toBe(true)
+    await nextTick()
+    expect(store.noteIn(id, 's1')).toBe('由姐姐接回')
+    expect(store.statusIn(id, 's1')).toBe('home')
+    expect(rawArray(RECORDS_KEY)[0]).toMatchObject({
+      studentId: 's1',
+      returnHome: true,
+      note: '由姐姐接回',
+    })
+
+    // 修改
+    expect(store.setNote(id, 's1', '  家长到校接送  ')).toBe(true)
+    await nextTick()
+    expect(store.noteIn(id, 's1')).toBe('家长到校接送')
+
+    // 幂等：内容没变 = 零写盘
+    const writesBefore = browser.localStorage.writesFor(RECORDS_KEY)
+    expect(store.setNote(id, 's1', '家长到校接送')).toBe(false)
+    await nextTick()
+    expect(browser.localStorage.writesFor(RECORDS_KEY)).toBe(writesBefore)
+
+    // 清空：只摘备注字段，离校这条事实记录还在（「清空备注」不是「删除登记」）
+    expect(store.setNote(id, 's1', '')).toBe(true)
+    await nextTick()
+    expect(store.noteIn(id, 's1')).toBe('')
+    const row = rawArray(RECORDS_KEY)[0]!
+    expect(row.returnHome).toBe(true)
+    expect(row).not.toHaveProperty('note')
+    expect(store.statusIn(id, 's1')).toBe('home')
+  })
+
+  it('**留校学生同样可以写备注**（没有记录就为它建一条 returnHome: false 的记录来装备注）', async () => {
+    const store = openHoliday()
+    const id = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!.id
+
+    // s2 一条记录都没有，此刻就是留校
+    expect(store.statusIn(id, 's2')).toBe('stay')
+    expect(store.setNote(id, 's2', '假期参加学校统一活动')).toBe(true)
+    await nextTick()
+
+    expect(store.noteIn(id, 's2')).toBe('假期参加学校统一活动')
+    expect(store.statusIn(id, 's2')).toBe('stay')
+    expect(store.countsOf(id)).toEqual({ home: 0, stay: 10 })
+    expect(rawArray(RECORDS_KEY)[0]).toMatchObject({
+      studentId: 's2',
+      returnHome: false,
+      note: '假期参加学校统一活动',
+    })
+
+    // 清空后那条「只为备注而生」的记录被整条删掉：有记录 ⇔ 有离校事实或有备注；
+    // 留校的推导丝毫不受影响（没有记录就是留校）
+    expect(store.setNote(id, 's2', '')).toBe(true)
+    await nextTick()
+    expect(store.noteIn(id, 's2')).toBe('')
+    expect(store.statusIn(id, 's2')).toBe('stay')
+    expect(rawArray(RECORDS_KEY)).toEqual([])
+  })
+
+  it('改向时备注跟着人走：离校 → 留校 → 离校 备注一直在', async () => {
+    const store = openHoliday()
+    const id = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!.id
+
+    store.setStatuses(id, ['s1'], 'home')
+    store.setNote(id, 's1', '由姐姐接回')
+    await nextTick()
+
+    store.setStatuses(id, ['s1'], 'stay')
+    await nextTick()
+    expect(store.statusIn(id, 's1')).toBe('stay')
+    expect(store.noteIn(id, 's1')).toBe('由姐姐接回')
+
+    store.setStatuses(id, ['s1'], 'home')
+    await nextTick()
+    expect(store.statusIn(id, 's1')).toBe('home')
+    expect(store.noteIn(id, 's1')).toBe('由姐姐接回')
+  })
+
+  it('周末的备注落在新键，离校事实仍在老键（老键形状一个字节不动）', async () => {
+    const store = openHoliday()
+    store.setStatuses(WEEKEND_ID, ['s1'], 'home')
+    await nextTick()
+
+    expect(store.setNote(WEEKEND_ID, 's1', '家长来接')).toBe(true)
+    await nextTick()
+
+    expect(store.noteIn(WEEKEND_ID, 's1')).toBe('家长来接')
+    // 离校事实在老键里，状态不受新键那条影子影响
+    expect(store.statusIn(WEEKEND_ID, 's1')).toBe('home')
+    for (const row of rawArray(WEEKEND_KEY)) {
+      expect(Object.keys(row).sort()).toEqual(
+        ['createdAt', 'id', 'studentId', 'studentName', 'weekendDate'].sort(),
+      )
+    }
+    expect(rawArray(RECORDS_KEY)).toEqual([
+      expect.objectContaining({ holidayId: WEEKEND_ID, returnHome: false, note: '家长来接' }),
+    ])
+  })
+})
+
+/* ==================== 旧数据兼容 ==================== */
+
+describe('v3.6.1 旧数据升级（没有迁移、不弹确认、一个字节都不写）', () => {
+  it('旧的「未登记」学生（没有任何记录）升级后直接是留校；已有的离校记录一条不丢', () => {
+    // 一份 v3.6.1 的现场：3 个人有记录（2 离校 / 1 留校），其余 7 人当年是「未登记」
+    browser.localStorage.seed(STUDENTS_KEY, JSON.stringify(squad(10)))
+    browser.localStorage.seed(
+      RECORDS_KEY,
+      JSON.stringify([
+        {
+          id: 'r1',
+          holidayId: 'old-holiday',
+          studentId: 's1',
+          studentName: '学生01',
+          date: '2026-10-01',
+          returnHome: true,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+        {
+          id: 'r2',
+          holidayId: 'old-holiday',
+          studentId: 's2',
+          studentName: '学生02',
+          date: '2026-10-01',
+          returnHome: true,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+        {
+          id: 'r3',
+          holidayId: 'old-holiday',
+          studentId: 's3',
+          studentName: '学生03',
+          date: '2026-10-01',
+          returnHome: false,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ]),
+    )
+    browser.localStorage.seed(
+      HOLIDAYS_KEY,
+      JSON.stringify([
+        {
+          id: 'old-holiday',
+          name: '国庆',
+          startDate: '2026-10-01',
+          endDate: '2026-10-07',
+          createdAt: '2026-09-01T00:00:00.000Z',
+          updatedAt: '2026-09-01T00:00:00.000Z',
+        },
+      ]),
+    )
+
+    const store = useHolidayStore()
+    expect(store.statusIn('old-holiday', 's1')).toBe('home')
+    expect(store.statusIn('old-holiday', 's3')).toBe('stay')
+    // 当年没有任何记录的 7 人：升级后就是留校
+    expect(store.statusIn('old-holiday', 's7')).toBe('stay')
+    expect(store.countsOf('old-holiday')).toEqual({ home: 2, stay: 8 })
+    expect(store.noteIn('old-holiday', 's1')).toBe('')
+  })
+
+  it('加载旧数据**不写盘**：没有迁移脚本、没有补记录', () => {
+    browser.localStorage.seed(STUDENTS_KEY, JSON.stringify(squad(10)))
+    browser.localStorage.seed(
+      RECORDS_KEY,
+      JSON.stringify([
+        {
+          id: 'r1',
+          holidayId: 'old-holiday',
+          studentId: 's1',
+          studentName: '学生01',
+          date: '2026-10-01',
+          returnHome: true,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ]),
+    )
+    const store = useHolidayStore()
+    // 把三条读路径都跑一遍（读盘、计数、逐人判定），再断言「一个字节都没写」
+    expect(store.records).toHaveLength(1)
+    expect(store.countsOf('old-holiday')).toEqual({ home: 1, stay: 9 })
+    expect(store.statusIn('old-holiday', 's5')).toBe('stay')
+    expect(browser.localStorage.writesFor(RECORDS_KEY)).toBe(0)
+    expect(browser.localStorage.writesFor(WEEKEND_KEY)).toBe(0)
+  })
+})
+
 /* ==================== 批量：只改选中的人 ==================== */
 
 describe('批量登记只作用于选中的学生', () => {
   it('10 人里选 5 人设为回家：**另 5 人的记录逐字节不变**', async () => {
     const store = openHoliday()
-    // 先让后 5 人处在某个非「未登记」的状态，这样「有没有被碰到」才看得出来
+    // 先让后 5 人都有离校记录，这样「有没有被碰到」才看得出来
     store.setStatuses(WEEKEND_ID, ['s6', 's7', 's8', 's9', 's10'], 'home')
     await nextTick()
     const untouchedBefore = rawArray(WEEKEND_KEY)
@@ -320,7 +609,7 @@ describe('批量登记只作用于选中的学生', () => {
     expect(untouchedAfter).toEqual(untouchedBefore)
 
     // 选中的那 5 人也确实被登记了
-    expect(store.countsOf(WEEKEND_ID)).toEqual({ home: 10, stay: 0, unregistered: 0 })
+    expect(store.countsOf(WEEKEND_ID)).toEqual({ home: 10, stay: 0 })
   })
 
   it('函数没有「取全班」的入口：只传 3 个人，另外 7 个人一动不动', async () => {
@@ -331,10 +620,10 @@ describe('批量登记只作用于选中的学生', () => {
       endDate: '2026-10-07',
     })
     const id = created!.id
-    store.setStatuses(id, ['s1', 's2', 's3'], 'stay')
+    store.setStatuses(id, ['s1', 's2', 's3'], 'home')
     await nextTick()
 
-    expect(store.countsOf(id)).toEqual({ home: 0, stay: 3, unregistered: 7 })
+    expect(store.countsOf(id)).toEqual({ home: 3, stay: 7 })
     expect(rawArray(RECORDS_KEY)).toHaveLength(3)
   })
 
@@ -353,15 +642,17 @@ describe('批量登记只作用于选中的学生', () => {
     expect(FakeBroadcastChannel.postedTotal()).toBe(broadcastsBefore)
   })
 
-  it('改向时对侧记录被删干净：不存在「既回家又留校」', async () => {
+  it('改向时对侧记录被删干净：不存在「既离校又留校」', async () => {
     const store = openHoliday()
     store.setStatuses(WEEKEND_ID, ['s1'], 'home')
     await nextTick()
+    expect(rawArray(WEEKEND_KEY)).toHaveLength(1)
 
     store.setStatuses(WEEKEND_ID, ['s1'], 'stay')
     await nextTick()
     expect(rawArray(WEEKEND_KEY)).toEqual([])
-    expect(rawArray(RECORDS_KEY)).toHaveLength(1)
+    expect(rawArray(RECORDS_KEY)).toEqual([])
+    expect(store.statusIn(WEEKEND_ID, 's1')).toBe('stay')
 
     store.setStatuses(WEEKEND_ID, ['s1'], 'home')
     await nextTick()
@@ -426,11 +717,12 @@ describe('假期本身的增删改', () => {
       endDate: '2026-11-03',
     })!
     store.setStatuses(national.id, ['s1', 's2'], 'home')
-    store.setStatuses(national.id, ['s3'], 'stay')
+    // 留校学生本身不落记录（没有记录就是留校）；他写了备注才会多出一条记录
+    store.setNote(national.id, 's3', '假期参加学校统一活动')
     store.setStatuses(state.id, ['s4'], 'home')
     await nextTick()
 
-    // 确认文案里的数字 = 实际会被删掉的条数
+    // 确认文案里的数字 = 实际会被删掉的**记录条数**（不是学生人数）
     expect(store.cascadeCountOf(national.id)).toEqual({ total: 3, home: 2, stay: 1 })
 
     expect(store.removeHoliday(national.id)).toBe(true)
@@ -453,9 +745,8 @@ describe('列表派生与孤儿登记', () => {
       startDate: '2026-10-01',
       endDate: '2026-10-07',
     })!
-    // 一个**全员留校、无一人回家**的周末：老键里一条记录都没有，
-    // 只按老键推导的话这一期会从列表里消失，而它恰恰是刚登记过的那一期
-    store.setStatuses(WEEKEND_ID, ['s1'], 'stay')
+    // 这一期有人登记过离校 → 它必须出现在列表里（「有记录的周末」是列表的一项派生条件）
+    store.setStatuses(WEEKEND_ID, ['s1'], 'home')
     await nextTick()
 
     const ids = store.entries.map((entry) => entry.holiday.id)

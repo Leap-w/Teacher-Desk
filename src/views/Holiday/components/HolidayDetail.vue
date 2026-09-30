@@ -15,13 +15,21 @@ import {
   holidayExportFilename,
   type HolidayExportScope,
 } from '@/utils/holidayExport'
-import { filterRoster } from '@/utils/holidayQuery'
+import {
+  filterRoster,
+  selectAllState,
+  toggleSelectAll,
+  type HolidayCardFilter,
+} from '@/utils/holidayQuery'
 import { formatDateKey } from '@/utils/date'
 import { useNow } from '@/composables/useToday'
 import HolidayBatchBar from './HolidayBatchBar.vue'
 import HolidayExportMenu from './HolidayExportMenu.vue'
 import HolidayFilterDrawer from './HolidayFilterDrawer.vue'
+import HolidayNoteModal from './HolidayNoteModal.vue'
 import HolidayRosterList from './HolidayRosterList.vue'
+import HolidaySelectAllBar from './HolidaySelectAllBar.vue'
+import HolidayStatCards from './HolidayStatCards.vue'
 import type { HolidayEntry, HolidayStatus } from '@/types/holiday'
 import type { HolidayRosterFilters } from '@/utils/holidayQuery'
 
@@ -32,8 +40,16 @@ import type { HolidayRosterFilters } from '@/utils/holidayQuery'
  * 刷新会回到列表——这是为了不给 CloudBase 静态托管多出一堆动态占位付的代价，
  * 而详情本来就只在「刚登记完接着核对」这一个动作里停留。
  *
- * 页面自己不做任何计数：三态人数问 `holidayStore.countsOf`，名单问 `filterRoster`，
- * 落库问 `holidayStore.setStatuses`。页面只负责把按钮和它们接起来（§11.1）。
+ * 页面自己不做任何计数：二态人数问 `holidayStore.countsOf`、市外离校问
+ * `holidayStore.outsideHomeCountOf`、名单问 `filterRoster`、落库问 `holidayStore.setStatuses`
+ * / `holidayStore.setNote`。页面只负责把按钮和它们接起来（§11.1）。
+ *
+ * ## v3.6.2 的结构调整（规格第 14 节）
+ *
+ *     假期名称与信息 → [编辑] [删除] → 三张统计卡片 → 全选 → 学生名单
+ *
+ * 「编辑 / 删除假期」从名单**下方**移到了统计卡片**上方**：62 人的名单会把它们推到页面底部，
+ * 而这两个动作与名单上的学生无关，不该被名单的长度推到看不见的地方。
  */
 const props = defineProps<{ entry: HolidayEntry }>()
 
@@ -57,27 +73,53 @@ const isWeekend = computed(() => props.entry.kind === 'weekend')
 const filters = ref<HolidayRosterFilters>({ keyword: '' })
 const filterOpen = ref(false)
 
-/** 三态判定：**只经 store 这一个出口**，页面不自己拼「先查老键再查新键」 */
-const statusOf = (studentId: string) => holidayStore.statusIn(holidayId.value, studentId)
+/**
+ * 顶部统计卡片的快捷筛选。它是**独立于筛选抽屉**的一维：
+ * 抽屉管「姓名 / 性别 / 家庭所在地 / 亲属」，卡片管「去向」，
+ * 两者 AND 组合。再点一次当前卡片即取消（不新增第四张「全部」卡片）。
+ */
+const card = ref<HolidayCardFilter | undefined>(undefined)
 
-const rows = computed(() => filterRoster(holidayStore.activeStudents, filters.value, statusOf))
-/** 不筛的完整名单：「全选」的全是按筛选结果算的，但「全部名单」导出与选中人数的分母都要它 */
-const allRows = computed(() => filterRoster(holidayStore.activeStudents, { keyword: '' }, statusOf))
+/** 二态判定：**只经 store 这一个出口**，页面不自己拼「先查老键再查新键」 */
+const statusOf = (studentId: string) => holidayStore.statusIn(holidayId.value, studentId)
+/** 学生级备注：同样只经 store（它建了 `学生 + 假期` 的查表，不在逐行 find 一遍） */
+const noteOf = (studentId: string) => holidayStore.noteIn(holidayId.value, studentId)
+
+const activeFilters = computed<HolidayRosterFilters>(() => ({
+  ...filters.value,
+  ...(card.value ? { card: card.value } : {}),
+}))
+
+const rows = computed(() =>
+  filterRoster(holidayStore.activeStudents, activeFilters.value, statusOf, noteOf),
+)
+/** 不筛的完整名单：「全部名单」导出与「已选人数」的分母都要它 */
+const allRows = computed(() =>
+  filterRoster(holidayStore.activeStudents, { keyword: '' }, statusOf, noteOf),
+)
 
 const counts = computed(() => holidayStore.countsOf(holidayId.value))
+/** 第三张卡片：离校 ∩ 昌都市外（不是第三种状态，只是离校里的一维） */
+const outsideHomeCount = computed(() => holidayStore.outsideHomeCountOf(holidayId.value))
 const staleCount = computed(() => holidayStore.staleCountOf(holidayId.value))
 
-/** 有几组条件在生效（「全部」不算），决定筛选按钮上的角标 */
+function toggleCard(key: HolidayCardFilter): void {
+  card.value = card.value === key ? undefined : key
+}
+
+/** 有几组**抽屉里的**条件在生效（「全部」不算），决定筛选按钮上的角标 */
 const activeFilterCount = computed(() => {
   const value = filters.value
   return (
     (value.keyword.trim() ? 1 : 0) +
     (value.gender ? 1 : 0) +
     (value.scope ? 1 : 0) +
-    (value.relative === undefined ? 0 : 1) +
-    (value.status ? 1 : 0)
+    (value.relative === undefined ? 0 : 1)
   )
 })
+
+/** 名单是否被任何一路筛过（卡片或抽屉）——决定空态文案是「筛没了」还是「本来就没人」 */
+const hasFilter = computed(() => activeFilterCount.value > 0 || card.value !== undefined)
 
 /* ---------- 多选 ---------- */
 
@@ -86,6 +128,10 @@ const selectedIds = ref<Set<string>>(new Set())
 const selectedRows = computed(() =>
   allRows.value.filter((row) => selectedIds.value.has(row.student.id)),
 )
+
+/** 当前筛选结果的 id 列表与它的全选三态（判据口径在 `selectAllState` 里，只实现一次） */
+const visibleIds = computed(() => rows.value.map((row) => row.student.id))
+const selectAllStage = computed(() => selectAllState(visibleIds.value, selectedIds.value))
 
 /**
  * 选中但**不在当前筛选结果里**的人数。
@@ -107,9 +153,14 @@ function toggle(studentId: string): void {
   selectedIds.value = next
 }
 
-/** 全选 = 用**当前筛选结果**替换选中（不是追加：「全选」这个词在教师心里就是「屏幕上这些都要」） */
-function selectAll(): void {
-  selectedIds.value = new Set(rows.value.map((row) => row.student.id))
+/**
+ * 全选 / 取消全选 —— **只作用于当前筛选结果**（规格第 10 节）。
+ *
+ * 口径在纯函数 `toggleSelectAll` 里（连「取消时只移除当前结果里的 id」那条也在那儿），
+ * 页面这一层只负责把它接上选中集合。
+ */
+function toggleAllVisible(): void {
+  selectedIds.value = toggleSelectAll(visibleIds.value, selectedIds.value)
 }
 
 function clearSelection(): void {
@@ -126,6 +177,46 @@ function invertSelection(): void {
   selectedIds.value = next
 }
 
+/* ---------- 学生级备注 ---------- */
+
+/**
+ * 待编辑备注的学生 id。**和删除假期同一套写法**：保存后不清空——弹窗关闭有淡出动画，
+ * 动画期间它仍在渲染，清掉会让名字先变空再消失（§9.8 记录项）。
+ * `undefined` = 弹窗关着（保存空备注是合法操作，不能拿「空」当关闭信号）。
+ */
+const noteTarget = ref<string | undefined>(undefined)
+const noteBusy = ref(false)
+
+const noteStudent = computed(() => {
+  const id = noteTarget.value
+  if (!id) return undefined
+  return allRows.value.find((row) => row.student.id === id)?.student
+})
+
+const noteValue = computed(() => (noteTarget.value ? noteOf(noteTarget.value) : ''))
+const noteStatus = computed<HolidayStatus>(() =>
+  noteTarget.value ? statusOf(noteTarget.value) : 'stay',
+)
+
+function askNote(studentId: string): void {
+  noteTarget.value = studentId
+}
+
+async function saveNote(note: string): Promise<void> {
+  const studentId = noteTarget.value
+  if (!studentId) return
+  noteBusy.value = true
+  try {
+    const changed = await runLockedOperation('holiday-note', () =>
+      holidayStore.setNote(holidayId.value, studentId, note),
+    )
+    noteTarget.value = undefined
+    toast.success(changed ? '备注已保存' : '备注没有变化')
+  } finally {
+    noteBusy.value = false
+  }
+}
+
 /* ---------- 批量登记（先确认，再落库） ---------- */
 
 const pendingTarget = ref<HolidayStatus | undefined>(undefined)
@@ -138,7 +229,7 @@ const pendingCounts = computed(() =>
         selectedRows.value.map((row) => row.student.id),
         pendingTarget.value,
       ).fromCounts
-    : { home: 0, stay: 0, unregistered: 0 },
+    : { home: 0, stay: 0 },
 )
 
 function askApply(target: HolidayStatus): void {
@@ -150,11 +241,11 @@ function askApply(target: HolidayStatus): void {
   pendingTarget.value = target
 }
 
-/** 确认弹窗里的「其中 3 人原为回家」——数字取自预览计划，不是页面上再数一遍 */
+/** 确认弹窗里的「其中 3 人原为离校」——数字取自预览计划，不是页面上再数一遍 */
 const pendingBreakdown = computed(() => {
   const parts: string[] = []
   const from = pendingCounts.value
-  for (const status of ['home', 'stay', 'unregistered'] as const) {
+  for (const status of ['home', 'stay'] as const) {
     if (from[status] > 0) parts.push(`原为${HOLIDAY_STATUS_LABELS[status]} ${from[status]} 人`)
   }
   return parts.join(' · ')
@@ -242,21 +333,27 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
 
     <p v-if="entry.holiday.note" class="holiday-note">{{ entry.holiday.note }}</p>
 
-    <!-- ===== 三态统计条（规格第 3 节：替代原「家庭地区分布」卡） ===== -->
-    <section class="stat-bar" aria-label="假期去向统计">
-      <div class="stat is-home">
-        <span class="stat-num">{{ counts.home }}</span>
-        <span class="stat-label">回家</span>
-      </div>
-      <div class="stat is-stay">
-        <span class="stat-num">{{ counts.stay }}</span>
-        <span class="stat-label">留校</span>
-      </div>
-      <div class="stat is-blank">
-        <span class="stat-num">{{ counts.unregistered }}</span>
-        <span class="stat-label">未登记</span>
-      </div>
-    </section>
+    <!-- ===== 编辑 / 删除：**在统计卡片与名单之上**（v3.6.2 规格第 14 节） ===== -->
+    <!-- 虚拟周末不可编辑 / 删除：日期由日历决定，删了下次刷新还会回来 -->
+    <div v-if="!isWeekend" class="action-row">
+      <AppButton variant="ghost" size="sm" @click="emit('edit')">
+        <Pencil :size="15" :stroke-width="2" aria-hidden="true" />
+        编辑
+      </AppButton>
+      <AppButton variant="danger" size="sm" @click="emit('remove')">
+        <Trash2 :size="15" :stroke-width="2" aria-hidden="true" />
+        删除
+      </AppButton>
+    </div>
+
+    <!-- ===== 三张统计卡片：也是三档快捷筛选（规格第 7–9 节） ===== -->
+    <HolidayStatCards
+      :home="counts.home"
+      :stay="counts.stay"
+      :outside="outsideHomeCount"
+      :active="card"
+      @select="toggleCard"
+    />
 
     <p v-if="staleCount" class="stale-note">
       另有 {{ staleCount }} 条已不在档案的登记（不计入上面的人数），改这些学生的去向请先恢复档案。
@@ -276,30 +373,30 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
       />
     </div>
 
+    <!-- ===== 名单：全选 + 学生列表 ===== -->
     <section class="roster-section">
       <h2 class="section-title">
         名单<span class="section-sub"> {{ rows.length }} / {{ allRows.length }} 人 </span>
       </h2>
+
+      <HolidaySelectAllBar
+        class="roster-select-all"
+        :state="selectAllStage"
+        :visible-total="rows.length"
+        :selected-count="selectedIds.size"
+        :outside-count="outsideCount"
+        @toggle-all="toggleAllVisible"
+      />
+
       <HolidayRosterList
         :rows="rows"
         :selected-ids="selectedIds"
         :name-counts="studentStore.nameCounts"
-        :filtered="activeFilterCount > 0"
+        :filtered="hasFilter"
         @toggle="toggle"
+        @edit-note="askNote"
       />
     </section>
-
-    <!-- 虚拟周末不可编辑 / 删除：日期由日历决定，删了下次刷新还会回来 -->
-    <div v-if="!isWeekend" class="danger-row">
-      <AppButton variant="ghost" size="sm" @click="emit('edit')">
-        <Pencil :size="15" :stroke-width="2" aria-hidden="true" />
-        编辑这个假期
-      </AppButton>
-      <AppButton variant="danger" size="sm" @click="emit('remove')">
-        <Trash2 :size="15" :stroke-width="2" aria-hidden="true" />
-        删除这个假期
-      </AppButton>
-    </div>
 
     <!-- 批量条只在有选中时出现，并且给名单留出它占的高度，避免最后一行被压在下面 -->
     <div v-if="selectedIds.size > 0" class="batch-spacer" aria-hidden="true" />
@@ -308,13 +405,23 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
       :selected-count="selectedIds.size"
       :outside-count="outsideCount"
       :busy="batchBusy"
-      @select-all="selectAll"
       @clear="clearSelection"
       @invert="invertSelection"
       @apply="askApply"
     />
 
     <HolidayFilterDrawer v-model="filterOpen" :filters="filters" @apply="filters = $event" />
+
+    <HolidayNoteModal
+      :model-value="noteTarget !== undefined"
+      :student="noteStudent"
+      :status="noteStatus"
+      :note="noteValue"
+      :name-counts="studentStore.nameCounts"
+      :busy="noteBusy"
+      @update:model-value="noteTarget = undefined"
+      @save="saveNote"
+    />
 
     <AppModal
       :model-value="pendingTarget !== undefined"
@@ -328,10 +435,7 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
         人设为「
         <strong>{{ pendingTarget ? HOLIDAY_STATUS_LABELS[pendingTarget] : '' }}</strong>
         」？<template v-if="pendingBreakdown"> <br />其中 {{ pendingBreakdown }}。 </template>
-        <template v-if="pendingTarget === 'unregistered'">
-          <br />这会删掉他们的登记记录，之后这一期的名单上他们就是「未登记」。
-        </template>
-        <br />其他学生（包括已退档的）一条记录都不会动。
+        <br />学生级备注会保留，其他学生（包括已退档的）一条记录都不会动。
       </p>
       <template #footer>
         <AppButton variant="ghost" @click="pendingTarget = undefined">取消</AppButton>
@@ -418,48 +522,11 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
   white-space: pre-wrap;
 }
 
-.stat-bar {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-2);
-}
-
-.stat {
+/* 编辑 / 删除：紧跟在假期信息下面，不被名单长度推到页面底部 */
+.action-row {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: var(--space-3) var(--space-2);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-lg);
-  background: var(--color-bg-white);
-}
-
-.stat-num {
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-primary);
-}
-
-.stat-label {
-  font-size: var(--font-caption);
-  color: var(--color-text-tertiary);
-}
-
-.stat.is-home {
-  background: var(--color-primary-soft);
-  border-color: transparent;
-}
-
-.stat.is-stay {
-  background: var(--color-success-soft);
-  border-color: transparent;
-}
-
-.stat.is-blank {
-  background: var(--color-fill-disabled);
-  border-color: transparent;
+  gap: var(--space-2);
+  margin-bottom: var(--spacing-lg);
 }
 
 .stale-note {
@@ -504,12 +571,8 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
   color: var(--color-text-tertiary);
 }
 
-.danger-row {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: var(--spacing-lg);
-  padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--color-border-light);
+.roster-select-all {
+  margin-bottom: var(--space-3);
 }
 
 /* 批量条是 fixed，占位块保证最后一行不被压在它下面 */

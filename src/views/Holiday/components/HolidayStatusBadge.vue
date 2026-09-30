@@ -7,18 +7,17 @@ import type { BadgeVariant } from '@/types'
 import type { HolidayStatus } from '@/types/holiday'
 
 /**
- * HolidayStatusBadge — 三态徽章（回家 / 留校 / 未登记）。
+ * HolidayStatusBadge — 二态徽章（离校 / 留校，v3.6.2）。
  *
- * 配色的依据是**信息的确定程度**，不是「好坏」：回家与留校都是教师登记过的事实，
- * 给两种不同的实色；「未登记」用中性灰——它不是一种去向，是**还没有去向**，
- * 灰让它在一列徽章里一眼就能被挑出来（这批人正是教师下一步要去问的）。
+ * 两种都是**确定的结果**，不再是「登记过 / 还没登记」的分别，所以都给实色：
+ * 离校（登记了回家）用主色，留校（没有登记回家）用成功色——留校不是「缺了一条数据」，
+ * 它是本版的默认结论，不该再拿中性灰去暗示「还空着」（v3.6.1 的「未登记」正是那种灰）。
  */
 const props = defineProps<{ status: HolidayStatus }>()
 
 const VARIANTS: Record<HolidayStatus, BadgeVariant> = {
   home: 'primary',
   stay: 'success',
-  unregistered: 'neutral',
 }
 
 const variant = computed(() => VARIANTS[props.status])

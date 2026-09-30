@@ -10,10 +10,12 @@ import type { HolidayEntry, HolidayStatus } from '@/types/holiday'
  * HolidayCard — 假期列表里的一张卡（自定义假期与虚拟周末共用）。
  *
  * 一张卡要回答三个问题：**这是哪一段**（名称 + 日期）、**离现在多远**（还有 N 天 / 进行中 /
- * 已结束）、**登记得怎么样了**（三态）。三样都在同一行视线里，教师不用点进去就知道该处理哪个。
+ * 已结束）、**登记得怎么样了**（离校 / 留校）。三样都在同一行视线里，教师不用点进去就知道该处理哪个。
  *
- * 底部的三态条是**比例条**不是图表：它只回答「这一期大概登记到什么程度了」，
+ * 底部的二态条是**比例条**不是图表：它只回答「这一期大概什么情况」，
  * 具体数字就在下面写着，不给人「读图」的负担（§2.3 不做图表）。
+ *
+ * v3.6.2：「未登记」这一段已删——两段之和恒等于全班，条上不再有留白那一段。
  */
 const props = defineProps<{
   entry: HolidayEntry
@@ -22,7 +24,7 @@ const props = defineProps<{
 }>()
 
 const holiday = computed(() => props.entry.holiday)
-const total = computed(() => props.counts.home + props.counts.stay + props.counts.unregistered)
+const total = computed(() => props.counts.home + props.counts.stay)
 
 /** 比例条的段宽（百分比）。总数为 0 时不画（全班都退档了这种边角，别画一根空条） */
 function widthOf(count: number): string {
@@ -50,12 +52,10 @@ function widthOf(count: number): string {
     <div class="card-bar" aria-hidden="true">
       <span class="bar-seg is-home" :style="{ width: widthOf(counts.home) }" />
       <span class="bar-seg is-stay" :style="{ width: widthOf(counts.stay) }" />
-      <span class="bar-seg is-blank" :style="{ width: widthOf(counts.unregistered) }" />
     </div>
 
     <p class="card-counts">
-      回家 <strong>{{ counts.home }}</strong> · 留校 <strong>{{ counts.stay }}</strong> · 未登记
-      <strong>{{ counts.unregistered }}</strong>
+      离校 <strong>{{ counts.home }}</strong> · 留校 <strong>{{ counts.stay }}</strong>
     </p>
   </button>
 </template>
@@ -144,11 +144,6 @@ function widthOf(count: number): string {
 
 .bar-seg.is-stay {
   background: var(--color-success);
-}
-
-.bar-seg.is-blank {
-  /* 未被登记的段落不填色，让底色透出来——「还空着」正是这一段的含义 */
-  background: transparent;
 }
 
 .card-counts {

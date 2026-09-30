@@ -1,16 +1,16 @@
 /**
- * 假期名单导出的自检（v3.6.1，规格第 7 节）。
+ * 假期名单导出的自检（v3.6.2，规格第 7 节）。
  *
  * 这一层盯的是**「屏幕上看着都对、导出来才发现错」**的那几类事——它们不会报错，
  * 也不会让页面有任何异常，只有把文件打开逐格看才看得出来：
  *
- * ① **「未填」不能写成「无」**。这是本次升级里「三态不可折叠」在导出上的落点：
- *    空格 = 还没问过、要去问，「无」= 问过了、确实没有。写成「无」等于替教师
- *    回答了没问过的问题，而他再也没法从这份表里把这两批人分回来。
+ * ① **「未填」不能写成「无」**。空格 = 还没问过、要去问，「无」= 问过了、确实没有。
+ *    写成「无」等于替教师回答了没问过的问题，而他再也没法从这份表里把这两批人分回来。
  * ② **「亲戚关系」只在「有亲属」时写**。数据层已保证，但导出的表会被打印、转发出去，
  *    自相矛盾的一行一旦印出来就收不回了，所以这一层再挡一次。
- * ③ **未登记的学生必须在表里**——这份表的主要用处之一就是拿它去问还没登记的那几个。
- * ④ 列序与表头逐字对齐规格（EXCEL 是按列读的，挪一列就是错一列）。
+ * ③ **去向只有两个词**（离校 / 留校）。v3.6.2 删掉了「未登记」，
+ *    这份表里也就不该再出现它——**全班每一个人都在表里**，每个人都有一个明确的去向。
+ * ④ 列序与表头逐字对齐（EXCEL 是按列读的，挪一列就是错一列）。
  */
 import { describe, expect, it } from 'vitest'
 
@@ -29,8 +29,8 @@ function student(id: string, name: string, extra: Partial<Student> = {}): Studen
   return { id, name, studentNo: '', gender: 'female', ...extra }
 }
 
-function row(studentRow: Student, status: HolidayStatus): HolidayRosterRow {
-  return { student: studentRow, status }
+function row(studentRow: Student, status: HolidayStatus, note = ''): HolidayRosterRow {
+  return { student: studentRow, status, note }
 }
 
 const NAME_COUNTS = new Map<string, number>()
@@ -85,7 +85,7 @@ describe('表头与列序', () => {
   })
 })
 
-/* ==================== 三态与未填 ==================== */
+/* ==================== 去向与未填 ==================== */
 
 describe('昌都市内亲属这一列：三态不可折叠', () => {
   const sheet = buildHolidayRosterSheet(
@@ -94,7 +94,7 @@ describe('昌都市内亲属这一列：三态不可折叠', () => {
       row(student('s1', '甲', { hasChangduRelative: true }), 'home'),
       row(student('s2', '乙', { hasChangduRelative: false }), 'stay'),
       // 什么都没填：这一格必须是空的
-      row(student('s3', '丙'), 'unregistered'),
+      row(student('s3', '丙'), 'stay'),
     ],
     NAME_COUNTS,
   )
@@ -108,12 +108,9 @@ describe('昌都市内亲属这一列：三态不可折叠', () => {
     expect(values[2]).not.toBe(values[1])
   })
 
-  it('未登记的学生**在表里**，去向列写「未登记」（这份表的用处之一就是拿它去问）', () => {
-    expect(column(sheet, '假期去向')).toContain('未登记')
-  })
-
-  it('三态去向逐字写出来，不写英文、不缩写', () => {
-    expect(column(sheet, '假期去向')).toEqual(['回家', '留校', '未登记'])
+  it('**「未登记」不再出现在表里**：v3.6.2 之后每个人不是离校就是留校', () => {
+    expect(column(sheet, '假期去向')).not.toContain('未登记')
+    expect(column(sheet, '假期去向')).toEqual(['离校', '留校', '留校'])
   })
 })
 
@@ -160,7 +157,7 @@ describe('亲戚关系这一列：只在「有亲属」时写', () => {
   it('未填时关系栏也为空（关系是从属于「有」的，没有「有」就没有它）', () => {
     const sheet = buildHolidayRosterSheet(
       '国庆',
-      [row(student('s1', '甲', { changduRelativeRelation: '舅舅' }), 'unregistered')],
+      [row(student('s1', '甲', { changduRelativeRelation: '舅舅' }), 'stay')],
       NAME_COUNTS,
     )
     expect(column(sheet, '昌都市内亲属')).toEqual([''])
