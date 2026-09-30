@@ -126,6 +126,20 @@ else
   ok "宿主 App 不开沙盒（这是它能写进扩展容器的前提）"
 fi
 
+# 诊断信息里那句「Families: 今日课程 [Small, Medium] · 一周课程表 [Large]」是照着
+# Widget 定义写的说明文字（supportedFamilies 只存在于代码里，产物 Info.plist 没有它），
+# 所以在这里把代码钉住，免得哪天改了支持的尺寸而诊断文案还停在旧说法。
+if grep -q 'supportedFamilies(\[\.systemSmall, \.systemMedium\])' "$ROOT/TeacherDeskWidget/TeacherDeskWidgets.swift"; then
+  ok "今日课程支持的尺寸 = Small + Medium（与诊断文案一致）"
+else
+  bad "今日课程 supportedFamilies 变了，诊断文案要跟着改"
+fi
+if grep -q 'supportedFamilies(\[\.systemLarge\])' "$ROOT/TeacherDeskWidget/TeacherDeskWidgets.swift"; then
+  ok "一周课程表支持的尺寸 = Large（与诊断文案一致）"
+else
+  bad "一周课程表 supportedFamilies 变了，诊断文案要跟着改"
+fi
+
 # ---------------------------------------------------------------- 3. 类型检查
 
 step "类型检查（全部源码，含 SwiftUI/WidgetKit）"
