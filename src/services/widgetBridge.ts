@@ -42,8 +42,10 @@ export type WidgetBridgeStatus =
 export type WidgetWriteResult =
   'written' | 'needs-permission' | 'unconnected' | 'unsupported' | 'failed'
 
-/** 目录句柄里我们真正用到的三个能力（不声明全局类型，避免与浏览器 lib 打架） */
+/** 目录句柄里我们真正用到的几个能力（不声明全局类型，避免与浏览器 lib 打架） */
 export interface WidgetDirectoryHandleLike {
+  /** 选中的文件夹名（拿不到就是 undefined）。用来识别「选错文件夹」——见 `expectedFolderName` */
+  name?: string
   queryPermission(options?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>
   requestPermission(options?: { mode?: 'read' | 'readwrite' }): Promise<PermissionState>
   getFileHandle(
@@ -73,14 +75,30 @@ export interface WidgetHandleStore {
 export interface WidgetBridge {
   /** 快照文件名（`appConfig.widget.snapshotFileName`） */
   readonly fileName: string
+  /**
+   * 选择目录时应当选中的**文件夹名**（`TeacherDesk`）。
+   *
+   * 浏览器不给网页绝对路径，`FileSystemDirectoryHandle.name` 是唯一拿得到的线索。
+   * 为什么要在意：快照必须落在**小组件真正读的那个目录**里，而机器上很容易出现另一个
+   * 也叫 TeacherDesk 的目录（例如 v1.0.0 那版 macOS 工程留下的
+   * `~/Library/Application Support/TeacherDesk/`）。选错之后写是成功的、网页也报成功，
+   * **只有小组件没变**——那是极难自己查出来的一类问题，所以这里提前说一句。
+   */
+  readonly expectedFolderName: string
   /** 快照目录（给界面复制、给教师在选择框里「前往」） */
   readonly containerDir: string
   /** 快照文件在容器里的完整路径（展示用，`~` 开头） */
   readonly filePathLabel: string
   /** 当前状态（查询权限，不写盘、不弹窗） */
   status(): Promise<WidgetBridgeStatus>
-  /** 连接（**必须在用户手势里调用**）：选目录 → 要权限 → 存句柄 → 写第一份 */
-  connect(text: string): Promise<{ status: WidgetBridgeStatus; wrote: boolean }>
+  /**
+   * 连接（**必须在用户手势里调用**）：选目录 → 要权限 → 存句柄 → 写第一份。
+   * `folderWarning` 非空时表示「写入成功了，但选的文件夹名不像目标文件夹」——
+   * 界面应把它显示出来（见 `expectedFolderName` 的说明）。
+   */
+  connect(
+    text: string,
+  ): Promise<{ status: WidgetBridgeStatus; wrote: boolean; folderWarning?: string }>
   /** 静默写（已连接时）。未连接 / 需要授权都不抛异常，返回状态让界面决定说什么 */
   write(text: string): Promise<WidgetWriteResult>
   /** 断开（清掉句柄；不动盘上已有的快照文件） */
@@ -206,6 +224,8 @@ export function createWidgetBridge(options: {
   const fileName = options.fileName ?? appConfig.widget.snapshotFileName
   const containerDir = options.containerDir ?? appConfig.widget.containerDir
   const filePathLabel = `${containerDir.replace(/\/+$/, '')}/${fileName}`
+  // 目标目录名（`.../Application Support/TeacherDesk` 的最后一段）
+  const expectedFolderName = containerDir.replace(/\/+$/, '').split('/').pop() ?? 'TeacherDesk'
 
   async function status(): Promise<WidgetBridgeStatus> {
     if (!options.fileSystem.supported()) return 'unsupported'
@@ -244,6 +264,7 @@ export function createWidgetBridge(options: {
     fileName,
     containerDir,
     filePathLabel,
+    expectedFolderName,
     status,
     async connect(text) {
       if (!options.fileSystem.supported()) return { status: 'unsupported', wrote: false }
@@ -258,9 +279,15 @@ export function createWidgetBridge(options: {
       }
       await options.handleStore.write(handle)
       const result = await writeWith(handle, text)
+      // 文件夹名对不上就说一句（写是写成功了，但小组件多半读不到——见 expectedFolderName）
+      const folderWarning =
+        handle.name && handle.name !== expectedFolderName
+          ? `写入成功，但你选的文件夹叫「${handle.name}」，小组件读的是「${expectedFolderName}」。请确认选对了目录。`
+          : undefined
       return {
         status: result === 'written' ? 'connected' : 'needs-permission',
         wrote: result === 'written',
+        ...(folderWarning ? { folderWarning } : {}),
       }
     },
     write,

@@ -104,10 +104,21 @@ enum SnapshotStore {
         writeDirectory?.appendingPathComponent(fileName)
     }
 
+    /// 读到的那一份 + **它是从哪个候选路径读来的**
+    ///
+    /// 为什么要把来源也带出来：候选有好几个（扩展容器 / 宿主主目录），
+    /// 而**小组件只能读它自己容器里的那一份**。宿主面板如果把「别处更旧/更新的一份」显示成
+    /// 当前数据，教师看到的就是「网页说同步好了、小组件却没变」——把来源摆到面板上，
+    /// 这种局面一眼就能定位（附 K 的退路里也写了这一条）。
+    struct ReadResult {
+        let read: SnapshotRead
+        let source: URL?
+    }
+
     /// 读快照：多个候选里取**修改时间最新**的一份（同一台机器上不该出现两份，但出现了要能说清用哪份）
-    static func read() -> SnapshotRead {
+    static func readWithSource() -> ReadResult {
         let candidates = candidateFileURLs.filter { FileManager.default.fileExists(atPath: $0.path) }
-        guard !candidates.isEmpty else { return .missing }
+        guard !candidates.isEmpty else { return ReadResult(read: .missing, source: nil) }
         let newest = candidates.max { left, right in
             let leftDate = (try? left.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate ?? .distantPast
@@ -115,7 +126,27 @@ enum SnapshotStore {
                 .contentModificationDate ?? .distantPast
             return leftDate < rightDate
         }!
-        return decode(contentsOf: newest)
+        return ReadResult(read: decode(contentsOf: newest), source: newest)
+    }
+
+    /// 只要结果（多数调用方用它）
+    static func read() -> SnapshotRead {
+        readWithSource().read
+    }
+
+    /// 把「样例快照」从所有候选位置删掉（**只删确实是样例的那一份**，绝不碰教师的真数据）
+    ///
+    /// 存在的理由：样例是给教师在连上网页之前看排版用的，而它躺在小组件真正读的位置上——
+    /// 不清掉的话，教师会以为那是自己的课表（这个困惑真的发生过）。
+    @discardableResult
+    static func clearSampleSnapshots() -> Int {
+        var removed = 0
+        for url in candidateFileURLs where FileManager.default.fileExists(atPath: url.path) {
+            guard case let .ok(snapshot) = decode(contentsOf: url) else { continue }
+            guard snapshot.className == SnapshotSample.classLabel else { continue }
+            if (try? FileManager.default.removeItem(at: url)) != nil { removed += 1 }
+        }
+        return removed
     }
 
     /// 解析一份快照文件（抽出来是为了让自检能直接喂字节，不必先落盘）

@@ -13,6 +13,10 @@
 import Foundation
 
 enum SnapshotSample {
+    /// 样例快照的班级名（宿主 App 用它识别「当前读到的其实是样例」，
+    /// 与 `macos/Samples/snapshot.sample.json` 里那一行必须一致——由 Tools/verify.sh 的样例一致性那档盯着）
+    static let classLabel = "（样例课表）"
+
     /// 样例快照的 JSON 文本（内容见文件末尾说明与 Samples/snapshot.sample.json）
     /// 末尾那个换行要显式补：Swift 的多行原始字符串会**吃掉收尾定界符前的那一个换行**
     /// （SE-0168），不补的话与 `Samples/snapshot.sample.json` 差 1 个字节——

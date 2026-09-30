@@ -90,14 +90,19 @@ export function useWidgetSnapshot() {
   void refreshStatus()
 
   /** 连接（必须在点击事件里调用：系统选择框与授权都需要用户手势） */
-  async function connect(): Promise<{ ok: boolean; message: string }> {
+  async function connect(): Promise<{ ok: boolean; message: string; warning?: string }> {
     busy.value = true
     try {
       const outcome = await bridge.connect(currentWidgetSnapshotText())
       status.value = outcome.status
       if (outcome.wrote) {
         lastWrittenAt.value = new Date().toISOString()
-        return { ok: true, message: '已连接，课程表已写入快照' }
+        return {
+          ok: true,
+          message: '已连接，课程表已写入快照',
+          // 「写成功了但选错文件夹」是唯一一种「网页说成功、小组件没变」的成因，必须说出来
+          ...(outcome.folderWarning ? { warning: outcome.folderWarning } : {}),
+        }
       }
       if (outcome.status === 'unsupported') {
         return { ok: false, message: '这个浏览器不支持自动同步，请用「下载快照」' }

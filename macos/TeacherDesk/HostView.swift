@@ -27,6 +27,22 @@ final class HostModel: ObservableObject {
         didSet { objectWillChange.send() }
     }
 
+    /// 当前读的是**哪个文件**（候选有多处，而小组件只读得到它容器里的那一份——见面板上的提示）
+    private(set) var sourceURL: URL? {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 读到的是不是**样例课表**（教师最容易被它误导：它躺在小组件真正读的位置上）
+    private(set) var isSample = false {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 读到的那一份与「小组件会读的那一份」是不是同一处
+    var sourceMatchesPrimary: Bool {
+        guard let source = sourceURL, let primary = SnapshotStore.primaryFileURL else { return true }
+        return source.standardizedFileURL == primary.standardizedFileURL
+    }
+
     /// 上一次操作的反馈（「已通知小组件刷新」这类）
     private(set) var message: String? {
         didSet { objectWillChange.send() }
@@ -38,7 +54,22 @@ final class HostModel: ObservableObject {
 
     /// 重新读一次盘上的快照
     func reload() {
-        panel = PanelState(read: SnapshotStore.read())
+        let result = SnapshotStore.readWithSource()
+        panel = PanelState(read: result.read)
+        sourceURL = result.source
+        if case let .ok(snapshot) = result.read {
+            isSample = snapshot.className == SnapshotSample.classLabel
+        } else {
+            isSample = false
+        }
+    }
+
+    /// 清掉样例快照（只删确实是样例的那一份），让小组件回到「还没有课程数据」这个诚实的状态
+    func clearSample() {
+        let removed = SnapshotStore.clearSampleSnapshots()
+        HostDeepLink.reloadWidgets()
+        message = removed > 0 ? "已清除样例快照，小组件会显示「还没有课程数据」" : "没有找到样例快照"
+        reload()
     }
 
     func notifyWidgets() {
@@ -195,6 +226,20 @@ struct HostView: View {
                     .foregroundStyle(TDColor.secondaryText(scheme))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if model.isSample {
+                // 这一条是**必须**说清楚的：样例躺在小组件真正读的位置上，
+                // 不说的话教师会以为那是自己的课表（这个困惑真的发生过）
+                Text("注意：这是样例课表，不是你的课表。要让小组件显示真课表：到 TeacherDesk 网页版 →「课程表」页 →「连接小组件」。")
+                    .font(TDFont.small)
+                    .foregroundStyle(Color(hex: 0xE8B04C))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !model.sourceMatchesPrimary {
+                Text("注意：当前读到的是另一处快照文件（见下），而小组件只读它自己容器里的那一份——请用「连接小组件」写到上面那条主路径。")
+                    .font(TDFont.small)
+                    .foregroundStyle(Color(hex: 0xE8B04C))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(TDSpace.lg)
@@ -213,6 +258,14 @@ struct HostView: View {
                 .textSelection(.enabled)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
+            if let source = model.sourceURL, !model.sourceMatchesPrimary {
+                Text("当前读到的是：\(source.path)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color(hex: 0xE8B04C))
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("由 TeacherDesk（浏览器）写入；本 App 与小组件都只读它。")
                 .font(TDFont.caption)
                 .foregroundStyle(TDColor.faintText(scheme))
@@ -235,6 +288,9 @@ struct HostView: View {
             HStack(spacing: TDSpace.sm) {
                 Button("打开快照文件夹") { model.revealSnapshotFolder() }
                 Button("写入样例快照") { model.writeSample() }
+                if model.isSample {
+                    Button("清除样例快照") { model.clearSample() }
+                }
             }
             if let message = model.message {
                 Text(message)

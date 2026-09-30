@@ -41,6 +41,7 @@ const lastSyncText = computed(() =>
 
 async function onConnect(): Promise<void> {
   const outcome = await widget.connect()
+  if (outcome.warning) toast.warning(outcome.warning)
   if (outcome.ok) toast.success(outcome.message)
   else if (outcome.message !== '已取消') toast.warning(outcome.message)
 }

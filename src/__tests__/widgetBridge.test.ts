@@ -182,6 +182,37 @@ describe('状态机', () => {
     expect(fs.written[1]!.text).toBe('{"second":true}\n')
   })
 
+  it('**选错文件夹要说出来**：写成功但目录名不对时给 folderWarning', async () => {
+    const fs = fakeFileSystem({ permission: 'granted' })
+    // 句柄带上一个「不是目标」的文件夹名（机器上真有另一个同名目录时就会选中它）
+    const handle = await fs.pickDirectory()
+    ;(handle as { name?: string }).name = 'TeacherDesk-old'
+    const bridge = createWidgetBridge({
+      fileSystem: fs,
+      handleStore: store,
+      containerDir:
+        '~/Library/Containers/com.teacherdesk.mac.widget/Data/Library/Application Support/TeacherDesk',
+    })
+
+    const outcome = await bridge.connect(SNAPSHOT)
+    expect(outcome.wrote).toBe(true)
+    expect(outcome.folderWarning).toContain('TeacherDesk-old')
+    expect(outcome.folderWarning).toContain('TeacherDesk')
+  })
+
+  it('选对文件夹时不给多余警告', async () => {
+    const fs = fakeFileSystem({ permission: 'granted' })
+    const handle = await fs.pickDirectory()
+    ;(handle as { name?: string }).name = 'TeacherDesk'
+    const bridge = createWidgetBridge({
+      fileSystem: fs,
+      handleStore: store,
+      containerDir:
+        '~/Library/Containers/com.teacherdesk.mac.widget/Data/Library/Application Support/TeacherDesk',
+    })
+    expect((await bridge.connect(SNAPSHOT)).folderWarning).toBeUndefined()
+  })
+
   it('断开只清句柄：盘上那份快照不动（Widget 继续显示上一次的数据）', async () => {
     const fs = fakeFileSystem({ permission: 'granted' })
     const bridge = createWidgetBridge({ fileSystem: fs, handleStore: store })
