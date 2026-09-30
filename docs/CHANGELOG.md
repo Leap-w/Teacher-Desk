@@ -61,6 +61,17 @@
 （规格 §三十二）——要拿「高三（12）班·数学竞赛集训」这种超长课程名试排版，
 又不能去改教师的真快照。它只影响预览渲染，不碰任何写入路径，也不进界面。
 
+### 交付与验证（2026-10-01）
+
+- 提交 `042b3e5`（tag `v3.7.3`），已推送 `main` 与 tag；`npm run deploy` 到环境
+  `teacher-desk-d6gdsgqb8f9dc13d2`（118 + 27 个文件），线上抽查 `/`、`/work/schedule/`、
+  `/my/settings/`、`/students/` 四条路由全 200，入口分块 `index-CveWi7Z-.js` 与本机构建逐字节一致。
+- `sh macos/Tools/verify.sh` **八档全绿**（类型检查 / **55 项**快照冒烟 / `xcodebuild` 真编译 /
+  产物结构与签名 / 三种尺寸 × 深浅两色预览导出 / 诊断信息）；
+  `npm run test` **1024 项 / 42 个文件**全绿；`prettier --check` 无输出。
+- 修改前后对照图（用 `git worktree` 取 `v3.7.2` 源码单独构建 + 同一份真实快照导出）与
+  终版预览在 `macos/.build/preview-compare/`（本地产物，不入库）。
+
 ---
 
 ## v3.7.2 —— Widget 体验与点击链路修复（2026-10-01，tag `v3.7.2`）
