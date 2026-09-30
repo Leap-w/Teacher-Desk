@@ -23,18 +23,6 @@
 import SwiftUI
 import WidgetKit
 
-/// 一个时间线条目：读到的快照（或它的四种缺失状态）+ 这一帧的日期
-struct SnapshotEntry: TimelineEntry {
-    let date: Date
-    let read: SnapshotRead
-
-    /// 快照（四态里只有 ok 有内容）
-    var snapshot: WidgetSnapshot? {
-        if case let .ok(snapshot) = read { return snapshot }
-        return nil
-    }
-}
-
 /// 只读本地快照的时间线提供者
 struct SnapshotTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> SnapshotEntry {
@@ -74,7 +62,7 @@ struct TodayScheduleWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: SnapshotTimelineProvider()) { entry in
-            TodayScheduleView(entry: entry)
+            TodayWidgetContent(entry: entry)
                 .containerBackground(for: .widget) { WidgetBackground() }
         }
         .configurationDisplayName("今日课程")
@@ -90,11 +78,33 @@ struct WeekScheduleWidget: Widget {
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: SnapshotTimelineProvider()) { entry in
-            WeekScheduleView(entry: entry)
+            WeekWidgetContent(entry: entry)
                 .containerBackground(for: .widget) { WidgetBackground() }
         }
         .configurationDisplayName("一周课程表")
         .description("一周的完整课表（星期 × 节次）。今天那一列会高亮。数据来自 TeacherDesk 课程表，只读。")
         .supportedFamilies([.systemLarge])
+    }
+}
+
+/* ---------- 把系统给的尺寸读出来，显式交给内容 View（v3.7.2） ---------- */
+
+/// 今日课程：`@Environment(\.widgetFamily)` 只能在 View 里读，所以用这个两行的包装。
+/// 内容 View 本身不读环境 —— 宿主 App 的预览页要能指定尺寸（规格 §六）。
+private struct TodayWidgetContent: View {
+    let entry: SnapshotEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        TodayScheduleView(entry: entry, family: family)
+    }
+}
+
+private struct WeekWidgetContent: View {
+    let entry: SnapshotEntry
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        WeekScheduleView(entry: entry, family: family)
     }
 }

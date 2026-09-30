@@ -6,6 +6,67 @@
 
 ---
 
+## v3.7.2 —— Widget 体验与点击链路修复（2026-10-01，tag `v3.7.2`）
+
+> 只做四件事（规格 §一 / §二十二）：**宿主预览页**、**诊断信息复制**、
+> **今日课程「当前 / 下一节」强调**、**修复 Widget → TeacherDesk PWA 的点击链路**。
+> Web 侧一行未改（课程表 Store / 导入 / 换课 / 代课 / 排课规则全不动，快照格式仍是 v2）。
+
+### ① 点击链路（本版的主要修复）
+
+**实测出来的病因**（2026-10-01，本机，非推测）：
+
+| 试法                                                             | 结果                                                                            |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `widgetURL(https://…/work/schedule)`（v3.7.0 的做法）            | 落到 **Safari** —— Chrome 的 PWA 应用壳并没有注册为该网址的处理器               |
+| v3.7.0 的兜底「打开名字里带 TeacherDesk 的 App」                 | 命中的是 `/Applications/TeacherDesk.app` = **宿主 App 自己** → 点完停在宿主界面 |
+| `open -a "TeacherDesk · 班主任工作台"`                           | ✅ 冷启动并成为前台应用                                                         |
+| `open -b com.google.Chrome.app.hhbpeacabhcmkepnkdnhckppijlfbbng` | ✅ 同上                                                                         |
+| PWA 已运行时再 `open -a`                                         | ✅ **PID 不变**（复用同一实例，不会开出第二个窗口）                             |
+| `open -a <PWA> <url>`                                            | ❌ 报 -10820：应用壳不接受 URL 参数                                             |
+
+**最终方案**：`Widget → teacherdesk://open → 宿主 App → NSWorkspace 打开扫出来的 PWA`。
+宿主 App 改成 **`.accessory` 菜单栏 App**：深链唤起时**完全不出现界面**（面板入口在菜单栏图标里，
+双击 App 或 `open -a` 也会开面板）。PWA 的名字 / bundle id / 路径一律**运行时扫描**
+（`PWALocator`：读 `CrAppModeShortcutURL` 等客观特征 + 按快照地址匹配 host），
+**没有任何硬编码的 bundle id 或安装路径**（规格 §4.1）。
+
+### ② 宿主 App 的「小组件预览」
+
+- 渲染的是**同一批 SwiftUI View**（已挪到 `macos/Shared/Views/`，Widget 与宿主编同一份），
+  只是把「用哪个尺寸」显式传进去 —— 不存在第二套 Preview UI（规格 §六）。
+- 三种尺寸：今日 Small `170×170`、今日 Medium `364×170`、一周 Large `364×382`（点，集中一个常量）。
+- Light / Dark 可切；默认数据是**真实快照**（`--snapshot sample` 是自检才用的 debug 数据）。
+- 「导出预览 PNG」→ `~/Downloads`（被 TCC 拦时按 Downloads → Application Support → 临时目录
+  **逐级回退**并回报实际位置，不静默失败）。
+
+### ③「复制诊断信息」
+
+五段纯文本：Host App / Widget Extension / TeacherDesk PWA / Widget Snapshot / Widget
+（含 PWA 的显示名、bundle id、安装路径、是否在运行；快照路径、是否存在、可读、大小、修改时间、
+读取结果；快照格式版本、今天、当前 / 下一节课、上次刷新时刻）。**一个字段都不猜**：
+PWA 段来自实际扫描，扩展段来自产物里的 Info.plist。
+
+### ④ 今日课程「当前 / 下一节」
+
+- 状态判定是**纯函数** `SnapshotDerive.daySchedule(rows:now:)`：`current` = `start <= now < end`；
+  `next` = 所有 `start > now` 里最靠前的那一节（**与刚下课无关**，课间不会把上一节说成"当前"）；
+  全天课都上完 → `isFinished`。
+- 时间**全部来自快照的 `periods[].startTime/endTime`**，Swift 里没有再硬编码 07:40/09:20 那一套；
+  时段时间字段坏掉时按"不参与判定"处理，绝不冒充"当前"。
+- 视觉只做轻量强调：当前那一节 = 主色淡底 + 主色左线 + 加重字重 + 「当前」小标签；
+  下一节 = 「下一节」小标签。**不加倒计时、不显示时刻**（规格 §十三）。
+- 一周课表**未改**业务结构。
+
+### 自检
+
+- 常驻 Web 测试 **1024 项 / 42 文件**（本版未动 Web 侧）。
+- `macos/Tools/verify.sh` 从 **6 档 → 8 档**：第 7 档跑 `--export-widget-previews` 并核对
+  三张 PNG 的**像素尺寸**（2 倍图 340×340 / 728×340 / 728×764），第 8 档跑 `--print-diagnostics`
+  并核对五段齐全、宿主与扩展 bundle id、PWA 段确实是扫出来的（匹配 `com.google.Chrome.app.<32 位>`）。
+- 快照冒烟 **36 → 50 项**：新增点击目标（两个 Widget 都是深链）、深链解析四态、
+  退路地址拼接、「当前 / 下一节」的六种边界（上课前 / 正在上课 / 课间 / 全天结束 / 今天没课 / 时间字段坏掉）。
+
 ## v3.7.1 —— 小组件主信息改成「班级」（2026-10-01，tag `v3.7.1`）
 
 > 来自真实使用的一条反馈：**「我是数学老师，我教的课都是数学，我希望小组件显示的是哪个班的课

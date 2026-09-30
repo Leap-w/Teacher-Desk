@@ -105,4 +105,113 @@ enum SnapshotDerive {
     static func lessonCount(in snapshot: WidgetSnapshot) -> Int {
         snapshot.week.reduce(0) { $0 + $1.lessons.count }
     }
+
+    /* ---------- 当前 / 下一节（v3.7.2） ---------- */
+
+    /// 一节课在「此刻」的处境。**不做倒计时、不显示时刻**（规格 §十三），
+    /// 只回答「是不是正在上 / 是不是下一节」——那两件事才是教师扫一眼要的。
+    enum Moment {
+        /// 正在上（`start <= now < end`）
+        case current
+        /// 今天还没开始上的最靠前那一节
+        case next
+        /// 今天剩下的（既不是当前、也不是下一节）
+        case later
+        /// 已经上完
+        case past
+    }
+
+    /// 今天这一整天此刻的处境
+    struct DaySchedule {
+        /// 每一节对应的处境，顺序与传入的 rows 一致
+        let moments: [Moment]
+        /// 今天有课、但全都上完了
+        let isFinished: Bool
+
+        /// 正在上的那一节的时段 id（没有就是 nil）
+        func currentPeriodID(rows: [(period: SnapshotPeriod, lesson: SnapshotLesson)]) -> String? {
+            for (index, moment) in moments.enumerated() where moment == .current {
+                return rows[index].period.id
+            }
+            return nil
+        }
+
+        /// 下一节的时段 id（没有就是 nil）
+        func nextPeriodID(rows: [(period: SnapshotPeriod, lesson: SnapshotLesson)]) -> String? {
+            for (index, moment) in moments.enumerated() where moment == .next {
+                return rows[index].period.id
+            }
+            return nil
+        }
+    }
+
+    /// 判断某天此刻的处境。
+    ///
+    /// 三条口径（规格 §十八 的四种边界都在这里定死，`SnapshotSmoke` 逐条钉着）：
+    /// - **正在上**：`start <= now < end`。下课那一分钟就立刻不再是「当前」——
+    ///   否则两节课之间会同时出现「当前」和「下一节」两种说法。
+    /// - **下一节**：所有 `start > now` 里最靠前的那一节，**与上一节是否刚下课无关**。
+    ///   课间（10:00–10:30）显示的是「下一节：英语」，不是刚上完的数学。
+    /// - **已结束**：今天有课、但每一节的 `end` 都早于此刻 → `isFinished = true`
+    ///   （界面据此写一行「今日课程已结束」，不改变整体结构）。
+    ///
+    /// 时间一律**从快照的 `periods[].startTime/endTime` 解析**（规格 §十九：
+    /// 不许在 Swift 里再硬编码 07:40 / 09:20 那一套）；解析不出来的时段按「不参与判定」处理，
+    /// 绝不用一个猜出来的时间把某一节标成「当前」。
+    static func daySchedule(
+        rows: [(period: SnapshotPeriod, lesson: SnapshotLesson)],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> DaySchedule {
+        let nowMinutes = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        var moments: [Moment] = []
+        var nextAssigned = false
+        var anyRunningOrFuture = false
+
+        // 先算出每节的起止分钟（解析不出来就是 nil）
+        let ranges: [(start: Int, end: Int)?] = rows.map { row in
+            guard let start = minutes(of: row.period.startTime),
+                  let end = minutes(of: row.period.endTime),
+                  start < end
+            else { return nil }
+            return (start, end)
+        }
+
+        for range in ranges {
+            guard let range else {
+                moments.append(.later)   // 时间坏掉的节：不参与判定，也不冒充「当前」
+                continue
+            }
+            if range.start <= nowMinutes && nowMinutes < range.end {
+                moments.append(.current)
+                anyRunningOrFuture = true
+            } else if range.start > nowMinutes {
+                if !nextAssigned {
+                    moments.append(.next)
+                    nextAssigned = true
+                } else {
+                    moments.append(.later)
+                }
+                anyRunningOrFuture = true
+            } else {
+                moments.append(.past)
+            }
+        }
+
+        return DaySchedule(
+            moments: moments,
+            // 「已结束」= 今天确实有课、但没有任何一节在跑或还没开始
+            isFinished: !rows.isEmpty && !anyRunningOrFuture
+        )
+    }
+
+    /// `"HH:mm"` → 当天第几分钟；形状不对返回 nil（快照是外部文件，必须防）
+    static func minutes(of clock: String) -> Int? {
+        let parts = clock.split(separator: ":")
+        guard parts.count == 2,
+              let hour = Int(parts[0]), let minute = Int(parts[1]),
+              (0...23).contains(hour), (0...59).contains(minute)
+        else { return nil }
+        return hour * 60 + minute
+    }
 }

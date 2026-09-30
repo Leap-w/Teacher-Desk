@@ -27,6 +27,8 @@ struct WeekScheduleView: View {
     @Environment(\.colorScheme) private var scheme
 
     let entry: SnapshotEntry
+    /// 由调用方给（同 `TodayScheduleView`）：Widget 传系统值，预览页传要预览的尺寸
+    var family: WidgetFamily
 
     var body: some View {
         Group {

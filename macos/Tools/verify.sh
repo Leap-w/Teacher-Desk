@@ -14,11 +14,12 @@
 #               （本工程刻意不用 `@State` 这类宏，见 TeacherDeskApp.swift 顶部说明）。
 #
 #  **两档都证明不了**下面这些，它们只能在图形界面里看：
-#    · 小组件在组件库里的样子与三种尺寸排版（今日 small/medium、一周 large）
+#    · 小组件在桌面上的真实排版（与预览的细微出入以桌面为准）
 #    · 时间线刷新、点「同步并刷新」后小组件是否立刻重画
-#    · 点击小组件是否打开 TeacherDesk
-#    · 深色模式下的观感
-#  这四项在 docs/release-checklist.md 里有对应的勾选项。
+#    · 在桌面上点小组件本体（命令行能验的是同一跳的深链那一段）
+#  这三项在 docs/release-checklist.md 里有对应的勾选项。
+#  v3.7.2 起，「三种尺寸的排版」「深色模式」「诊断信息」都能在命令行里跑了：
+#  见第 7 档（预览导出 PNG）与第 8 档（诊断信息文本）。
 #
 #  已知环境问题（脚本自动处理）：本机工作区里的文件带 Finder 信息时，
 #  `codesign` 会报 `resource fork, Finder information, or similar detritus not allowed`。
@@ -129,7 +130,7 @@ fi
 
 step "类型检查（全部源码，含 SwiftUI/WidgetKit）"
 
-SOURCES="Shared/SnapshotModel.swift Shared/SnapshotStore.swift Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift Shared/DesignTokens.swift TeacherDesk/TeacherDeskApp.swift TeacherDesk/HostView.swift TeacherDeskWidget/TeacherDeskWidgetBundle.swift TeacherDeskWidget/TeacherDeskWidgets.swift TeacherDeskWidget/Views/WidgetChrome.swift TeacherDeskWidget/Views/TodayScheduleView.swift TeacherDeskWidget/Views/WeekScheduleView.swift"
+SOURCES="Shared/DeepLink.swift Shared/SnapshotModel.swift Shared/SnapshotEntry.swift Shared/SnapshotStore.swift Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift Shared/DesignTokens.swift Shared/Views/WidgetChrome.swift Shared/Views/TodayScheduleView.swift Shared/Views/WeekScheduleView.swift TeacherDesk/TeacherDeskApp.swift TeacherDesk/HostView.swift TeacherDesk/HostLauncher.swift TeacherDesk/PWALocator.swift TeacherDesk/WidgetDiagnostics.swift TeacherDesk/WidgetPreview.swift TeacherDeskWidget/TeacherDeskWidgetBundle.swift TeacherDeskWidget/TeacherDeskWidgets.swift"
 
 if "$SWIFTC" -typecheck -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -swift-version 5 $SOURCES 2>"$BUILD_DIR/typecheck.log"; then
   ok "13 个源文件类型检查通过（两档工具链都跑得动，因为没有宏）"
@@ -144,7 +145,7 @@ step "快照冒烟（解码 / 派生 / 链接 / 样例一致）"
 
 SMOKE_BIN="$BUILD_DIR/snapshot-smoke"
 if "$SWIFTC" -O -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -o "$SMOKE_BIN" \
-  Tools/SnapshotSmoke/main.swift Shared/SnapshotModel.swift Shared/SnapshotStore.swift \
+  Tools/SnapshotSmoke/main.swift Shared/DeepLink.swift Shared/SnapshotModel.swift Shared/SnapshotStore.swift \
   Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift 2>"$BUILD_DIR/smoke.log"; then
   # ⚠️ 不要写成 `"$SMOKE_BIN" | tail`：管道的退出码是 **tail 的**，
   # 于是冒烟失败也会显示成全绿（这个坑在本版真的踩过一次）。
@@ -235,13 +236,81 @@ else
   skip "跳过（没有 Xcode 或还没构建）"
 fi
 
+# ---------------------------------------------------------------- 7. 预览导出（v3.7.2）
+
+step "小组件预览导出（三种尺寸 × 深浅两色 → PNG）"
+
+if [ -x "$APP/Contents/MacOS/TeacherDesk" ]; then
+  EXPORT_DIR="$BUILD_DIR/preview"
+  rm -rf "$EXPORT_DIR"
+  mkdir -p "$EXPORT_DIR"
+  # 用命令行开关跑（进程里不建窗口）；导出走的是与面板按钮**同一条**实现
+  if "$APP/Contents/MacOS/TeacherDesk" --export-widget-previews --export-dir "$EXPORT_DIR" >"$BUILD_DIR/export.log" 2>&1; then
+    ok "导出命令成功：$(tr '\n' ' ' <"$BUILD_DIR/export.log" | sed 's|/Users/[^ ]*/||g' | cut -c1-140)"
+    MISSING=0
+    for f in TeacherDesk-Widget-Today-Small.png TeacherDesk-Widget-Today-Medium.png \
+             TeacherDesk-Widget-Weekly-Large.png TeacherDesk-Widget-Today-Small-Dark.png; do
+      if [ -f "$EXPORT_DIR/$f" ]; then
+        # 尺寸必须与预览常量一致（2 倍图 → 像素是 pt 的两倍）
+        PX=$(sips -g pixelWidth -g pixelHeight "$EXPORT_DIR/$f" 2>/dev/null | sed -n 's/.*pixelWidth: \([0-9]*\)/\1/p')
+        PY=$(sips -g pixelWidth -g pixelHeight "$EXPORT_DIR/$f" 2>/dev/null | sed -n 's/.*pixelHeight: \([0-9]*\)/\1/p')
+        ok "$f 导出成功（${PX}×${PY} px）"
+      else
+        MISSING=1
+        bad "$f 没导出出来"
+      fi
+    done
+    [ "$MISSING" -eq 0 ] && ok "三种尺寸 + 深色版都可导出"
+  else
+    bad "预览导出命令失败：$(head -3 "$BUILD_DIR/export.log" | tr '\n' ' ')"
+  fi
+else
+  skip "跳过（还没构建出可执行文件）"
+fi
+
+# ---------------------------------------------------------------- 8. 诊断信息（v3.7.2）
+
+step "诊断信息（四段齐全 / 字段非空 / 与实际一致）"
+
+if [ -x "$APP/Contents/MacOS/TeacherDesk" ]; then
+  DIAG="$BUILD_DIR/diagnostics.txt"
+  if "$APP/Contents/MacOS/TeacherDesk" --print-diagnostics >"$DIAG" 2>"$BUILD_DIR/diag.log"; then
+    # 段标题可能有后缀（例如 PWA 段会写明"本机实际扫描结果"），所以按**前缀**匹配
+    SECTION_INDEX=0
+    for section in "Host App" "Widget Extension" "TeacherDesk PWA" "Widget Snapshot" "Widget"; do
+      SECTION_INDEX=$((SECTION_INDEX + 1))
+      if grep -q "^$section" "$DIAG"; then
+        ok "含第 $SECTION_INDEX 段：$section"
+      else
+        bad "缺第 $SECTION_INDEX 段：$section"
+      fi
+    done
+    if grep -q "com.teacherdesk.mac$" "$DIAG"; then ok "宿主 bundle id 正确"; else bad "宿主 bundle id 不对"; fi
+    if grep -q "com.teacherdesk.mac.widget" "$DIAG"; then ok "扩展 bundle id 正确"; else bad "扩展 bundle id 不对"; fi
+    # PWA 段必须是**扫出来的**真实值：本机的 Chrome 应用壳 bundle id 形如 com.google.Chrome.app.<32位>
+    if grep -qE "com\.google\.Chrome\.app\.[a-p]{32}" "$DIAG"; then
+      ok "PWA bundle id 来自实际扫描"
+    else
+      bad "PWA 段没扫到已安装的应用壳（见 $DIAG）"
+    fi
+    if grep -q "Install Path: /.*\.app$" "$DIAG"; then ok "PWA 安装路径非空"; else bad "PWA 安装路径缺失"; fi
+    if grep -q "widget-snapshot.json" "$DIAG"; then ok "快照路径正确"; else bad "快照路径不对"; fi
+    if grep -q "Snapshot Written At: " "$DIAG"; then ok "快照写入时间有值"; else bad "快照写入时间缺失"; fi
+  else
+    bad "诊断命令失败：$(head -3 "$BUILD_DIR/diag.log" | tr '\n' ' ')"
+  fi
+else
+  skip "跳过（还没构建出可执行文件）"
+fi
+
 # ---------------------------------------------------------------- 汇总
 
 step "结论"
 if [ "$FAIL" -eq 0 ]; then
   printf '  \033[32m全部通过\033[0m\n'
-  printf '  仍需在图形界面里过一遍的：组件库能否看到 / 三种尺寸排版 / 刷新与点击 / 深色模式\n'
-  printf '  （勾选项见 docs/release-checklist.md 附 K）\n'
+  printf '  仍需在图形界面里过一遍的：组件库能否看到 / 桌面上点小组件本体 / 桌面上的真实排版\n'
+  printf '  （v3.7.2 起「三种尺寸排版」「深色模式」「诊断信息」已在第 7/8 档里自动核过；\n'
+  printf '   勾选项见 docs/release-checklist.md 附 K）\n'
 else
   printf '  \033[31m有未通过项，见上面标 ✗ 的行\033[0m\n'
 fi

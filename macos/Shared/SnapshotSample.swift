@@ -15,6 +15,15 @@ import Foundation
 enum SnapshotSample {
     /// 样例快照的班级名（宿主 App 用它识别「当前读到的其实是样例」，
     /// 与 `macos/Samples/snapshot.sample.json` 里那一行必须一致——由 Tools/verify.sh 的样例一致性那档盯着）
+    /// 解码后的样例（命令行自检与 debug 预览用；界面上永远读真实快照）
+    ///
+    /// 样例与线上生成器同源（`Samples/snapshot.sample.json` 就是 Web 侧生成器产出的），
+    /// 所以这份 JSON 必然能按 `WidgetSnapshot` 解码——冒烟测试第 7 项钉着这一点。
+    static var decoded: WidgetSnapshot? {
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
+    }
+
     static let classLabel = "（样例课表）"
 
     /// 样例快照的 JSON 文本（内容见文件末尾说明与 Samples/snapshot.sample.json）

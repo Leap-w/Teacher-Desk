@@ -67,29 +67,84 @@ final class HostModel: ObservableObject {
     /// 清掉样例快照（只删确实是样例的那一份），让小组件回到「还没有课程数据」这个诚实的状态
     func clearSample() {
         let removed = SnapshotStore.clearSampleSnapshots()
-        HostDeepLink.reloadWidgets()
+        WidgetRefresher.reload()
         message = removed > 0 ? "已清除样例快照，小组件会显示「还没有课程数据」" : "没有找到样例快照"
         reload()
     }
 
     func notifyWidgets() {
-        HostDeepLink.reloadWidgets()
+        WidgetRefresher.reload()
         message = "已通知小组件刷新"
     }
 
     func openTeacherDesk() {
-        HostDeepLink.openTeacherDesk()
+        _ = HostLauncher.openTeacherDesk()
     }
 
     /// 把样例快照写进去（让教师在连上网页之前就能看见小组件长什么样）
     func writeSample() {
         do {
             _ = try SnapshotStore.write(SnapshotSample.json)
-            HostDeepLink.reloadWidgets()
+            WidgetRefresher.reload()
             message = "样例快照已写入，小组件几秒内显示样例课表"
             reload()
         } catch {
             message = "写入失败：\(error.localizedDescription)"
+        }
+    }
+
+    /* ---------- 小组件预览的状态（v3.7.2） ----------
+       刻意**不用 `@State`**：Xcode 27 里 `@State` 是宏，命令行/沙箱环境跑不动宏插件
+       （v3.7.0 就是这么定下这条纪律的），所以状态放在这个 ObservableObject 里，
+       视图用 `Binding(get:set:)` 手动接。属性变化一律 `objectWillChange.send()`。 */
+
+    /// 预览哪个尺寸（今日 Small / 今日 Medium / 一周 Large）
+    var previewSize: WidgetPreviewSize = .medium {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 预览哪种配色（规格 §九：Light / Dark 都要能看）
+    var previewScheme: ColorScheme = .light {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 预览用的时间点：默认此刻（真实快照 + 此刻 → 才能看到「当前 / 下一节」）
+    var previewNow = Date() {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 导出结果的一句话反馈
+    var exportMessage: String? {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 「已复制」的短暂反馈
+    var copied = false {
+        didSet { objectWillChange.send() }
+    }
+
+    /// 用此刻重算预览
+    func refreshPreviewNow() {
+        previewNow = Date()
+    }
+
+    /// 导出三种尺寸 × 深浅两色到 ~/Downloads（渲染在主线程，跟着标 @MainActor）
+    @MainActor
+    func exportPreviews() {
+        let urls = WidgetPreviewExporter.exportAll(now: previewNow)
+        exportMessage =
+            urls.isEmpty
+            ? "导出失败：没有写出任何 PNG"
+            : "已导出 \(urls.count) 张到 ~/Downloads：\(urls.map(\.lastPathComponent).joined(separator: "、"))"
+    }
+
+    /// 复制诊断信息到剪贴板（`WidgetDiagnostics` 是 @MainActor，这里跟着标）
+    @MainActor
+    func copyDiagnostics() {
+        _ = WidgetDiagnostics.copyToPasteboard()
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.copied = false
         }
     }
 
@@ -172,6 +227,7 @@ struct HostView: View {
     @Environment(\.colorScheme) private var scheme
     @ObservedObject var model: HostModel
 
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: TDSpace.lg) {
@@ -179,6 +235,8 @@ struct HostView: View {
                 statusCard
                 pathCard
                 actions
+                previewSection
+                diagnosticsSection
                 steps
             }
             .padding(TDSpace.xl)
@@ -186,9 +244,9 @@ struct HostView: View {
         }
         .background(TDColor.card(scheme))
         // 打开面板就顺手让小组件重画一次：`Tools/install-snapshot.sh` 与「写样例」都靠这一下
-        .task { HostDeepLink.reloadWidgets() }
+        .task { WidgetRefresher.reload() }
         .onOpenURL { url in
-            switch HostDeepLink.parse(url) {
+            switch TeacherDeskDeepLink.parse(url) {
             case .refresh:
                 model.notifyWidgets()
             case .open, .unknown:
@@ -329,6 +387,116 @@ struct HostView: View {
         case .idle: return TDColor.faintText(scheme)
         case .warn: return Color(hex: 0xE8B04C)
         }
+    }
+
+    // MARK: - 小组件预览（v3.7.2 规格 §五 ~ §九）
+
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: TDSpace.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("小组件预览")
+                    .font(TDFont.bodyStrong)
+                    .foregroundStyle(TDColor.text(scheme))
+                Spacer(minLength: TDSpace.sm)
+                Text("与 Widget 同一套 SwiftUI View")
+                    .font(TDFont.caption)
+                    .foregroundStyle(TDColor.faintText(scheme))
+            }
+
+            // 尺寸：今日 Small / 今日 Medium / 一周 Large（不新增任何尺寸）
+            Picker("尺寸", selection: binding(\.previewSize)) {
+                ForEach(WidgetPreviewSize.all, id: \.family) { size in
+                    Text(size.title).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            HStack(spacing: TDSpace.sm) {
+                Picker("配色", selection: binding(\.previewScheme)) {
+                    Text("浅色").tag(ColorScheme.light)
+                    Text("深色").tag(ColorScheme.dark)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                Button("用此刻重算") { model.refreshPreviewNow() }
+                Button("导出预览 PNG") { model.exportPreviews() }
+            }
+
+            // 真实快照 + 此刻的时间点（规格 §八：预览必须代表 Widget 当前状态）
+            WidgetPreviewRenderer.preview(
+                entry: WidgetPreviewRenderer.currentEntry(now: model.previewNow),
+                size: model.previewSize,
+                scheme: model.previewScheme
+            )
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            Text("尺寸：\(Int(model.previewSize.width))×\(Int(model.previewSize.height)) pt（macOS 桌面小组件标准尺寸）· 数据：\(snapshotSummary())")
+                .font(TDFont.caption)
+                .foregroundStyle(TDColor.faintText(scheme))
+
+            if let exportMessage = model.exportMessage {
+                Text(exportMessage)
+                    .font(TDFont.caption)
+                    .foregroundStyle(TDColor.primary(scheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TDSpace.lg)
+        .background(TDColor.fill(scheme))
+        .clipShape(RoundedRectangle(cornerRadius: TDRadius.sm, style: .continuous))
+    }
+
+    /// 手动 Binding：本工程不用属性包装器（`@State` 是宏，命令行构建跑不动）
+    private func binding<Value>(_ keyPath: ReferenceWritableKeyPath<HostModel, Value>) -> Binding<Value> {
+        Binding(
+            get: { model[keyPath: keyPath] },
+            set: { model[keyPath: keyPath] = $0 }
+        )
+    }
+
+    private func snapshotSummary() -> String {
+        switch SnapshotStore.read() {
+        case .missing: return "还没有快照（小组件会显示「还没有课程数据」）"
+        case .broken: return "快照解析失败"
+        case let .unsupported(version): return "快照格式 v\(version) 太新"
+        case let .ok(snapshot):
+            let count = SnapshotDerive.lessonCount(in: snapshot)
+            return "快照 \(snapshot.updatedAtLabel ?? "-") · 本周 \(count) 节"
+        }
+    }
+
+    // MARK: - 诊断信息（v3.7.2 规格 §十 ~ §十二）
+
+    private var diagnosticsSection: some View {
+        VStack(alignment: .leading, spacing: TDSpace.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("诊断信息")
+                    .font(TDFont.bodyStrong)
+                    .foregroundStyle(TDColor.text(scheme))
+                Spacer(minLength: TDSpace.sm)
+                Button(model.copied ? "已复制" : "复制诊断信息") { model.copyDiagnostics() }
+            }
+            ScrollView(.vertical) {
+                Text(WidgetDiagnostics.text())
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(TDColor.secondaryText(scheme))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(height: 200)
+            .padding(TDSpace.sm)
+            .background(TDColor.card(scheme))
+            .clipShape(RoundedRectangle(cornerRadius: TDRadius.xs, style: .continuous))
+            Text("出问题时点「复制诊断信息」，把文本贴给开发者即可定位（含宿主 / 扩展 / PWA / 快照四段）。")
+                .font(TDFont.caption)
+                .foregroundStyle(TDColor.faintText(scheme))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(TDSpace.lg)
+        .background(TDColor.fill(scheme))
+        .clipShape(RoundedRectangle(cornerRadius: TDRadius.sm, style: .continuous))
     }
 
     private static let instructions: [String] = [

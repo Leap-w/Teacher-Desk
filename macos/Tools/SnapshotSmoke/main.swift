@@ -36,12 +36,13 @@ var calendar: Calendar = {
     return calendar
 }()
 
-func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12) -> Date {
+func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12, _ minute: Int = 0) -> Date {
     var components = DateComponents()
     components.year = year
     components.month = month
     components.day = day
     components.hour = hour
+    components.minute = minute
     return calendar.date(from: components)!
 }
 
@@ -130,19 +131,121 @@ check("空格子返回 nil（界面画「—」而不是猜一门课）", {
     return SnapshotDerive.lesson(in: sunday, periodID: "p3") == nil
 }())
 
-print("\n== 6. 点击链接（Widget → TeacherDesk）==")
-let link = WidgetLinks.url(for: .today, in: sample)
-check("拼出课程表页的完整地址", link.absoluteString == sample.pwaBaseUrl! + "/work/schedule", link.absoluteString)
-check("基址带尾斜杠也不会拼出双斜杠",
-      WidgetLinks.compose(base: "https://example.com/", path: "/work/schedule")?.absoluteString == "https://example.com/work/schedule")
-check("基址为空 → 退回宿主 App 深链",
+print("\n== 6. 点击链接（Widget → 宿主 App → TeacherDesk PWA，v3.7.2）==")
+// 实测结论（2026-10-01）：widgetURL 给 https 地址会落到 Safari 而不是 PWA，
+// 所以两个 Widget 的点击目标统一是宿主 App 的深链，由宿主去开扫出来的那个 PWA。
+check("今日课程 → teacherdesk://open",
+      WidgetLinks.url(for: .today, in: sample).absoluteString == "teacherdesk://open",
+      WidgetLinks.url(for: .today, in: sample).absoluteString)
+check("一周课程表 → teacherdesk://open",
+      WidgetLinks.url(for: .week, in: sample).absoluteString == "teacherdesk://open",
+      WidgetLinks.url(for: .week, in: sample).absoluteString)
+check("没有快照时同样是这个深链（不会点空）",
       WidgetLinks.url(for: .today, in: nil).absoluteString == "teacherdesk://open")
+check("深链解析：teacherdesk://open → 打开", TeacherDeskDeepLink.parse(URL(string: "teacherdesk://open")!) == .open)
+check("深链解析：teacherdesk://refresh → 只刷新", TeacherDeskDeepLink.parse(URL(string: "teacherdesk://refresh")!) == .refresh)
+check("深链解析：teacherdesk:// 空 host 也当打开", TeacherDeskDeepLink.parse(URL(string: "teacherdesk://")!) == .open)
+check("深链解析：别的 scheme 不误判", TeacherDeskDeepLink.parse(URL(string: "https://example.com")!) == .unknown)
+// 宿主 App 的最后一级退路（扫不到 PWA 应用壳时）：快照地址 + history 路由仍要拼对
+check("退路地址：基址 + /work/schedule",
+      WidgetLinks.browserFallbackURL(in: sample, path: WidgetDestination.today.webPath)?.absoluteString
+        == sample.pwaBaseUrl! + "/work/schedule")
+check("退路地址：基址带尾斜杠不会双斜杠",
+      WidgetLinks.compose(base: "https://example.com/", path: "/work/schedule")?.absoluteString == "https://example.com/work/schedule")
+check("退路地址：没有快照就是 nil（不乱猜地址）",
+      WidgetLinks.browserFallbackURL(in: nil, path: "/work/schedule") == nil)
 check("非 http 基址被拒（不会拼出一个点不开的链接）",
       WidgetLinks.compose(base: "javascript:alert(1)", path: "/work/schedule") == nil)
 
+print("\n== 6b. 今日课程「当前 / 下一节」（v3.7.2，纯函数、按快照时间算）==")
+// 样例的时段：早自习 07:40–08:20 / 第2节 08:30–09:10 / … 具体用它自己的 startTime/endTime
+let mondayRows = SnapshotDerive.lessons(in: sample, on: date(2026, 9, 28), calendar: calendar)
+func momentsAt(_ hour: Int, _ minute: Int) -> SnapshotDerive.DaySchedule {
+    SnapshotDerive.daySchedule(rows: mondayRows, now: date(2026, 9, 28, hour, minute), calendar: calendar)
+}
+func stateSummary(_ schedule: SnapshotDerive.DaySchedule) -> String {
+    schedule.moments.map {
+        switch $0 {
+        case .current: return "当前"
+        case .next: return "下一节"
+        case .later: return "之后"
+        case .past: return "已上"
+        }
+    }.joined(separator: ",")
+}
+
+// ① 上课前：还没到第一节课 → 只有「下一节」，且是第一节
+let before = momentsAt(6, 0)
+check("上课前：第一节是「下一节」，没有「当前」",
+      before.nextPeriodID(rows: mondayRows) == mondayRows.first?.period.id
+        && before.currentPeriodID(rows: mondayRows) == nil, stateSummary(before))
+
+// ② 正在上课：第一节是「当前」，第二节是「下一节」
+let firstStart = SnapshotDerive.minutes(of: mondayRows[0].period.startTime)!
+let duringFirst = SnapshotDerive.daySchedule(
+    rows: mondayRows,
+    now: date(2026, 9, 28, firstStart / 60, firstStart % 60 + 1),
+    calendar: calendar
+)
+check("正在上课：当前=第一节，下一节=第二节",
+      duringFirst.currentPeriodID(rows: mondayRows) == mondayRows[0].period.id
+        && duringFirst.nextPeriodID(rows: mondayRows) == mondayRows[1].period.id,
+      stateSummary(duringFirst))
+
+// ③ 两节课之间（下课那一分钟起就不再是「当前」）→ 下一节是正确的第二节，不是刚上完的
+let firstEnd = SnapshotDerive.minutes(of: mondayRows[0].period.endTime)!
+let between = SnapshotDerive.daySchedule(
+    rows: mondayRows,
+    now: date(2026, 9, 28, firstEnd / 60, firstEnd % 60),
+    calendar: calendar
+)
+check("课间：没有「当前」，下一节仍是第二节（不是刚上完的那节）",
+      between.currentPeriodID(rows: mondayRows) == nil
+        && between.nextPeriodID(rows: mondayRows) == mondayRows[1].period.id,
+      stateSummary(between))
+
+// ④ 全天结束：最后一节的下课之后
+let lastEnd = SnapshotDerive.minutes(of: mondayRows.last!.period.endTime)!
+let afterAll = SnapshotDerive.daySchedule(
+    rows: mondayRows,
+    now: date(2026, 9, 28, lastEnd / 60, lastEnd % 60),
+    calendar: calendar
+)
+check("全天结束：没有当前、没有下一节，且 isFinished = true",
+      afterAll.currentPeriodID(rows: mondayRows) == nil
+        && afterAll.nextPeriodID(rows: mondayRows) == nil
+        && afterAll.isFinished,
+      stateSummary(afterAll))
+
+// ⑤ 今天没课（周末）：既没有当前也没有下一节，也不说「已结束」
+let weekendRows = SnapshotDerive.lessons(in: sample, on: date(2026, 10, 3), calendar: calendar)
+let weekend = SnapshotDerive.daySchedule(rows: weekendRows, now: date(2026, 10, 3, 10, 0), calendar: calendar)
+check("今天没课：无当前 / 无下一节，isFinished = false（界面走空态）",
+      weekend.currentPeriodID(rows: weekendRows) == nil
+        && weekend.nextPeriodID(rows: weekendRows) == nil
+        && !weekend.isFinished)
+
+// ⑥ 时间字段坏掉时不冒充「当前」（快照是外部文件，必须防）
+let badPeriod = SnapshotPeriod(
+    id: "p2", label: "第2节", shortLabel: "第2节",
+    startTime: "bogus", endTime: "09:10", order: 2, group: "morning"
+)
+let badLesson = SnapshotLesson(periodId: "p2", className: "高一9班", subject: "数学")
+let badRows = [(period: badPeriod, lesson: badLesson)]
+let bad = SnapshotDerive.daySchedule(rows: badRows, now: date(2026, 9, 28, 9, 0), calendar: calendar)
+check("时段里时间写坏了：不判定为当前、也不判定为下一节",
+      bad.currentPeriodID(rows: badRows) == nil && bad.nextPeriodID(rows: badRows) == nil)
+check("分钟解析：合法值正确、非法值 nil",
+      SnapshotDerive.minutes(of: "07:40") == 460 && SnapshotDerive.minutes(of: "24:00") == nil
+        && SnapshotDerive.minutes(of: "07:60") == nil && SnapshotDerive.minutes(of: "abc") == nil)
+
 print("\n== 7. 样例文件与 Swift 内嵌字符串逐字节一致 ==")
-let sampleFile = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("Samples/snapshot.sample.json")
+// 多候选路径：从 `macos/` 里跑（verify.sh 就是这么跑的）和从仓库根目录跑都能找到。
+// 早先写死单一相对路径，在仓库根目录手工跑时第 7 项会假红一次——**自检工具自己也不该依赖 cwd**。
+let sampleCandidates = ["Samples/snapshot.sample.json", "macos/Samples/snapshot.sample.json"]
+    .map { URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent($0) }
+let sampleFile = sampleCandidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    ?? sampleCandidates[0]
 if let onDisk = try? String(contentsOf: sampleFile, encoding: .utf8) {
     check("Samples/snapshot.sample.json == SnapshotSample.json", onDisk == SnapshotSample.json,
           "长度 \(onDisk.count) vs \(SnapshotSample.json.count)")
