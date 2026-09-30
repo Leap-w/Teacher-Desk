@@ -146,10 +146,15 @@ SMOKE_BIN="$BUILD_DIR/snapshot-smoke"
 if "$SWIFTC" -O -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -o "$SMOKE_BIN" \
   Tools/SnapshotSmoke/main.swift Shared/SnapshotModel.swift Shared/SnapshotStore.swift \
   Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift 2>"$BUILD_DIR/smoke.log"; then
-  if "$SMOKE_BIN" | tail -40 | sed 's/^/  /'; then
+  # ⚠️ 不要写成 `"$SMOKE_BIN" | tail`：管道的退出码是 **tail 的**，
+  # 于是冒烟失败也会显示成全绿（这个坑在本版真的踩过一次）。
+  # 先把输出落盘、按二进制自己的退出码判断，再打印。
+  if "$SMOKE_BIN" >"$BUILD_DIR/smoke-run.log" 2>&1; then
+    tail -40 "$BUILD_DIR/smoke-run.log" | sed 's/^/  /'
     ok "快照冒烟全绿"
   else
-    bad "快照冒烟有失败项"
+    tail -40 "$BUILD_DIR/smoke-run.log" | sed 's/^/  /'
+    bad "快照冒烟有失败项（上面的 ✗ 行）"
   fi
 else
   bad "快照冒烟编译失败：见 $BUILD_DIR/smoke.log"

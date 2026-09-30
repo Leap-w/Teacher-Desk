@@ -23,10 +23,10 @@ enum SnapshotSample {
     /// 差 1 个字节本身无所谓，但「两处应当逐字节相同」这条断言就没法钉住了。
     static let json = #"""
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generator": "teacherdesk-web",
-  "updatedAt": "2026-09-30T13:40:00.000Z",
-  "updatedAtLabel": "9月30日 21:40",
+  "updatedAt": "2026-09-30T23:30:00.000Z",
+  "updatedAtLabel": "10月1日 07:30",
   "pwaBaseUrl": "https://teacher-desk-d6gdsgqb8f9dc13d2-1454430270.tcloudbaseapp.com",
   "className": "（样例课表）",
   "periods": [
@@ -129,43 +129,53 @@ enum SnapshotSample {
       "lessons": [
         {
           "periodId": "morning",
+          "className": "高一10班",
           "subject": "数学"
         },
         {
           "periodId": "p2",
-          "subject": "英语"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p3",
-          "subject": "物理"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p4",
-          "subject": "化学"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "p5",
+          "className": "高一11班",
           "subject": "数学"
         },
         {
           "periodId": "p6",
-          "subject": "语文"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p7",
-          "subject": "体育"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "evening1",
+          "className": "高一9班",
           "subject": "数学"
         },
         {
           "periodId": "evening2",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening3",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         }
       ]
     },
@@ -176,43 +186,53 @@ enum SnapshotSample {
       "lessons": [
         {
           "periodId": "morning",
-          "subject": "语文"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p2",
+          "className": "高一9班",
           "subject": "数学"
         },
         {
           "periodId": "p3",
-          "subject": "化学"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "p4",
-          "subject": "英语"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p5",
-          "subject": "物理"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p6",
+          "className": "高一10班",
           "subject": "数学"
         },
         {
           "periodId": "p7",
-          "subject": "历史"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "evening1",
-          "subject": "英语"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening2",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening3",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         }
       ]
     },
@@ -223,43 +243,53 @@ enum SnapshotSample {
       "lessons": [
         {
           "periodId": "morning",
-          "subject": "英语"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p2",
+          "className": "高一10班",
           "subject": "数学"
         },
         {
           "periodId": "p3",
-          "subject": "语文"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p4",
-          "subject": "物理"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p5",
-          "subject": "化学"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "p6",
-          "subject": "生物"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p7",
-          "subject": "政治"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening1",
+          "className": "高一9班",
           "subject": "数学"
         },
         {
           "periodId": "evening2",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening3",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         }
       ]
     },
@@ -270,43 +300,53 @@ enum SnapshotSample {
       "lessons": [
         {
           "periodId": "morning",
+          "className": "高一10班",
           "subject": "数学"
         },
         {
           "periodId": "p2",
-          "subject": "语文"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p3",
-          "subject": "英语"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p4",
-          "subject": "化学"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "p5",
-          "subject": "物理"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p6",
-          "subject": "地理"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p7",
-          "subject": "体育"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "evening1",
-          "subject": "语文"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening2",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening3",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         }
       ]
     },
@@ -317,43 +357,53 @@ enum SnapshotSample {
       "lessons": [
         {
           "periodId": "morning",
-          "subject": "物理"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p2",
-          "subject": "英语"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p3",
+          "className": "高一10班",
           "subject": "数学"
         },
         {
           "periodId": "p4",
-          "subject": "生物"
+          "className": "高一11班",
+          "subject": "数学"
         },
         {
           "periodId": "p5",
-          "subject": "语文"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "p6",
-          "subject": "化学"
+          "className": "高一10班",
+          "subject": "数学"
         },
         {
           "periodId": "p7",
+          "className": "高一11班",
           "subject": "班会"
         },
         {
           "periodId": "evening1",
-          "subject": "英语"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening2",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         },
         {
           "periodId": "evening3",
-          "subject": "自习"
+          "className": "高一9班",
+          "subject": "数学"
         }
       ]
     },

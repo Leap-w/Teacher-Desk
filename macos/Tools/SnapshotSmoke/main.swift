@@ -52,7 +52,7 @@ guard case let .ok(sample) = sampleRead else {
     print("  ✗ 样例快照解不开：\(sampleRead)")
     exit(1)
 }
-check("schemaVersion = 1", sample.schemaVersion == 1)
+check("schemaVersion = \(widgetSnapshotSchemaVersion)", sample.schemaVersion == widgetSnapshotSchemaVersion, "\(sample.schemaVersion)")
 check("时段 10 条（早自习 + 第2~7节 + 三节晚自习）", sample.periods.count == 10, "\(sample.periods.count)")
 check("一周 7 天", sample.week.count == 7, "\(sample.week.count)")
 check("样例共 50 节课", SnapshotDerive.lessonCount(in: sample) == 50, "\(SnapshotDerive.lessonCount(in: sample))")
@@ -92,22 +92,39 @@ check("日期行文案 =「周二 · 9月29日」", SnapshotDerive.dateLine(of: 
 print("\n== 4. 今日课程（当天有课 / 没课 / 周末）==")
 let monday = SnapshotDerive.lessons(in: sample, on: date(2026, 9, 28), calendar: calendar)
 check("周一 10 节", monday.count == 10, "\(monday.count)")
-check("第一节 = 早自习 数学", monday.first?.period.shortLabel == "早自习" && monday.first?.lesson.subject == "数学")
-check("第二节 = 第2节 英语", monday.dropFirst().first?.lesson.subject == "英语")
-check("最后一节 = 晚自习3 自习", monday.last?.period.shortLabel == "晚自习3" && monday.last?.lesson.subject == "自习")
+check("第一节 = 早自习 · 高一10班", monday.first?.period.shortLabel == "早自习"
+    && monday.first.map { SnapshotDerive.label(for: $0.lesson) } == "高一10班")
+check("显示的是**班级**而不是科目（数学老师每节科目都一样）",
+      monday.first?.lesson.subject == "数学" && monday.first.map { SnapshotDerive.label(for: $0.lesson) } == "高一10班")
+check("最后一节 = 晚自习3 · 高一9班", monday.last?.period.shortLabel == "晚自习3"
+    && monday.last.map { SnapshotDerive.label(for: $0.lesson) } == "高一9班")
 let saturday = SnapshotDerive.lessons(in: sample, on: date(2026, 10, 3), calendar: calendar)
 check("周六没有课（空数组 → 界面走空态）", saturday.isEmpty)
 
 print("\n== 5. 一周课表 ==")
 check("样例里周末没课 → 可见列只有周一到周五", SnapshotDerive.visibleDays(in: sample).map(\.weekday) == [1, 2, 3, 4, 5])
-check("周三第3节 = 语文", {
-    guard let wednesday = sample.day(3) else { return false }
-    return SnapshotDerive.lesson(in: wednesday, periodID: "p3")?.subject == "语文"
+check("周三第3节有课且显示班级", {
+    guard let wednesday = sample.day(3),
+          let lesson = SnapshotDerive.lesson(in: wednesday, periodID: "p3") else { return false }
+    return SnapshotDerive.label(for: lesson) == lesson.className && lesson.className?.isEmpty == false
 }())
-check("周五第7节 = 班会", {
+check("周五第7节是班会（科目仍留在快照里，只是界面不画它）", {
     guard let friday = sample.day(5) else { return false }
     return SnapshotDerive.lesson(in: friday, periodID: "p7")?.subject == "班会"
 }())
+check("一周里出现多个班级（班级才是有效信息）", Set(
+    sample.week.flatMap { $0.lessons.compactMap(\.className) }
+).count >= 2, "\(Set(sample.week.flatMap { $0.lessons.compactMap(\.className) }).count) 个班")
+
+print("\n== 5b. 显示口径：先班级，再科目，绝不空白 ==")
+check("有班级 → 显示班级（科目不参与）", SnapshotDerive.label(
+    for: SnapshotLesson(periodId: "p2", className: "高一9班", subject: "数学")) == "高一9班")
+check("没有班级（v1 快照）→ 退回显示科目", SnapshotDerive.label(
+    for: SnapshotLesson(periodId: "p2", className: nil, subject: "数学")) == "数学")
+check("班级是空白串也当没有 → 退回科目", SnapshotDerive.label(
+    for: SnapshotLesson(periodId: "p2", className: "   ", subject: "数学")) == "数学")
+check("两个都没有（手改坏的快照）→ 中性占位，不画空白", SnapshotDerive.label(
+    for: SnapshotLesson(periodId: "p2", className: nil, subject: nil)) == "—")
 check("空格子返回 nil（界面画「—」而不是猜一门课）", {
     guard let sunday = sample.day(7) else { return false }
     return SnapshotDerive.lesson(in: sunday, periodID: "p3") == nil

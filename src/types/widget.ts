@@ -18,11 +18,18 @@
  */
 
 /**
- * 快照格式版本。**加字段必须一起加它**（只在语义变化时 +1）：
+ * 快照格式版本。
+ *
+ * v2（v3.7.1）：每节课多了 `className` —— 小组件的主信息从**科目**改成**班级**
+ * （数学老师一天十节都是数学，「数学」重复十遍没有信息量，「哪个班」才是要看的）。
+ * v1 的快照仍能解码：班级缺席时 Widget 退回显示科目，所以这个 +1 不是硬墙，
+ * 它保证「快照比小组件新」时能明确提示更新。
+ *
+ * **加字段必须一起加它**（只在语义变化时 +1）：
  * Widget 侧解码时按它判断「这份快照我认不认得」，不认得就显示「请更新 TeacherDesk」，
  * 而不是猜着读一半、渲染出一张看着正常的错课表。
  */
-export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 1
+export const WIDGET_SNAPSHOT_SCHEMA_VERSION = 2
 
 /** 快照里的一条时段定义（`COURSE_PERIODS` 的只读投影） */
 export interface WidgetSnapshotPeriod {
@@ -45,14 +52,19 @@ export interface WidgetSnapshotPeriod {
 /**
  * 快照里的一节课。
  *
- * 只有 **时段 + 科目** 两个字段：Widget 本版只显示这两样（规格 §十 / §二十六 明确不要
- * 教室、任课教师、完成状态、倒计时……）。`className` / `type` 这些字段**故意不带**——
- * 一份用不上的数据放进契约，只会让两边以后各自以为对方在读它。
+ * 三个字段，都是 Widget 真会画的（规格 §十 / §二十六 明确不要教室、完成状态、倒计时……）：
+ *
+ * - `className` 是**主信息**（v3.7.1 起）：教师看的是「下一节去哪个班」。
+ * - `subject` 仍带在快照里：**本版小组件不显示它**（教师的主科每行都一样，重复写是噪声），
+ *   留着是为了将来做「代课 / 跨科」标记以及宿主面板的诊断——数据在手上，界面不喧哗。
+ * - `periodId` 对应 `periods[].id`，决定这一节排在哪一行。
  */
 export interface WidgetSnapshotLesson {
   /** 时段 id（对应 `periods[].id`） */
   periodId: string
-  /** 科目名，如「数学」（过长由 Widget 截断，快照不做加工） */
+  /** 班级名，如「高一9班」（过长由 Widget 缩排/截断，快照不做加工） */
+  className: string
+  /** 科目名，如「数学」（本版小组件不显示，见上） */
   subject: string
 }
 
@@ -83,7 +95,7 @@ export interface WidgetSnapshot {
    * 写在快照里而不是写死在 Swift 里：换域名 / 本机 dev 都不用改 Widget 源码。
    */
   pwaBaseUrl: string
-  /** 班级名（拿不到就是空串；Widget 不显示它，留着用于宿主 App 的诊断面板） */
+  /** 教师本人的班级名（班主任那张班；拿不到就是空串；宿主 App 的诊断面板显示它） */
   className: string
   /** 生效的时段表（10 条，顺序即课表顺序） */
   periods: WidgetSnapshotPeriod[]

@@ -1,8 +1,12 @@
 //
 //  TodayScheduleView.swift —— 今日课程（small / medium，v3.7.0）
 //
-//  视觉层级（规格 §二十五）：**科目是主角，节次是辅助**。
-//  所以每一行是「节次（小字、灰）+ 科目（大字、深色）」，而不是反过来。
+//  视觉层级（规格 §二十五）：**主信息是主角，节次是辅助**。
+//  所以每一行是「节次（小字、灰）+ 班级（大字、深色）」，而不是反过来。
+//
+//  v3.7.1：主信息从**科目**改成**班级**（`SnapshotDerive.label(for:)` 是唯一口径）。
+//  理由来自真实使用：数学老师一天十节都是数学，逐行写「数学」等于没有信息，
+//  「下一节去哪个班」才是要看的那件事。
 //
 //  ## 尺寸差异怎么处理（规格 §九）
 //
@@ -97,7 +101,7 @@ struct TodayScheduleView: View {
                         .foregroundStyle(TDColor.faintText(scheme))
                         .lineLimit(1)
                         .frame(width: 46, alignment: .leading)
-                    Text(row.lesson.subject)
+                    Text(SnapshotDerive.label(for: row.lesson))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(TDColor.text(scheme))
                         .lineLimit(1)

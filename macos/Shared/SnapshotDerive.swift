@@ -86,6 +86,21 @@ enum SnapshotDerive {
         day.lessons.first { $0.periodId == periodID }
     }
 
+    /// 一节课**显示什么**（v3.7.1 的唯一显示口径）
+    ///
+    /// 规则只有一条：**先班级，再科目**。
+    /// - 数学老师每节课的科目都是「数学」，逐行重复没有信息量，而「高一9班」才是要看的
+    ///   —— 所以班级优先；
+    /// - 快照是 v1（没有班级字段）时退回科目：老文件不会显示成空行；
+    /// - 两个都没有（手改坏的快照）时给一个中性占位，绝不画空白格子。
+    static func label(for lesson: SnapshotLesson) -> String {
+        let className = lesson.className?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let subject = lesson.subject?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !className.isEmpty { return className }
+        if !subject.isEmpty { return subject }
+        return "—"
+    }
+
     /// 整周课时数（空态与诊断用）
     static func lessonCount(in snapshot: WidgetSnapshot) -> Int {
         snapshot.week.reduce(0) { $0 + $1.lessons.count }

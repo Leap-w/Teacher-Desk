@@ -14,7 +14,10 @@
 //  只支持 large（规格 §十四）：一周课表在 small 里没有可读性，medium 也没保证。
 //
 //  溢出策略：行高按「放得下多少行」自动收缩（`ViewThatFits` + 三档行距），
-//  科目字号固定 10.5–11pt，过长截断（规格 §十七：不许撑破整体布局）。
+//  格子里的字号固定 9.5–11pt，过长缩排 / 截断（规格 §十七：不许撑破整体布局）。
+//
+//  v3.7.1：格子里写的是**班级**（`SnapshotDerive.label(for:)`），不是科目——
+//  数学老师一周 50 节都写「数学」的话，这张表什么也没告诉他。
 //
 
 import SwiftUI
@@ -135,7 +138,7 @@ struct WeekScheduleView: View {
             ForEach(days, id: \.weekday) { day in
                 let isToday = day.weekday == today
                 let lesson = SnapshotDerive.lesson(in: day, periodID: period.id)
-                Text(lesson?.subject ?? "—")
+                Text(lesson.map(SnapshotDerive.label(for:)) ?? "—")
                     .font(.system(size: subjectSize, weight: lesson == nil ? .regular : .semibold))
                     .foregroundStyle(lesson == nil ? TDColor.faintText(scheme) : TDColor.text(scheme))
                     .lineLimit(1)

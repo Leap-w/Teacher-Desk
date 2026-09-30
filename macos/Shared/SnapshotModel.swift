@@ -13,7 +13,10 @@
 import Foundation
 
 /// 当前 Widget 认识的快照格式版本（与 Web 侧 `WIDGET_SNAPSHOT_SCHEMA_VERSION` 同值）
-let widgetSnapshotSchemaVersion = 1
+///
+/// v2（v3.7.1）：每节课多了 `className` —— 小组件主信息从**科目**改成**班级**。
+/// v1 的快照仍能解码（`className` 缺席时退回显示科目），所以版本高只是「提示更新」那条路。
+let widgetSnapshotSchemaVersion = 2
 
 /// 一条时段（Web 侧 `WidgetSnapshotPeriod`）
 struct SnapshotPeriod: Decodable, Identifiable, Hashable {
@@ -26,10 +29,15 @@ struct SnapshotPeriod: Decodable, Identifiable, Hashable {
     let group: String
 }
 
-/// 一节课（Web 侧 `WidgetSnapshotLesson`）——只有时段与科目，Widget 本版只画这两样
+/// 一节课（Web 侧 `WidgetSnapshotLesson`）
+///
+/// `className` 是**主信息**（v3.7.1 起）：数学老师一天十节都是数学，
+/// 「去哪个班」才是要看的。`subject` 是可选的老字段（v1 快照里它是主信息、没有班级）——
+/// 两者都缺席时由 `SnapshotDerive.label(for:)` 决定显示什么，绝不显示空白。
 struct SnapshotLesson: Decodable, Hashable {
     let periodId: String
-    let subject: String
+    let className: String?
+    let subject: String?
 }
 
 /// 一天（Web 侧 `WidgetSnapshotDay`）

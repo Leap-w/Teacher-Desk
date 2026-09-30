@@ -64,7 +64,7 @@ function dayOf(
   orderOf: ReadonlyMap<string, number>,
 ): WidgetSnapshotDay {
   const seen = new Set<string>()
-  const picked: { periodId: string; subject: string; order: number }[] = []
+  const picked: { periodId: string; className: string; subject: string; order: number }[] = []
   for (const lesson of lessons) {
     if (lesson.weekday !== weekday) continue
     if (seen.has(lesson.periodId)) continue
@@ -73,11 +73,17 @@ function dayOf(
     // 硬塞进来只会让这一天的顺序莫名其妙
     const order = orderOf.get(lesson.periodId)
     if (order === undefined) continue
-    picked.push({ periodId: lesson.periodId, subject: lesson.subject, order })
+    picked.push({
+      periodId: lesson.periodId,
+      className: lesson.className,
+      subject: lesson.subject,
+      order,
+    })
   }
   picked.sort((a, b) => a.order - b.order)
   const mapped: WidgetSnapshotLesson[] = picked.map((item) => ({
     periodId: item.periodId,
+    className: item.className,
     subject: item.subject,
   }))
   return { weekday, label, shortLabel, lessons: mapped }
