@@ -22,11 +22,14 @@
 //  闪一下自己的窗口——那正是要修掉的观感。改成 `.accessory`（无 Dock 图标、无窗口）之后，
 //  深链唤起**完全不出现界面**；面板入口挪到菜单栏图标里（预览 / 诊断要用它）。
 //
-//  ## 调试用的两个无界面开关（`Tools/verify.sh` 用它们做命令行自检）
+//  ## 调试用的几个无界面开关（`Tools/verify.sh` 用它们做命令行自检）
 //
 //      TeacherDesk --print-diagnostics        把诊断信息打到 stdout
 //      TeacherDesk --export-widget-previews   把三种尺寸 × 深浅两色的 PNG 导到 ~/Downloads
-//  两者都在建窗口之前处理并退出，所以命令行里跑它们不会闪任何界面。
+//      TeacherDesk --export-widget-previews --export-dir <dir> --at <yyyy-MM-ddTHH:mm>
+//      TeacherDesk --export-widget-previews --snapshot sample
+//      TeacherDesk --export-widget-previews --snapshot-file <path>
+//  全都在建窗口之前处理并退出，所以命令行里跑它们不会闪任何界面。
 //
 
 import AppKit
@@ -81,11 +84,12 @@ enum HostHeadless {
         case .printDiagnostics:
             FileHandle.standardOutput.write(Data(WidgetDiagnostics.text().utf8))
             exit(0)
-        case let .exportPreviews(directory, now, useSample):
+        case let .exportPreviews(directory, now, useSample, snapshotFile):
             let urls = WidgetPreviewExporter.exportAll(
                 now: now ?? Date(),
                 directory: directory,
-                useSample: useSample
+                useSample: useSample,
+                snapshotFile: snapshotFile
             )
             FileHandle.standardOutput.write(Data(urls.map(\.path).joined(separator: "\n").utf8))
             exit(urls.isEmpty ? 1 : 0)
@@ -101,7 +105,9 @@ enum HostCommand {
     /// - now: `--at <yyyy-MM-ddTHH:mm>` 指定"此刻"，用来核对「当前 / 下一节」的强调
     /// - useSample: `--snapshot sample` 用内置样例数据（规格 §八 允许的 debug 数据；
     ///   默认 `live`，永远读真实快照）
-    case exportPreviews(directory: URL?, now: Date?, useSample: Bool)
+    /// - snapshotFile: `--snapshot-file <path>` 用指定的快照文件渲染（**只给长文本验收用**，
+    ///   规格 §三十二：要拿超长课程名试排版，又不能改教师的真快照）
+    case exportPreviews(directory: URL?, now: Date?, useSample: Bool, snapshotFile: URL?)
 
     static func parse(_ arguments: [String]) -> HostCommand? {
         if arguments.contains("--print-diagnostics") { return .printDiagnostics }
@@ -116,7 +122,16 @@ enum HostCommand {
             }
             let useSample = arguments.contains("sample")
                 && (arguments.firstIndex(of: "--snapshot").map { $0 + 1 < arguments.count && arguments[$0 + 1] == "sample" } ?? false)
-            return .exportPreviews(directory: directory, now: now, useSample: useSample)
+            var snapshotFile: URL?
+            if let index = arguments.firstIndex(of: "--snapshot-file"), index + 1 < arguments.count {
+                snapshotFile = URL(fileURLWithPath: arguments[index + 1])
+            }
+            return .exportPreviews(
+                directory: directory,
+                now: now,
+                useSample: useSample,
+                snapshotFile: snapshotFile
+            )
         }
         return nil
     }

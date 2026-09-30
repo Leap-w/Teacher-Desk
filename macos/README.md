@@ -1,4 +1,4 @@
-# TeacherDesk · macOS 课程表小组件（v3.7.0）
+# TeacherDesk · macOS 课程表小组件（v3.7.3）
 
 桌面上两个**只读**小部件：**今日课程**（small / medium）与**一周课程表**（large）。
 数据来自 TeacherDesk 的课程表，点一下打开 TeacherDesk 网页版（PWA）。
@@ -65,27 +65,47 @@ macos/
 ├── Shared/                         两个 target 各编一份
 │   ├── SnapshotModel.swift         快照契约（与 src/types/widget.ts 逐字段对齐）
 │   ├── SnapshotStore.swift         快照路径与读写的**唯一**入口（四态读结果）
-│   ├── SnapshotDerive.swift        展示级派生：今天是哪一列 / 今天有哪些课 / 显示哪几天
-│   ├── WidgetLinks.swift           点击打开哪一页（history 路由 `/work/schedule`）
-│   ├── DesignTokens.swift          松石青等设计变量（从 src/styles/theme.css 抄来）
-│   └── SnapshotSample.swift        样例快照（与 Samples/snapshot.sample.json 逐字节相同）
-├── TeacherDesk/                    宿主 App（一屏面板：状态 / 路径 / 按钮）
-│   ├── TeacherDeskApp.swift        @main + `teacherdesk://` 深链 + 打开 TeacherDesk
+│   ├── SnapshotDerive.swift        展示级派生：今天是哪一列 / 今天有哪些课 / 当前与下一节 / 标题行文案
+│   ├── WidgetLinks.swift           点击打开哪一页（深链 `teacherdesk://open`）
+│   ├── DesignTokens.swift          松石青等设计变量（从 src/styles/theme.css 抄来）+ Widget 专用字级与版心
+│   ├── SnapshotSample.swift        样例快照（与 Samples/snapshot.sample.json 逐字节相同）
+│   └── Views/                      **Widget 与宿主预览共用的同一批 View**（v3.7.2 起，不存在第二套 UI）
+│       ├── TodayScheduleView.swift    今日课程（small + medium）
+│       ├── WeekScheduleView.swift     一周课程表（large）
+│       └── WidgetChrome.swift         背景 / 版心 / 标题行 / 四态空壳
+├── TeacherDesk/                    宿主 App（一屏面板：状态 / 路径 / 按钮 + 预览 + 诊断）
+│   ├── TeacherDeskApp.swift        @main + `teacherdesk://` 深链 + 无界面调试开关
 │   ├── HostView.swift              全部界面 + 面板状态模型
+│   ├── WidgetPreview.swift         预览渲染与 PNG 导出（同一套 View）
+│   ├── WidgetDiagnostics.swift     五段诊断文本
 │   ├── Info.plist / *.entitlements 深链方案；**不开沙盒**
 ├── TeacherDeskWidget/              Widget 扩展（**沙盒**、无网络）
 │   ├── TeacherDeskWidgetBundle.swift      @main：只挂两个 Widget
 │   ├── TeacherDeskWidgets.swift           两个 Widget 定义 + 时间线（15 分钟 / 跨零点）
-│   ├── Views/TodayScheduleView.swift      今日课程（small + medium）
-│   ├── Views/WeekScheduleView.swift       一周课程表（large，今天那列高亮）
-│   ├── Views/WidgetChrome.swift           背景 / 标题 / 四态空壳
 │   └── Info.plist / *.entitlements        widgetkit 扩展点；app-sandbox
 ├── Samples/snapshot.sample.json    样例快照（由 Web 侧真正的生成器产出）
 └── Tools/
-    ├── verify.sh                   六档自检（见下）
+    ├── verify.sh                   八档自检（见下）
     ├── SnapshotSmoke/main.swift    快照数据层冒烟（纯 Foundation，命令行可跑）
     └── install-snapshot.sh         Safari 兜底：把下载的快照放进容器
 ```
+
+## Widget 的视觉规则（v3.7.3 定稿）
+
+桌面截图读起来像「网页卡片」的根因不是配色，而是**用背景块代替了排版**。所以这一版把规矩写死：
+
+| 规则                                       | 为什么                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **强调只给星期标题，不给整列**             | 今天那一列每一格都盖一层底，就是一条由 10 个圆角块串成的柱子；「今天」只需要一个落点       |
+| **有课才有容器，`—` 永远没有背景**         | 空格子占了课表一多半；给它们加底，整张表就只剩「有没有底色」这一种层级                     |
+| **层级靠字号 / 字重 / 灰度，不靠胶囊**     | 三级灰（主文字 / 次级 / 空课程）比三层底色安静得多，也更像 macOS 原生                      |
+| **版心自己给（`contentMarginsDisabled`）** | 系统的默认边距量不到、也没法被预览复用；关掉它，`TDWidgetMetrics` 才是唯一出处，预览＝真机 |
+| **右侧那句话宁可把标题挤瘦，也不出省略号** | Medium 的「周四 · 1...」就是这么来的；放不下就退到「10月1日」（规格 §十五）                |
+| **不加渐变 / 图片 / 阴影 / 新配色**        | 小组件贴在教师自己的壁纸上，它该安静地待着，而不是抢桌面注意力                             |
+
+**当前 / 下一节**是**三档**（不是三颗一样的胶囊）：当前 = 极淡主色行底 + 「当前」标签；
+下一节 = 只挂更淡的「下一节」标签；普通 = 什么都没有。全天结束后两者都不显示，课程回到普通状态。
+判定算法是纯函数 `SnapshotDerive.daySchedule(rows:now:)`，**本版一个字未改**。
 
 ## 跑起来
 
@@ -95,9 +115,10 @@ macos/
 sh macos/Tools/verify.sh
 ```
 
-六档：工程文件一致性 → plist / entitlements 关键键 → **13 个源文件类型检查** →
-**快照冒烟 31 项** → `xcodebuild` 真编译 → 产物结构断言（appex 是否嵌进 App、扩展点、
-深链、沙盒 entitlement、签名校验）。
+八档：工程文件一致性 → plist / entitlements 关键键 → **全部源文件类型检查** →
+**快照冒烟 55 项** → `xcodebuild` 真编译 → 产物结构断言（appex 是否嵌进 App、扩展点、
+深链、沙盒 entitlement、签名校验）→ **三种尺寸 × 深浅两色的预览 PNG 导出** →
+**五段诊断信息**。
 
 > 本机工作区里的文件带 Finder 信息时 `codesign` 会拒签（`resource fork … detritus`），
 > 脚本会自动清一次 `xattr` 再增量重跑。这是本机文件系统的问题，不是工程的问题。

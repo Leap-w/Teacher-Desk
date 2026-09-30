@@ -31,6 +31,59 @@ enum SnapshotDerive {
         return "\(short) · \(month)月\(day)日"
     }
 
+    /// 「9月30日」——**不带星期**的那一版（v3.7.3）
+    ///
+    /// 给 small 用：170pt 宽减去版心只剩 146pt，「今日课程」四个字就吃掉 60pt，
+    /// 完整日期（「周四 · 10月1日」）不一定放得下。规格 §十五 明确：放不下时
+    /// **优先退到「10月1日」**，而不是让它变成「周四 · 1...」。
+    /// 调用方（`TodayScheduleView`）用 `ViewThatFits` 先试完整的，放不下才用这一版。
+    static func shortDateLine(of date: Date, calendar: Calendar = .current) -> String {
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        return "\(month)月\(day)日"
+    }
+
+    /// 快照的**同步时刻**「01:21」（v3.7.3）
+    ///
+    /// 一周课程表右上角只写「01:21 同步」——规格 §六：不要再出现
+    /// 「同步于 10月1日 01:21」这种长句，它是三级信息，不该跟标题抢焦点。
+    ///
+    /// 两个来源，按可靠性排序：
+    ///   ① `updatedAtLabel` 里那一段 `HH:mm`（Web 侧已经按本地时区排好版了，直接切片）；
+    ///   ② 退到 `updatedAt`（ISO8601，带 Z）→ 按 `calendar` 的时区换算成本地时刻。
+    /// 都取不到就返回 nil —— 界面**宁可不显示**，也不要编一个时刻出来。
+    static func syncClockLabel(
+        _ snapshot: WidgetSnapshot,
+        calendar: Calendar = .current
+    ) -> String? {
+        if let label = snapshot.updatedAtLabel,
+           let range = label.range(of: #"\d{1,2}:\d{2}"#, options: .regularExpression) {
+            return String(label[range])
+        }
+        guard let raw = snapshot.updatedAt, let date = parseISO8601(raw) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        // 时区跟着调用方给的日历走：自检里固定成 Asia/Shanghai，桌面上就是系统时区
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    /// ISO8601 → Date。**两种都要试**：Web 侧写出来的是带毫秒的（`…:00.000Z`），
+    /// 而 `ISO8601DateFormatter` 默认那组选项**不认毫秒**——只试一种会静默返回 nil。
+    static func parseISO8601(_ raw: String) -> Date? {
+        let optionSets: [ISO8601DateFormatter.Options] = [
+            [.withInternetDateTime, .withFractionalSeconds],
+            [.withInternetDateTime],
+        ]
+        for options in optionSets {
+            let parser = ISO8601DateFormatter()
+            parser.formatOptions = options
+            if let date = parser.date(from: raw) { return date }
+        }
+        return nil
+    }
+
     /// 星期的中文短名。**与快照里的 `shortLabel` 分开**：这里的「今天」可能落在快照没覆盖的日子上
     /// （比如周日在快照里没有课、但日期行仍要正确显示「周日」）
     static func weekdayShortName(_ weekday: Int) -> String {

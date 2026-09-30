@@ -92,10 +92,20 @@ enum WidgetPreviewRenderer {
 
     /// 用当前**真实快照**构造 entry（规格 §八：默认不写死假数据）
     ///
-    /// `useSample` 只给命令行自检用（`--snapshot sample`）：核对「当前 / 下一节」的强调时，
-    /// 需要一份"此刻正好在上课"的数据，而教师本机的真实快照不一定在那个时间窗里。
-    /// 界面上的预览**永远**走 `useSample = false`。
-    static func currentEntry(now: Date = Date(), useSample: Bool = false) -> SnapshotEntry {
+    /// 两个 debug 入口只给命令行自检用（`Tools/verify.sh`），界面上的预览**永远**走默认这一条：
+    /// - `useSample`（`--snapshot sample`）：核对「当前 / 下一节」的强调时，
+    ///   需要一份"此刻正好在上课"的数据，而教师本机的真实快照不一定在那个时间窗里。
+    /// - `snapshotFile`（`--snapshot-file <path>`）：**长文本验收**（规格 §三十二）——
+    ///   要拿「非常长的课程名称」去试排版，又不能把教师的真快照改掉，
+    ///   于是让它读一个临时文件。它只影响预览渲染，不碰任何写入路径。
+    static func currentEntry(
+        now: Date = Date(),
+        useSample: Bool = false,
+        snapshotFile: URL? = nil
+    ) -> SnapshotEntry {
+        if let snapshotFile {
+            return SnapshotEntry(date: now, read: SnapshotStore.decode(contentsOf: snapshotFile))
+        }
         if useSample, let sample = SnapshotSample.decoded {
             return SnapshotEntry(date: now, read: .ok(sample))
         }
@@ -136,8 +146,17 @@ enum WidgetPreviewExporter {
 
     /// 导出三种尺寸 × 浅/深两色；返回写成功的文件（空数组表示一个都没写出去）
     @discardableResult
-    static func exportAll(now: Date = Date(), directory override: URL? = nil, useSample: Bool = false) -> [URL] {
-        let entry = WidgetPreviewRenderer.currentEntry(now: now, useSample: useSample)
+    static func exportAll(
+        now: Date = Date(),
+        directory override: URL? = nil,
+        useSample: Bool = false,
+        snapshotFile: URL? = nil
+    ) -> [URL] {
+        let entry = WidgetPreviewRenderer.currentEntry(
+            now: now,
+            useSample: useSample,
+            snapshotFile: snapshotFile
+        )
         let manager = FileManager.default
 
         // 先渲好（渲染与目录无关，避免每个候选目录重渲一遍）

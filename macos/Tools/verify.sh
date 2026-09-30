@@ -4,10 +4,11 @@
 #
 #  分两档跑，**两档都用同一批源码**：
 #
-#    【有 Xcode】六档全跑 —— 工程文件一致性、plist / entitlements 关键键、类型检查、
+#    【有 Xcode】八档全跑 —— 工程文件一致性、plist / entitlements 关键键、类型检查、
 #               快照冒烟、**xcodebuild 真编译**、产物结构断言（appex 是否嵌进 .app、
-#               扩展点、URL scheme、沙盒 entitlement）。最后一条是最强的：它证明
-#               「小组件真的会被系统当成小组件」这件事的**静态前提**全都成立。
+#               扩展点、URL scheme、沙盒 entitlement）、预览 PNG 导出、诊断信息。
+#               最后一条是最强的：它证明「小组件真的会被系统当成小组件」这件事的
+#               **静态前提**全都成立。
 #
 #    【只有 Command Line Tools】跳过 xcodebuild 那一档（没有 macOS SDK 之外的打包工具链），
 #               其余照跑 —— 数据层与视图层的类型检查在 CLT 下同样成立
@@ -147,7 +148,7 @@ step "类型检查（全部源码，含 SwiftUI/WidgetKit）"
 SOURCES="Shared/DeepLink.swift Shared/SnapshotModel.swift Shared/SnapshotEntry.swift Shared/SnapshotStore.swift Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift Shared/DesignTokens.swift Shared/Views/WidgetChrome.swift Shared/Views/TodayScheduleView.swift Shared/Views/WeekScheduleView.swift TeacherDesk/TeacherDeskApp.swift TeacherDesk/HostView.swift TeacherDesk/HostLauncher.swift TeacherDesk/PWALocator.swift TeacherDesk/WidgetDiagnostics.swift TeacherDesk/WidgetPreview.swift TeacherDeskWidget/TeacherDeskWidgetBundle.swift TeacherDeskWidget/TeacherDeskWidgets.swift"
 
 if "$SWIFTC" -typecheck -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -swift-version 5 $SOURCES 2>"$BUILD_DIR/typecheck.log"; then
-  ok "13 个源文件类型检查通过（两档工具链都跑得动，因为没有宏）"
+  ok "全部源文件类型检查通过（两档工具链都跑得动，因为没有宏）"
 else
   bad "类型检查失败：见 $BUILD_DIR/typecheck.log"
   head -20 "$BUILD_DIR/typecheck.log" | sed 's/^/    /'

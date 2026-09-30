@@ -68,6 +68,10 @@ struct TodayScheduleWidget: Widget {
         .configurationDisplayName("今日课程")
         .description("今天要上的课，按课程节次排列。数据来自 TeacherDesk 课程表，只读。")
         .supportedFamilies([.systemSmall, .systemMedium])
+        // 版心由 `widgetContentPadding(_:)` 自己给（v3.7.3）：
+        // 系统的默认内容边距在这里量不到、也没法被预览复用，留着它就会出现
+        // 「系统 16 + 自己 16 = 32」而预览里只有 16 的局面——规格 §三十 要求两者完全一致。
+        .contentMarginsDisabled()
     }
 }
 
@@ -84,6 +88,7 @@ struct WeekScheduleWidget: Widget {
         .configurationDisplayName("一周课程表")
         .description("一周的完整课表（星期 × 节次）。今天那一列会高亮。数据来自 TeacherDesk 课程表，只读。")
         .supportedFamilies([.systemLarge])
+        .contentMarginsDisabled()
     }
 }
 

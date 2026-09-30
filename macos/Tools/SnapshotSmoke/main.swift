@@ -90,6 +90,34 @@ check("2026-10-04 周日 → 7", SnapshotDerive.weekday(of: date(2026, 10, 4), c
 check("日期行文案 =「周二 · 9月29日」", SnapshotDerive.dateLine(of: date(2026, 9, 29), calendar: calendar) == "周二 · 9月29日",
       SnapshotDerive.dateLine(of: date(2026, 9, 29), calendar: calendar))
 
+print("\n== 3b. 标题行文案（v3.7.3：短日期 / 同步时刻）==")
+// 短日期是 small 的退路（规格 §十五）：170pt 宽减去版心只剩 146pt，完整日期不一定放得下，
+// 放不下时退到「9月29日」而**不是**「周二 · 9月…」——所以这两条要钉死。
+check("短日期 =「9月29日」", SnapshotDerive.shortDateLine(of: date(2026, 9, 29), calendar: calendar) == "9月29日",
+      SnapshotDerive.shortDateLine(of: date(2026, 9, 29), calendar: calendar))
+check("完整日期 = 短日期前面加「星期 · 」，两者只差这一截",
+      SnapshotDerive.dateLine(of: date(2026, 9, 29), calendar: calendar)
+        == "周二 · " + SnapshotDerive.shortDateLine(of: date(2026, 9, 29), calendar: calendar))
+// 同步时刻：一周课程表右上角写「07:30 同步」（规格 §六），所以只取 HH:mm 这一段
+check("同步时刻从 updatedAtLabel 里切出「07:30」（样例是「10月1日 07:30」）",
+      SnapshotDerive.syncClockLabel(sample, calendar: calendar) == "07:30",
+      SnapshotDerive.syncClockLabel(sample, calendar: calendar) ?? "nil")
+check("label 缺席时退到 ISO8601 的 updatedAt（带毫秒也要认）", {
+    let snapshot = WidgetSnapshot(
+        schemaVersion: 2, generator: nil,
+        updatedAt: "2026-09-30T23:30:00.000Z", updatedAtLabel: nil,
+        pwaBaseUrl: nil, className: nil, periods: [], week: []
+    )
+    return SnapshotDerive.syncClockLabel(snapshot, calendar: calendar) == "07:30"
+}())
+check("两个字段都没有 → nil（宁可不显示，也不编一个时刻出来）", {
+    let snapshot = WidgetSnapshot(
+        schemaVersion: 2, generator: nil, updatedAt: nil, updatedAtLabel: nil,
+        pwaBaseUrl: nil, className: nil, periods: [], week: []
+    )
+    return SnapshotDerive.syncClockLabel(snapshot, calendar: calendar) == nil
+}())
+
 print("\n== 4. 今日课程（当天有课 / 没课 / 周末）==")
 let monday = SnapshotDerive.lessons(in: sample, on: date(2026, 9, 28), calendar: calendar)
 check("周一 10 节", monday.count == 10, "\(monday.count)")
