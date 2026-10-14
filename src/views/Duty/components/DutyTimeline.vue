@@ -7,6 +7,8 @@ export interface DutyTimelineEntry {
   group?: { name: string; memberCount: number }
   /** 是否今天 */
   isToday?: boolean
+  /** 这一天的组是不是教师按天指定的（v3.7.5）：行内标注「已指定」 */
+  assigned?: boolean
 }
 </script>
 
@@ -21,6 +23,13 @@ import DutyTimelineItem from './DutyTimelineItem.vue'
  */
 defineProps<{
   entries: DutyTimelineEntry[]
+  /** 每行是否给出「指定」入口（v3.7.5 的按天指定；没有值日组时关掉） */
+  assignable?: boolean
+}>()
+
+const emit = defineEmits<{
+  /** 教师点了某一天的「指定 / 改派」 */
+  assign: [dateKey: string]
 }>()
 </script>
 
@@ -31,6 +40,8 @@ defineProps<{
       :key="entry.dateKey"
       :entry="entry"
       :index="index"
+      :assignable="assignable"
+      @assign="emit('assign', $event)"
     />
   </div>
 </template>

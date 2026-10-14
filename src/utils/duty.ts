@@ -7,7 +7,7 @@ import {
 } from '@/utils/date'
 import { createId } from '@/utils/id'
 import { isPlainObject } from '@/utils/object'
-import type { DutyGroup, DutyRecord, DutySettings } from '@/types/duty'
+import type { DutyDayAssignment, DutyGroup, DutyRecord, DutySettings } from '@/types/duty'
 import type { Weekday } from '@/types/timetable'
 
 /** 轮换设置记录的固定 id：同一个数组里只应存在一条（load 时据此去重 / 补默认） */
@@ -52,6 +52,11 @@ export function isDutySettings(record: DutyRecord): record is DutySettings {
   return record.kind === 'settings'
 }
 
+/** 是否为「按天指定值日组」记录（v3.7.5） */
+export function isDutyDayAssignment(record: DutyRecord): record is DutyDayAssignment {
+  return record.kind === 'day'
+}
+
 /** 新建组时的默认组名：按现有组数顺延（第 1 组 / 第 2 组 …） */
 export function defaultDutyGroupName(groupCount: number): string {
   return `第 ${groupCount + 1} 组`
@@ -93,6 +98,7 @@ export function withSettings(
 
 export function normalizeDutyRecord(raw: unknown): DutyRecord | null {
   if (!isPlainObject(raw)) return null
+  if (raw.kind === 'day') return normalizeDutyDayAssignment(raw)
   if (raw.kind === 'settings') {
     return {
       // 设置是单例：id 一律归一到 DUTY_SETTINGS_ID，否则改过 id 的缓存会绕过「只认一条」的去重
@@ -114,6 +120,59 @@ export function normalizeDutyRecord(raw: unknown): DutyRecord | null {
     name: name || '未命名组',
     studentIds: normalizeStudentIds(raw.studentIds),
   }
+}
+
+/**
+ * 「按天指定」记录的健壮化（v3.7.5）：日期或组 id 缺一即丢弃——
+ * 半条指定既说不上是哪天、也说不上是哪一组，留着只会让页面显示一个空的指定。
+ */
+export function normalizeDutyDayAssignment(raw: unknown): DutyDayAssignment | null {
+  if (!isPlainObject(raw)) return null
+  const dateKey = raw.dateKey
+  const groupId = typeof raw.groupId === 'string' ? raw.groupId : ''
+  if (!isDutyDateKey(dateKey) || !groupId) return null
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : createId(),
+    kind: 'day',
+    dateKey,
+    groupId,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '',
+  }
+}
+
+/**
+ * 某一天的「按天指定」记录（没有则为 undefined）。
+ * 同一天有多条时取**最后**一条：后一次指定才是教师当前的意图
+ * （正常路径下同一天只会有一条——store 的指定动作是覆盖式写入）。
+ */
+export function findDayAssignment(
+  assignments: readonly DutyDayAssignment[],
+  dateKey: string,
+): DutyDayAssignment | undefined {
+  let hit: DutyDayAssignment | undefined
+  for (const item of assignments) {
+    if (item.dateKey !== dateKey) continue
+    if (!hit || (item.createdAt ?? '') >= (hit.createdAt ?? '')) hit = item
+  }
+  return hit
+}
+
+/**
+ * 某天**实际**值日的组：教师按天指定的优先（v3.7.5），其次是轮换推算。
+ * 指定的那个组已被删除时回落到轮换（页面另有提示），不影响其他日期。
+ */
+export function dutyGroupForDay(
+  dateKey: string,
+  groups: DutyGroup[],
+  settings: DutySettings,
+  assignments: readonly DutyDayAssignment[] = [],
+): DutyGroup | undefined {
+  const assigned = findDayAssignment(assignments, dateKey)
+  if (assigned) {
+    const group = groups.find((item) => item.id === assigned.groupId)
+    if (group) return group
+  }
+  return dutyGroupFor(dateKey, groups, settings)
 }
 
 /**
@@ -180,14 +239,20 @@ export interface DutyDay {
   weekday: Weekday
   /** 该日值日的组；不值日（不排周末的周六 / 周日）或还没有组时为 undefined */
   group?: DutyGroup
+  /** 这一天的组是不是教师**按天指定**的（v3.7.5）：页面据此标注「已指定」 */
+  assigned?: boolean
 }
 
-/** 从 `fromDateKey` 起连续 `days` 天的值日安排（含当天） */
+/**
+ * 从 `fromDateKey` 起连续 `days` 天的值日安排（含当天）。
+ * `assignments`（按天指定）传入后即按「指定优先、其余轮换」出这一天的组（v3.7.5）。
+ */
 export function dutyDaysFrom(
   fromDateKey: string,
   days: number,
   groups: DutyGroup[],
   settings: DutySettings,
+  assignments: readonly DutyDayAssignment[] = [],
 ): DutyDay[] {
   const list: DutyDay[] = []
   for (let index = 0; index < days; index += 1) {
@@ -195,7 +260,8 @@ export function dutyDaysFrom(
     list.push({
       dateKey,
       weekday: weekdayOfDateKey(dateKey),
-      group: dutyGroupFor(dateKey, groups, settings),
+      group: dutyGroupForDay(dateKey, groups, settings, assignments),
+      assigned: Boolean(findDayAssignment(assignments, dateKey)),
     })
   }
   return list

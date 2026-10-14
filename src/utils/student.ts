@@ -239,19 +239,12 @@ export function refreshStudentNames<T extends StudentNamedRecord>(
   return changed ? next : records
 }
 
-/** 座位强调类别：只复用学生档案既有字段；高个由「高个」标签表达（档案暂无独立身高字段） */
-export type SeatAccent = 'cadre' | 'tall' | 'tag'
-
-/**
- * 座位图上的强调标记：班委 > 高个 > 其他标签（优先级递减）；均无则不强调。
- * 颜色映射见 views/Seats 页面图例（一律取自 theme.css，不新增主题色）。
- */
-export function seatAccentOf(student: Student): SeatAccent | undefined {
-  if (student.cadreRole) return 'cadre'
-  if (student.tags?.includes('高个')) return 'tall'
-  if (student.tags?.length) return 'tag'
-  return undefined
-}
+/*
+  v3.7.5（§4.3）：座位图展示精简——原来的「座位强调类别」（班委 > 高个 > 其他标签）
+  与 `seatAccentOf()` 已删除：座位图上只剩**姓名 / 性别 / 班委**三种信息，
+  高个与标签不再上座位图。学生档案里的 `tags`（含「高个」）与备注**一个字段都没动**，
+  自动排座的「高个」软偏好（utils/seatArrange.ts / utils/constraint.ts）也照旧读它。
+*/
 
 /* ---------- 重名消歧（Student Hub 与课堂工具共用，Phase Classroom-1 上收） ---------- */
 

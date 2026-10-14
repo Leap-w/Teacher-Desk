@@ -39,10 +39,12 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect((index?.redirect as () => string)()).toBe('/work/schedule')
   })
 
-  it('「工作管理」的两个子页顺序是 课程表 → 工作清单（决定二级导航先后）', () => {
+  it('「工作管理」的三个子页顺序是 课程表 → 工作清单 → 代课管理（决定二级导航先后）', () => {
     const workRoute = routes.find((route) => route.path === '/work')
     const children = (workRoute?.children ?? []).filter((child) => child.path !== '')
-    expect(children.map((child) => child.path)).toEqual(['schedule', 'works'])
+    // v3.7.5（§6）新增的「代课管理」排在最后：二级导航顺序由子路由顺序决定，
+    // 插在中间会把教师已经习惯的「课程表 / 工作清单」整体挪走一格（§9.10）
+    expect(children.map((child) => child.path)).toEqual(['schedule', 'works', 'substitutes'])
   })
 
   it('「班级管理」下挂五个子模块（v3.6.1 起 weekend 换成 holiday）', () => {
@@ -124,7 +126,13 @@ describe('utils/workTab：记住工作管理里停留的那一页', () => {
     expect(loadWorkTab()).toBe('/work/schedule')
   })
 
-  it('只认 /work 下的两个子页——别的路径一律忽略（首页、学生档案划过不留痕）', async () => {
+  it('v3.7.5：代课管理也是会被记住的子页（在它上面刷新不该弹回课程表）', async () => {
+    const { loadWorkTab, rememberWorkTab } = await load()
+    rememberWorkTab('/work/substitutes')
+    expect(loadWorkTab()).toBe('/work/substitutes')
+  })
+
+  it('只认 /work 下的三个子页——别的路径一律忽略（首页、学生档案划过不留痕）', async () => {
     const { loadWorkTab, rememberWorkTab } = await load()
     rememberWorkTab('/')
     rememberWorkTab('/students')

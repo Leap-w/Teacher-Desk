@@ -3,6 +3,15 @@ import { defineStore } from 'pinia'
 
 import { useNow } from '@/composables/useToday'
 import { scheduleRepository } from '@/repositories/schedule/scheduleRepository'
+import { useSemesterStore } from '@/stores/semester'
+import { formatDateKey } from '@/utils/date'
+import {
+  formatExchangeConflict,
+  isWeeklyExchange,
+  normalizeExchangeWeeks,
+  resolveWeekLessons,
+  slotTextOf,
+} from '@/utils/exchange'
 import { createId } from '@/utils/id'
 import {
   WEEKDAY_LABELS,
@@ -25,6 +34,7 @@ import type {
   LessonSnapshot,
   Weekday,
 } from '@/types/timetable'
+import type { WeekResolution } from '@/utils/exchange'
 
 /** 换课记录单独一个键：课程表键仍是「课程数组」，旧数据不需要改形状即可继续读 */
 /** Phase 4（v0.6.0）的旧键；首次加载自动迁移到 STORAGE_KEY，见 loadLessons */
@@ -77,7 +87,7 @@ function slotOf(lesson: Lesson): CourseSlot {
 export type ExchangeOutcome =
   { ok: true; exchanges: CourseExchange[] } | { ok: false; reason: string }
 
-/** 撤销结果 */
+/** 撤销结果（`restored` = 放回基础课表的课程条数；周次级换课不动基础课表，因此是 0） */
 export type UndoExchangeOutcome = { ok: true; restored: number } | { ok: false; reason: string }
 
 /** 课程导入落库结果 */
@@ -93,6 +103,8 @@ export const useTimetableStore = defineStore('timetable', () => {
   const lessons = ref<Lesson[]>(scheduleRepository.loadLessons())
   const exchanges = ref<CourseExchange[]>(scheduleRepository.loadExchanges())
   const now = useNow()
+  /** 学期设置（v3.7.5）：教学周次的唯一来源——换课选周次、周视图取周次都读它 */
+  const semester = useSemesterStore()
 
   // 写盘 + 跨标签页同步（Phase 9A）：两个键各自注册一次
   scheduleRepository.lessons.bind(lessons)
@@ -104,17 +116,82 @@ export const useTimetableStore = defineStore('timetable', () => {
   /** 今天的中文星期标签（如「星期四」），供卡片徽标展示 */
   const todayLabel = computed(() => WEEKDAY_LABELS[todayWeekday.value])
 
+  /**
+   * 今天是第几教学周（v3.7.5，由学期设置算出来）。
+   * 今天不在学期范围内（学期还没配 / 已经放假）时是 `undefined`——
+   * 此时按基础课表看，**不硬算一个「最近的周次」**（那会让换课在放假期间突然生效）。
+   */
+  const currentWeek = computed(() => semester.weekOf(formatDateKey(now.value)))
+
+  /* ========== v3.7.5：按教学周看课表（基础课表 + 该周生效的换课） ========== */
+
+  /**
+   * 某一教学周实际怎么上：基础课表 + 该周生效的周次级换课（`utils/exchange.ts` 的叠加层）。
+   *
+   * `week === undefined`（不在学期范围内）→ 直接给基础课表，不做任何叠加。
+   * 这个函数**只读不写**：解析出的课表用于渲染，解析过程绝不落盘、绝不改基础课表。
+   */
+  function weekView(week: number | undefined): WeekResolution {
+    if (week === undefined) {
+      return {
+        lessons: lessons.value,
+        appliedIds: [],
+        conflictIds: [],
+        conflicts: [],
+        danglingIds: [],
+      }
+    }
+    return resolveWeekLessons({ lessons: lessons.value, exchanges: exchanges.value, week })
+  }
+
+  /** 某周的冲突提示（人话，含日期 / 星期 / 节次 / 涉及课程），直接 toast 或列在页面上 */
+  function conflictMessages(week: number | undefined): string[] {
+    if (week === undefined) return []
+    return weekView(week).conflicts.map((conflict) =>
+      formatExchangeConflict(conflict, semester.weeks),
+    )
+  }
+
+  /**
+   * 需要教师处理的换课记录（v3.7.5）：周次为空 / 含超出当前学期范围的周次。
+   * **只报告、不删记录**——学期总周数改小后超范围的周次原样保留（§3「不得静默删除」）。
+   */
+  const weekRangeIssues = computed(() => {
+    const total = semester.weekCount
+    return exchanges.value
+      .filter(isWeeklyExchange)
+      .map((exchange) => {
+        const weeks = exchange.weeks ?? []
+        return {
+          exchange,
+          empty: weeks.length === 0,
+          outOfRange: weeks.filter((week) => week > total),
+        }
+      })
+      .filter((item) => item.empty || item.outOfRange.length > 0)
+  })
+
   /** 某天的课程（时段升序）；周末通常为空数组 → 工作台今日课程卡片显示空态 */
   function lessonsOf(weekday: Weekday): Lesson[] {
     return sortLessons(lessons.value.filter((lesson) => lesson.weekday === weekday))
   }
 
-  /** 今日课程（工作台直接读它） */
-  const todayLessons = computed(() => lessonsOf(todayWeekday.value))
+  /** 某周某天的课程（周视图 / 日视图用）：`week` 为 undefined 时就是基础课表 */
+  function lessonsOfWeek(weekday: Weekday, week?: number): Lesson[] {
+    const source = week === undefined ? lessons.value : weekView(week).lessons
+    return sortLessons(source.filter((lesson) => lesson.weekday === weekday))
+  }
+
+  /**
+   * 今日课程（工作台与课程页顶部直接读它）。
+   * v3.7.5 起按**今天的教学周**解析：某次换课选中了本周，今天看到的就是换过之后的课；
+   * 今天不在学期范围内时看基础课表。
+   */
+  const todayLessons = computed(() => lessonsOfWeek(todayWeekday.value, currentWeek.value))
 
   /**
    * 本周课时数。本地课表是「按周循环」的固定课表，全部条目即一周的课，
-   * 因此直接取条数；接入真实学期周次后此处改为按周筛选（§9.7）。
+   * 因此直接取条数（换课只改时间、不改节数，因此基础条数就是每周节数）。
    * 晚自习三节各算一节（需求：统计仍按 3 节计算）。
    */
   const weekLessonCount = computed(() => lessons.value.length)
@@ -126,19 +203,22 @@ export const useTimetableStore = defineStore('timetable', () => {
     ),
   )
 
-  /** 某位置的课程（周视图格子的唯一取值入口） */
-  function lessonAt(weekday: Weekday, periodId: CoursePeriodId): Lesson | undefined {
-    return lessons.value.find(
-      (lesson) => lesson.weekday === weekday && lesson.periodId === periodId,
-    )
+  /** 某位置的课程（周视图格子的唯一取值入口）；`week` 传入时按那一周的叠加层取 */
+  function lessonAt(weekday: Weekday, periodId: CoursePeriodId, week?: number): Lesson | undefined {
+    const source = week === undefined ? lessons.value : weekView(week).lessons
+    return source.find((lesson) => lesson.weekday === weekday && lesson.periodId === periodId)
   }
 
   /**
    * 某位置上的「调课」标记：该位置**当前没有课**，但有一次换课从这里搬走了课程
    * （原时间显示换课标记，而不是凭空消失）。
    */
-  function exchangeFromAt(weekday: Weekday, periodId: CoursePeriodId): CourseExchange | undefined {
-    if (lessonAt(weekday, periodId)) return undefined
+  function exchangeFromAt(
+    weekday: Weekday,
+    periodId: CoursePeriodId,
+    week?: number,
+  ): CourseExchange | undefined {
+    if (lessonAt(weekday, periodId, week)) return undefined
     return exchanges.value.find(
       (exchange) =>
         exchange.from.weekday === weekday && exchange.from.periodId === periodId && !exchange.group,
@@ -259,13 +339,17 @@ export const useTimetableStore = defineStore('timetable', () => {
     return { ok: true, added: created.length, replaced }
   }
 
-  /* ========== V1.1.3：换课 ========== */
+  /* ========== V1.1.3：换课（v3.7.5 起按教学周次生效，不再改基础课表） ========== */
 
   /**
-   * 换课 / 调课：把某节课从原时段搬到目标时段（可同时改班级 / 科目）。
+   * 换课 / 调课：把某节课在**选中的教学周里**从原时段搬到目标时段（可同时改班级 / 科目）。
    *
-   * 与「编辑」的区别在于**留下痕迹**：原时间由换课记录渲染「调课」标记、目标位置的课程
-   * 标为 `adjusted` 并记住是哪次调整（`exchangeId`），记录里还存着原课程快照（可撤销）。
+   * v3.7.5 起的行为（规格 §5）：
+   * - **基础课表一个字节都不动**——换课只写一条带周次的记录，选中的周打开课表时由
+   *   `utils/exchange.ts` 的叠加层把课「搬」过去；未选中的周仍按基础课表上；
+   * - 冲突**在写入前逐周检查**：目标时段已被占 / 两次换课抢同一个位置，一律拒绝写入，
+   *   并把「哪一周、哪一天、哪一节、涉及什么」讲清楚（不静默覆盖）；
+   * - 周次列表来自学期设置，选中的周次必须在当前学期范围内。
    *
    * `withEveningGroup = true` 时把同组的三节晚自习一起搬（**只能搬到「晚自习1」**，
    * 因为三节必须落在连续的三个晚自习时段上）。
@@ -273,10 +357,23 @@ export const useTimetableStore = defineStore('timetable', () => {
   function exchangeLesson(params: {
     lessonId: string
     to: { weekday: Weekday; periodId: CoursePeriodId; className?: string; subject?: string }
+    /** 生效的教学周次（1 起，至少一个）；来自学期设置的周次表 */
+    weeks: number[]
     withEveningGroup?: boolean
   }): ExchangeOutcome {
     const lesson = lessons.value.find((item) => item.id === params.lessonId)
     if (!lesson) return { ok: false, reason: '课程不存在，请刷新后重试' }
+
+    const weeks = normalizeExchangeWeeks(params.weeks) ?? []
+    if (weeks.length === 0) return { ok: false, reason: '请至少选择一个生效周次' }
+    const totalWeeks = semester.weekCount
+    const overflow = weeks.filter((week) => week > totalWeeks)
+    if (overflow.length > 0) {
+      return {
+        ok: false,
+        reason: `第 ${overflow.join('、')} 周超出了本学期 ${totalWeeks} 周的范围`,
+      }
+    }
 
     const targetWeekday = params.to.weekday
     const targetClassName = (params.to.className ?? lesson.className).trim()
@@ -297,7 +394,6 @@ export const useTimetableStore = defineStore('timetable', () => {
     }
 
     const sorted = sortLessons(moving)
-    const movingIds = new Set(moving.map((item) => item.id))
     const targets: Array<{ weekday: Weekday; periodId: CoursePeriodId }> = sorted.map(
       (_, index) => ({
         weekday: targetWeekday,
@@ -307,23 +403,11 @@ export const useTimetableStore = defineStore('timetable', () => {
       }),
     )
 
-    // 目标位置必须空着（排除正在搬走的这几节）
-    for (const target of targets) {
-      const occupied = findSlotConflict(lessons.value, target.weekday, target.periodId)
-      if (occupied && !movingIds.has(occupied.id)) {
-        return {
-          ok: false,
-          reason: `目标时间已有课程：${occupied.subject}（${occupied.className}）`,
-        }
-      }
-    }
-
+    // 同一次操作产生的多条记录共用 createdAt，`group` 标记它们是一批（撤销时整批撤）
     const nowIso = new Date().toISOString()
-    const createdExchanges: CourseExchange[] = []
-    const movedLessons: Lesson[] = []
-    sorted.forEach((item, index) => {
+    const created = sorted.map((item, index): CourseExchange => {
       const target = targets[index]!
-      const exchange: CourseExchange = {
+      return {
         id: createId(),
         from: slotOf(item),
         to: {
@@ -335,33 +419,58 @@ export const useTimetableStore = defineStore('timetable', () => {
         fromLesson: snapshotOf(item),
         group: Boolean(params.withEveningGroup),
         createdAt: nowIso,
+        weeks: [...weeks],
       }
-      createdExchanges.push(exchange)
-      movedLessons.push({
-        id: createId(),
-        weekday: target.weekday,
-        periodId: target.periodId,
-        subject: targetSubject,
-        classId: classIdOf(targetClassName),
-        className: targetClassName,
-        teacher: item.teacher,
-        type: 'adjusted',
-        originalTeacher: item.originalTeacher,
-        exchangeId: exchange.id,
-        courseGroupId: item.courseGroupId,
-      })
     })
 
-    const kept = lessons.value.filter((item) => !movingIds.has(item.id))
-    lessons.value = [...kept, ...movedLessons]
-    exchanges.value = [...exchanges.value, ...createdExchanges]
-    return { ok: true, exchanges: createdExchanges }
+    // 逐周试算：把候选记录放进课表里解析一遍，任何一周出现冲突就整笔拒绝。
+    // 这样「写入后教师才发现某周撞了」不会发生——冲突必须在下笔之前说清楚。
+    const candidateIds = new Set(created.map((exchange) => exchange.id))
+    const trial = [...exchanges.value, ...created]
+    const problems: string[] = []
+    for (const week of weeks) {
+      const resolution = resolveWeekLessons({ lessons: lessons.value, exchanges: trial, week })
+      for (const conflict of resolution.conflicts) {
+        if (conflict.exchangeIds.some((id) => candidateIds.has(id))) {
+          problems.push(formatExchangeConflict(conflict, semester.weeks))
+        }
+      }
+      for (const id of resolution.danglingIds) {
+        if (candidateIds.has(id)) {
+          const exchange = created.find((item) => item.id === id)!
+          problems.push(
+            `第 ${week} 周 ${slotTextOf(exchange.from.weekday, exchange.from.periodId)}：原时段这一周没有课程`,
+          )
+        }
+      }
+    }
+    if (problems.length > 0) {
+      const unique = [...new Set(problems)]
+      return {
+        ok: false,
+        reason:
+          unique.length === 1
+            ? unique[0]!
+            : `有 ${unique.length} 处冲突，本条没有写入：${unique.slice(0, 3).join('；')}${
+                unique.length > 3 ? ' 等' : ''
+              }`,
+      }
+    }
+
+    // 只写换课记录：**基础课表一行都不改**（这就是 v3.7.5 与旧换课的根本区别）
+    exchanges.value = [...exchanges.value, ...created]
+    return { ok: true, exchanges: created }
   }
 
   /**
-   * 撤销换课：删掉目标位置的课程、把原课程按快照放回原时段、删除换课记录。
+   * 撤销换课。
+   *
+   * - **周次级换课（v3.7.5 新记录）**：只删记录——基础课表本来就没动过，
+   *   撤销后那些周自动回到基础课表（`restored: 0`）；
+   * - **旧记录（没有 `weeks`）**：按老口径复原——删掉目标位置的课程、把原课程按快照
+   *   放回原时段、删除记录。原时间在这期间被别的课占用时拒绝撤销（不覆盖后来的安排）。
+   *
    * 整组换课（`group: true`）一次撤销**整批**（同一时间戳 + 同一晚自习组）。
-   * 原时间在这期间被别的课占用时拒绝撤销（不覆盖后来的安排）。
    */
   function undoExchange(exchangeId: string): UndoExchangeOutcome {
     const target = exchanges.value.find((exchange) => exchange.id === exchangeId)
@@ -374,6 +483,14 @@ export const useTimetableStore = defineStore('timetable', () => {
             exchange.fromLesson.courseGroupId === target.fromLesson.courseGroupId,
         )
       : [target]
+
+    const batchIds = new Set(batch.map((exchange) => exchange.id))
+
+    // 周次级换课：删记录即可，基础课表与其它记录都不受影响
+    if (batch.every(isWeeklyExchange)) {
+      exchanges.value = exchanges.value.filter((exchange) => !batchIds.has(exchange.id))
+      return { ok: true, restored: 0 }
+    }
 
     const affectedLessonIds = new Set(
       lessons.value
@@ -396,7 +513,6 @@ export const useTimetableStore = defineStore('timetable', () => {
       }
     }
 
-    const batchIds = new Set(batch.map((exchange) => exchange.id))
     const restored: Lesson[] = batch.map((exchange) => ({
       id: createId(),
       weekday: exchange.from.weekday,
@@ -411,15 +527,83 @@ export const useTimetableStore = defineStore('timetable', () => {
     return { ok: true, restored: restored.length }
   }
 
+  /**
+   * 删除一条换课记录（周次级专用入口，页面上「这条换课不要了」）。
+   * **只删这一条记录，不碰基础课表、不碰别的记录**；传入旧记录 id 时返回 false
+   * （旧记录请走 `undoExchange`，它还要把搬走的课放回去）。
+   */
+  function removeExchange(exchangeId: string): boolean {
+    const target = exchanges.value.find((exchange) => exchange.id === exchangeId)
+    if (!target || !isWeeklyExchange(target)) return false
+    exchanges.value = exchanges.value.filter((exchange) => exchange.id !== exchangeId)
+    return true
+  }
+
+  /** 改一条周次级换课的生效周次（改完同样逐周查冲突，有冲突就整笔拒绝、原记录不变） */
+  function updateExchangeWeeks(exchangeId: string, weeks: number[]): ExchangeOutcome {
+    const index = exchanges.value.findIndex((exchange) => exchange.id === exchangeId)
+    if (index === -1) return { ok: false, reason: '换课记录不存在' }
+    const current = exchanges.value[index]!
+    if (!isWeeklyExchange(current)) {
+      return { ok: false, reason: '旧版换课记录不支持改周次（请撤销后重新换课）' }
+    }
+    const next = normalizeExchangeWeeks(weeks) ?? []
+    if (next.length === 0) return { ok: false, reason: '请至少选择一个生效周次' }
+    const overflow = next.filter((week) => week > semester.weekCount)
+    if (overflow.length > 0) {
+      return {
+        ok: false,
+        reason: `第 ${overflow.join('、')} 周超出了本学期 ${semester.weekCount} 周的范围`,
+      }
+    }
+
+    const updated: CourseExchange = { ...current, weeks: next }
+    const trial = [...exchanges.value.slice(0, index), updated, ...exchanges.value.slice(index + 1)]
+    const problems: string[] = []
+    for (const week of next) {
+      const resolution = resolveWeekLessons({ lessons: lessons.value, exchanges: trial, week })
+      for (const conflict of resolution.conflicts) {
+        if (conflict.exchangeIds.includes(exchangeId)) {
+          problems.push(formatExchangeConflict(conflict, semester.weeks))
+        }
+      }
+      if (resolution.danglingIds.includes(exchangeId)) {
+        problems.push(
+          `第 ${week} 周 ${slotTextOf(current.from.weekday, current.from.periodId)}：原时段这一周没有课程`,
+        )
+      }
+    }
+    if (problems.length > 0) {
+      const unique = [...new Set(problems)]
+      return {
+        ok: false,
+        reason:
+          unique.length === 1
+            ? unique[0]!
+            : `有 ${unique.length} 处冲突，周次没有改动：${unique.slice(0, 3).join('；')}${
+                unique.length > 3 ? ' 等' : ''
+              }`,
+      }
+    }
+
+    exchanges.value = trial
+    return { ok: true, exchanges: [updated] }
+  }
+
   return {
     lessons,
     exchanges,
     todayWeekday,
     todayLabel,
     todayLessons,
+    currentWeek,
     weekLessonCount,
     classNames,
+    weekView,
+    conflictMessages,
+    weekRangeIssues,
     lessonsOf,
+    lessonsOfWeek,
     lessonAt,
     exchangeFromAt,
     exchangeOfLesson,
@@ -433,5 +617,7 @@ export const useTimetableStore = defineStore('timetable', () => {
     applyCourseImport,
     exchangeLesson,
     undoExchange,
+    removeExchange,
+    updateExchangeWeeks,
   }
 })

@@ -1,13 +1,13 @@
 /**
- * 值日领域类型（Phase 6 引入）。
+ * 值日领域类型（Phase 6 引入；v3.7.5 增加「按天指定值日组」）。
  *
  * 边界（Phase 6 范围拍板口径）：本阶段只做**编排与轮换**——
  * 只排「值日组」（不分工位：扫地 / 擦黑板由班里自己分）、教师手动指定组员、
  * 按天轮换；**不做打卡与完成情况统计**（谁值完日没人勾选），也不含加减分 / 评比。
  *
- * 两个实体存在**同一个数组**里（`teacherdesk:duty`）：
- * 值日组 N 条 + 轮换设置 1 条，靠 `kind` 区分。这样备份 / 合并 / 清空 / 概览
- * 全部复用同一套存储层机制（utils/backup.ts 只认「一个键 = 一个数组」），
+ * 三类记录存在**同一个数组**里（`teacherdesk:duty`）：
+ * 值日组 N 条 + 轮换设置 1 条 + 按天指定 N 条，靠 `kind` 区分。这样备份 / 合并 /
+ * 清空 / 概览全部复用同一套存储层机制（utils/backup.ts 只认「一个键 = 一个数组」），
  * 不必为一份设置单开第二套读写与备份逻辑；代价是概览里设置也计作「一条」。
  */
 
@@ -41,8 +41,27 @@ export interface DutySettings {
   includeWeekend: boolean
 }
 
-/** 存进 `teacherdesk:duty` 的一条记录（值日组或轮换设置） */
-export type DutyRecord = DutyGroup | DutySettings
+/**
+ * 按天指定值日组（v3.7.5）：教师给**某一天**单独指定负责组。
+ *
+ * 与轮换的关系只有一句话：**指定优先，没指定就按轮换**。
+ * 它只影响这一天——不改动轮换起点、不改动其他日期、不改变组序；
+ * 持久化保存，刷新 / 重开 / 云同步后仍然有效；删掉这条记录，这一天就回到自动轮换。
+ * 同一天最多一条（再指定就是改这一条）。
+ */
+export interface DutyDayAssignment {
+  id: string
+  kind: 'day'
+  /** 指定的日期（YYYY-MM-DD） */
+  dateKey: string
+  /** 这一天值日的组 id */
+  groupId: string
+  /** 指定时间（同一天有两条时以时间较晚的为准） */
+  createdAt: string
+}
+
+/** 存进 `teacherdesk:duty` 的一条记录（值日组 / 轮换设置 / 按天指定） */
+export type DutyRecord = DutyGroup | DutySettings | DutyDayAssignment
 
 /**
  * 组员的展示信息（由 store 的 `membersOf` 生成，值日页与工作台卡片共用）。

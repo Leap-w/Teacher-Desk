@@ -12,21 +12,29 @@ import {
   periodFullTextOf,
   periodLabelOf,
 } from '@/utils/timetable'
+import ExchangeWeekPicker from './ExchangeWeekPicker.vue'
 import type { SelectOption } from '@/types'
 
 /**
- * 换课抽屉（V1.1.3）：把课程从原时段搬到目标时段。
+ * 换课抽屉（V1.1.3；**v3.7.5 起按教学周次生效**）：把课程从原时段搬到目标时段。
  * 与编辑抽屉的区别在于「换课要留下痕迹」——不在这里改科目 / 班级，单独提供字段。
  *
- * 整组晚自习：勾上后把同组的三节晚自习一起搬（**只能搬到「晚自习1」**，因为三节必须连续）。
+ * v3.7.5 的两处变化：
+ * - **必须先选生效周次**（周次表来自学期设置）：换课只在这些周生效，**基础课表不动**；
+ * - 整组晚自习照样支持（勾上后三节一起搬，**只能搬到「晚自习1」**，因为三节必须连续）。
  */
 interface Props {
   modelValue: boolean
   lesson?: Lesson
+  /** 学期总周数（可选周次上限，来自学期设置） */
+  maxWeek: number
+  /** 今天的教学周次（默认选中它；不在学期范围内时不传） */
+  currentWeek?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   lesson: undefined,
+  currentWeek: undefined,
 })
 
 const emit = defineEmits<{
@@ -38,6 +46,8 @@ const emit = defineEmits<{
       toClassName: string
       toSubject: string
       withEveningGroup: boolean
+      /** 生效的教学周次（1 起，至少一个） */
+      weeks: number[]
     },
   ]
 }>()
@@ -54,6 +64,7 @@ interface FormState {
   toSubject: string
   toClassName: string
   withEveningGroup: boolean
+  weeks: number[]
 }
 
 const form = reactive<FormState>({
@@ -62,6 +73,7 @@ const form = reactive<FormState>({
   toSubject: '',
   toClassName: '',
   withEveningGroup: false,
+  weeks: [],
 })
 
 /** 是否允许「整组晚自习一起调」：原课属于完整三节组 */
@@ -97,6 +109,9 @@ watch(
     form.toSubject = props.lesson.subject
     form.toClassName = props.lesson.className
     form.withEveningGroup = false
+    // 默认落在**今天的教学周**（最常见的场景是「这周的课调一下」）；
+    // 今天不在学期范围内时退回第 1 周，教师仍可自行多选
+    form.weeks = [props.currentWeek ?? 1]
   },
   { immediate: true },
 )
@@ -116,12 +131,15 @@ function close(): void {
 function submit(): void {
   if (!props.lesson) return
   if (!form.toSubject.trim() || !form.toClassName.trim()) return
+  // 生效周次至少一个：一个都没选时这条换课「哪一周都不生效」，没有意义，不放行
+  if (form.weeks.length === 0) return
   emit('confirm', {
     toWeekday: form.toWeekday,
     toPeriodId: form.toPeriodId,
     toClassName: form.toClassName.trim(),
     toSubject: form.toSubject.trim(),
     withEveningGroup: form.withEveningGroup,
+    weeks: [...form.weeks],
   })
 }
 </script>
@@ -173,8 +191,19 @@ function submit(): void {
         </label>
       </div>
 
+      <!-- v3.7.5：生效周次（周次表来自学期设置，可单选 / 多选 / 全选 / 快速范围） -->
+      <AppField label="生效周次" required hint="只在这些教学周生效；未选中的周仍按基础课程表上">
+        <ExchangeWeekPicker
+          :model-value="form.weeks"
+          :max-week="maxWeek"
+          :current-week="currentWeek"
+          @update:model-value="form.weeks = $event"
+        />
+      </AppField>
+
       <p class="tip">
-        调整后原时间会显示「调课」标记（新位置标为「调课」），撤销换课可在课程详情页一键还原。
+        调整后只在选中的周次生效，<strong>基础课程表不会改动</strong>：原时间在这些周显示「调课」
+        标记，撤销换课可在课程详情页一键还原。
       </p>
     </form>
 

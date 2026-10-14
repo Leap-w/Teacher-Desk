@@ -25,7 +25,11 @@ import type { Pinia } from 'pinia'
 import { appConfig } from '@/config'
 import { appSettingsRepository } from '@/repositories/settings/appSettingsRepository'
 import { scheduleRepository } from '@/repositories/schedule/scheduleRepository'
+import { semesterRepository } from '@/repositories/semester/semesterRepository'
 import { userProfileRepository } from '@/repositories/user/userProfileRepository'
+import { formatDateKey } from '@/utils/date'
+import { resolveWeekLessons } from '@/utils/exchange'
+import { weekIndexOfDate } from '@/utils/semester'
 import {
   widgetBridge,
   type WidgetBridge,
@@ -51,12 +55,31 @@ export function readWidgetSnapshotSources(): WidgetSnapshot {
   return buildWidgetSnapshot({
     // 生效作息：默认作息 + 教师在教学设置里改过的时段（与课程页 `appSettings.periods` 同源）
     periods: resolvePeriods(settings.teaching.periodTimes),
-    // 全部课程：换课 / 代课的结果已经落在课程数组里，这里读到的就是最终课表
-    lessons: scheduleRepository.peekLessons(),
+    // 全部课程：旧课表 / 代课的结果已经落在课程数组里，这里读到的就是基础课表；
+    // v3.7.5 的周次级换课是叠加层，下面按**今天所在的教学周**叠上去
+    lessons: lessonsForToday(),
     pwaBaseUrl: typeof window === 'undefined' ? '' : window.location.origin,
     className: profile.className ?? '',
     now: new Date(),
   })
+}
+
+/**
+ * 今天实际怎么上（v3.7.5）：基础课表 + 今天那一周的换课叠加层。
+ *
+ * 与课程页 `timetableStore.todayLessons` 同一份口径（同一个 `resolveWeekLessons`），
+ * 只是这条路径**全只读**：学期设置与换课记录都走「不写盘」的读法，
+ * 今天不在学期范围内时不做叠加（与课程页一致）。
+ */
+function lessonsForToday(): ReturnType<typeof scheduleRepository.peekLessons> {
+  const lessons = scheduleRepository.peekLessons()
+  const exchanges = scheduleRepository.peekExchanges()
+  if (exchanges.length === 0) return lessons
+  const [semester] = semesterRepository.load()
+  if (!semester) return lessons
+  const week = weekIndexOfDate(semester, formatDateKey(new Date()))
+  if (week === undefined) return lessons
+  return resolveWeekLessons({ lessons, exchanges, week }).lessons
 }
 
 /** 生成 + 序列化（页面与自动同步共用这一句，保证写出的一定是同一份字节） */

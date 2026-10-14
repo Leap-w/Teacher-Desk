@@ -117,8 +117,10 @@ describe('「删除所有课程」清的是课表，不碰课程时间设置', (
     store.addLesson(lesson(1, 'p2', '语文'))
     store.addLesson(lesson(1, 'p3', '数学'))
     const moved = store.lessons[1]!
+    // v3.7.5：换课必须给出生效周次（周次级换课，基础课表不再被改动）
     expect(
-      store.exchangeLesson({ lessonId: moved.id, to: { weekday: 3, periodId: 'p5' } }).ok,
+      store.exchangeLesson({ lessonId: moved.id, to: { weekday: 3, periodId: 'p5' }, weeks: [1] })
+        .ok,
     ).toBe(true)
     expect(store.exchanges.length).toBe(1)
 

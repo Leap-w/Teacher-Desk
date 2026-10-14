@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
-import { AppButton, AppModal } from '@/components/ui'
+import { AppButton, AppModal, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useNow } from '@/composables/useToday'
+import { formatMonthDay } from '@/utils/date'
+import { describeExchangeWeeks, isWeeklyExchange } from '@/utils/exchange'
 import { useAppSettingsStore } from '@/stores/appSettings'
+import { useSemesterStore } from '@/stores/semester'
 import { useTimetableStore } from '@/stores/timetable'
 import {
   WEEKDAY_LABELS,
@@ -22,6 +25,7 @@ import type {
   LessonType,
   Weekday,
 } from '@/types/timetable'
+import type { SelectOption } from '@/types'
 import LessonDetailDrawer from './components/LessonDetailDrawer.vue'
 import LessonEditDrawer from './components/LessonEditDrawer.vue'
 import LessonSwapDrawer from './components/LessonSwapDrawer.vue'
@@ -38,6 +42,7 @@ import WidgetBridgeCard from './components/WidgetBridgeCard.vue'
 const toast = useToast()
 const timetableStore = useTimetableStore()
 const appSettings = useAppSettingsStore()
+const semesterStore = useSemesterStore()
 const now = useNow()
 
 /**
@@ -79,7 +84,56 @@ const columns: readonly Weekday[] = WEEKDAYS
 /** 手机分日视图当前选中的星期：默认落在今天 */
 const activeWeekday = ref<Weekday>(timetableStore.todayWeekday)
 
-const dayLessons = computed(() => timetableStore.lessonsOf(activeWeekday.value))
+/* ---------- v3.7.5：教学周次视图 ---------- */
+
+/**
+ * 正在看的教学周（1 起）：默认落在**今天的教学周**（不在学期范围内时退回第 1 周）。
+ * 换课只影响选中的周，因此周视图必须能一周一周地看；周次表来自学期设置，不写死 20 周。
+ */
+const selectedWeek = ref<number>(timetableStore.currentWeek ?? 1)
+
+const weekOptions = computed<SelectOption<number>[]>(() =>
+  semesterStore.weeks.map((week) => ({
+    label: `第 ${week.index} 周 · ${formatMonthDay(week.startDate)}-${formatMonthDay(week.endDate)}`,
+    value: week.index,
+  })),
+)
+
+/** 正在看的这一周实际怎么上（基础课表 + 该周生效的换课；`utils/exchange.ts` 的叠加层） */
+const weekResolution = computed(() => timetableStore.weekView(selectedWeek.value))
+
+/** 该周的换课记录（用于周视图的「调课」标记与详情抽屉） */
+const weekExchanges = computed(() => timetableStore.exchanges)
+
+/** 该周需要教师注意的情况：换课冲突 + 学期周数改小后超范围的记录（都不删数据，只提示） */
+const weekConflicts = computed(() => timetableStore.conflictMessages(selectedWeek.value))
+const rangeIssues = computed(() => timetableStore.weekRangeIssues)
+
+/** 正在看的周范围文案（如「09-14 — 09-20」），周选择器下方显示 */
+const selectedWeekRange = computed(() => {
+  const week = semesterStore.weeks.find((item) => item.index === selectedWeek.value)
+  return week ? `${formatMonthDay(week.startDate)} — ${formatMonthDay(week.endDate)}` : ''
+})
+
+/** 今天就在正在看的这一周里（高亮「今天」列才有意义） */
+const viewingCurrentWeek = computed(() => timetableStore.currentWeek === selectedWeek.value)
+
+const todayHighlight = computed(() =>
+  viewingCurrentWeek.value ? timetableStore.todayWeekday : undefined,
+)
+
+const dayLessons = computed(() =>
+  timetableStore.lessonsOfWeek(activeWeekday.value, selectedWeek.value),
+)
+
+// 学期总周数被改小时，正在看的周次可能已经不存在：夹回范围内（**不删任何换课记录**，
+// 超出范围的周次由下面的提示条如实说明，教师自己决定怎么处理）
+watch(
+  () => semesterStore.weekCount,
+  (total) => {
+    if (selectedWeek.value > total) selectedWeek.value = Math.max(1, total)
+  },
+)
 
 /* ---------- 新增 / 编辑抽屉 ---------- */
 
@@ -99,7 +153,10 @@ const presetType = ref<LessonType>('normal')
 
 /** 新增时的默认时段：当天第一个空时段（排满则回到早自习，交给冲突校验拦） */
 function firstFreePeriod(weekday: Weekday): CoursePeriodId {
-  const used = new Set(timetableStore.lessonsOf(weekday).map((lesson) => lesson.periodId))
+  // 按**正在看的那一周**算空档：某周换过来的课占着哪个位置，这里就跳过哪个位置
+  const used = new Set(
+    timetableStore.lessonsOfWeek(weekday, selectedWeek.value).map((lesson) => lesson.periodId),
+  )
   return periods.value.find((period) => !used.has(period.id))?.id ?? 'morning'
 }
 
@@ -164,11 +221,38 @@ function confirmRemove(): void {
 const detailOpen = ref(false)
 const detailLesson = ref<Lesson | undefined>(undefined)
 
+/** 详情里这节课是不是「正在看的那一周换过来的」（是的话不给编辑 / 删除入口，见下方说明） */
+const detailOverlayWeek = ref<number | undefined>(undefined)
+
+/** 本周把这一节调走的换课记录（v3.7.5 周次级；旧记录走 `exchange` 那条老路径） */
+const detailOutgoing = ref<CourseExchange[]>([])
+
 const swapOpen = ref(false)
 const swapLesson = ref<Lesson | undefined>(undefined)
 
+/** 本周生效的周次级换课（详情抽屉据此说明「这周这节课去哪了」） */
+const weeklyExchanges = computed(() =>
+  timetableStore.exchanges.filter(
+    (exchange) => isWeeklyExchange(exchange) && (exchange.weeks ?? []).includes(selectedWeek.value),
+  ),
+)
+
 function openDetail(lesson: Lesson): void {
   detailLesson.value = lesson
+  const week = selectedWeek.value
+  // 这节课是叠加层算出来的（`exchangeId` 指向一条周次级换课）→ 记下是哪一周
+  const movedBy = lesson.exchangeId
+    ? weeklyExchanges.value.find((exchange) => exchange.id === lesson.exchangeId)
+    : undefined
+  detailOverlayWeek.value = movedBy ? week : undefined
+  // 「这一节被调走了」：基础课表里同一节课（同一个 id）的原位置上有哪些本周生效的换课
+  const base = timetableStore.lessons.find((item) => item.id === lesson.id)
+  detailOutgoing.value = base
+    ? weeklyExchanges.value.filter(
+        (exchange) =>
+          exchange.from.weekday === base.weekday && exchange.from.periodId === base.periodId,
+      )
+    : []
   detailOpen.value = true
 }
 
@@ -224,10 +308,12 @@ function detailToUndo(): void {
 
 /** 周视图的「调课」标记：跳到详情页，让教师在原位置看换课信息 */
 function openExchangeDetail(exchange: CourseExchange): void {
-  const lesson = timetableStore.lessons.find((item) => item.exchangeId === exchange.id)
+  // 周次级换课的目标课程只存在于「那一周的叠加层」里，基础课表里没有它
+  const lesson =
+    weekResolution.value.lessons.find((item) => item.exchangeId === exchange.id) ??
+    timetableStore.lessons.find((item) => item.exchangeId === exchange.id)
   if (lesson) {
-    detailLesson.value = lesson
-    detailOpen.value = true
+    openDetail(lesson)
     return
   }
   toast.info('该换课记录对应的课程已被删除，无法查看')
@@ -239,6 +325,7 @@ function onSwapConfirm(params: {
   toClassName: string
   toSubject: string
   withEveningGroup: boolean
+  weeks: number[]
 }): void {
   const lesson = swapLesson.value
   if (!lesson) return
@@ -250,17 +337,21 @@ function onSwapConfirm(params: {
       className: params.toClassName,
       subject: params.toSubject,
     },
+    weeks: params.weeks,
     withEveningGroup: params.withEveningGroup,
   })
   if (!result.ok) {
+    // 冲突原因里已经写清「哪一周、哪一天、哪一节、涉及什么课程」（utils/exchange.ts 统一口径）
     toast.danger(result.reason)
     return
   }
   swapOpen.value = false
   toast.success(
-    params.withEveningGroup
-      ? `整组晚自习已调至 ${WEEKDAY_SHORT_LABELS[params.toWeekday]} ${periodLabelOf(params.toPeriodId)}`
-      : `已调至 ${WEEKDAY_SHORT_LABELS[params.toWeekday]} ${periodLabelOf(params.toPeriodId)}`,
+    `${
+      params.withEveningGroup
+        ? `整组晚自习已调至 ${WEEKDAY_SHORT_LABELS[params.toWeekday]} ${periodLabelOf(params.toPeriodId)}`
+        : `已调至 ${WEEKDAY_SHORT_LABELS[params.toWeekday]} ${periodLabelOf(params.toPeriodId)}`
+    }（${describeExchangeWeeks(params.weeks, semesterStore.weekCount)}生效）`,
   )
 }
 
@@ -280,7 +371,7 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
       <div class="head-text">
         <h1 class="page-title">课程表</h1>
         <p class="head-sub">
-          本周共 <strong>{{ timetableStore.weekLessonCount }}</strong> 节课 · 点课程卡片可查看详情
+          每周共 <strong>{{ timetableStore.weekLessonCount }}</strong> 节课 · 点课程卡片可查看详情
         </p>
       </div>
       <div class="head-actions">
@@ -289,6 +380,70 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         <AppButton @click="openCreate()">＋ 新增课程</AppButton>
       </div>
     </header>
+
+    <!--
+      v3.7.5：教学周次选择。换课按周生效，因此周视图要能一周一周地看——
+      周次表来自学期设置（不写死 20 周），默认落在今天所在的周。
+    -->
+    <section class="week-bar" aria-label="选择教学周次">
+      <div class="week-bar-main">
+        <span class="week-bar-label">{{ semesterStore.settings.name }}</span>
+        <div class="week-bar-control">
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="selectedWeek <= 1"
+            @click="selectedWeek -= 1"
+          >
+            上一周
+          </AppButton>
+          <AppSelect v-model="selectedWeek" class="week-select" :options="weekOptions" />
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="selectedWeek >= semesterStore.weekCount"
+            @click="selectedWeek += 1"
+          >
+            下一周
+          </AppButton>
+          <AppButton
+            v-if="timetableStore.currentWeek !== undefined && !viewingCurrentWeek"
+            variant="secondary"
+            size="sm"
+            @click="selectedWeek = timetableStore.currentWeek!"
+          >
+            回到本周
+          </AppButton>
+        </div>
+        <p class="week-bar-range">
+          {{ selectedWeekRange }} · 共 {{ semesterStore.weekCount }} 周
+          <span v-if="!viewingCurrentWeek" class="week-bar-hint">（正在看别的周）</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- 该周的换课冲突：**只提示，不静默覆盖**（冲突的那些换课不生效，课表按基础课表显示） -->
+    <p v-if="weekConflicts.length > 0" class="notice is-warning" role="status">
+      第 {{ selectedWeek }} 周有
+      {{ weekConflicts.length }} 处换课冲突，冲突的部分没有生效（课表按基础课程表显示）：
+      {{ weekConflicts.join('；') }}
+    </p>
+
+    <!-- 学期周数改小后超出范围的换课：保留记录、如实提示，绝不静默删除 -->
+    <p v-if="rangeIssues.length > 0" class="notice is-info" role="status">
+      有
+      {{ rangeIssues.length }}
+      条换课记录的周次超出了当前学期范围（不会被删除，改回周数即恢复生效）：
+      {{
+        rangeIssues
+          .map((item) =>
+            item.empty
+              ? '未选周次'
+              : `第 ${item.outOfRange.join('、')} 周（本学期 ${semesterStore.weekCount} 周）`,
+          )
+          .join('；')
+      }}
+    </p>
 
     <!-- ===== Layer 1：今日课程 Hero（Calendar First 视觉中心） ===== -->
     <ScheduleHero
@@ -338,10 +493,10 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
     <WeekView class="week-view">
       <div class="week-scroll">
         <ScheduleWeekGrid
-          :lessons="timetableStore.lessons"
-          :exchanges="timetableStore.exchanges"
+          :lessons="weekResolution.lessons"
+          :exchanges="weekExchanges"
           :weekdays="columns"
-          :today="timetableStore.todayWeekday"
+          :today="todayHighlight"
           :current-lesson-id="currentLessonId"
           @open="openDetail"
           @open-exchange="openExchangeDetail"
@@ -392,6 +547,9 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
           : undefined
       "
       :evening-siblings="detailLesson ? timetableStore.eveningSiblingsOf(detailLesson) : []"
+      :overlay-week="detailOverlayWeek"
+      :week-exchanges="detailOutgoing"
+      :week-count="semesterStore.weekCount"
       @edit="detailToEdit"
       @exchange="openSwapFromDetail"
       @substitute="detailToSubstitute"
@@ -400,7 +558,13 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
     />
 
     <!-- 换课抽屉 -->
-    <LessonSwapDrawer v-model="swapOpen" :lesson="swapLesson" @confirm="onSwapConfirm" />
+    <LessonSwapDrawer
+      v-model="swapOpen"
+      :lesson="swapLesson"
+      :max-week="semesterStore.weekCount"
+      :current-week="timetableStore.currentWeek"
+      @confirm="onSwapConfirm"
+    />
 
     <!-- Excel 导入 -->
     <ScheduleImportModal
@@ -496,6 +660,65 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
 
 .head-sub strong {
   color: var(--color-primary-strong);
+}
+
+/* v3.7.5：教学周次选择条 */
+.week-bar {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.week-bar-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.week-bar-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.week-bar-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.week-select {
+  min-width: 220px;
+}
+
+.week-bar-range {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.week-bar-hint {
+  color: var(--color-text-faint);
+}
+
+/* 提示条：换课冲突 / 超范围周次（都只说事实，不自动改数据） */
+.notice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+}
+
+.notice.is-warning {
+  background: var(--color-warning-soft);
+  color: var(--color-text-secondary);
+}
+
+.notice.is-info {
+  background: var(--color-fill-disabled);
+  color: var(--color-text-secondary);
 }
 
 .weekday-tabs {

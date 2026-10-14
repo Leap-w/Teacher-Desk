@@ -7,8 +7,14 @@
  */
 import { appConfig } from '@/config'
 import { createSeedDuty } from '@/services/mock'
-import { isDutyGroup, isDutySettings, normalizeDutyRecord, withSettings } from '@/utils/duty'
-import type { DutyRecord, DutySettings } from '@/types/duty'
+import {
+  isDutyDayAssignment,
+  isDutyGroup,
+  isDutySettings,
+  normalizeDutyRecord,
+  withSettings,
+} from '@/utils/duty'
+import type { DutyDayAssignment, DutyRecord, DutySettings } from '@/types/duty'
 import type { Student } from '@/types'
 
 import { localStorageAdapter } from '../adapters/LocalStorageAdapter'
@@ -18,8 +24,10 @@ const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
 
 /**
  * 把盘上的原始列表规范成内存里的值日记录。
- * 两重唯一性：同一 id 只保留首条；设置记录也只认第一条（settings 是单例）。
- * 末尾保证数组里有设置记录（不写盘，只在内存里补）。
+ * 三重唯一性：同一 id 只保留首条；设置记录也只认第一条（settings 是单例）；
+ * 「按天指定」同一天只保留**最后**一条（后一次指定才是教师当前的意图，
+ * 而重复的日期记录会让页面同一天显示两种排班）。末尾保证数组里有设置记录
+ * （不写盘，只在内存里补）。
  */
 export function reviveDutyRecords(raw: unknown[]): DutyRecord[] {
   const seen = new Set<string>()
@@ -38,10 +46,22 @@ export function reviveDutyRecords(raw: unknown[]): DutyRecord[] {
     settingsSeen = true
     return true
   })
-  if (unique.length < raw.length) {
-    console.warn(`[duty] 丢弃 ${raw.length - unique.length} 条不合法的值日记录（缓存原文保留）`)
+  // 按天指定：同一天只留 createdAt 最晚的那条（时间认不出的按原顺序后者胜出）
+  const keptAssignment = new Map<string, DutyDayAssignment>()
+  for (const record of unique) {
+    if (!isDutyDayAssignment(record)) continue
+    const current = keptAssignment.get(record.dateKey)
+    if (!current || (record.createdAt ?? '') >= (current.createdAt ?? '')) {
+      keptAssignment.set(record.dateKey, record)
+    }
   }
-  return withSettings(unique)
+  const deduped = unique.filter(
+    (record) => !isDutyDayAssignment(record) || keptAssignment.get(record.dateKey) === record,
+  )
+  if (deduped.length < raw.length) {
+    console.warn(`[duty] 丢弃 ${raw.length - deduped.length} 条不合法的值日记录（缓存原文保留）`)
+  }
+  return withSettings(deduped)
 }
 
 const repository = createCollectionRepository<DutyRecord[]>({

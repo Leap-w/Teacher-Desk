@@ -184,6 +184,18 @@ const hints = computed<ImportHint[]>(() => {
   // 被拦下的行**直接点名**（行号 + 原因）——表宽时「状态」列在最右边，不必横滚去找
   const blocked = blockedHint(current.rows)
   if (blocked) list.push(blocked)
+  /*
+    v3.7.5（§4.4）：多张座位表并存后，「这份表要导进哪一张」必须在按下确认之前说清。
+    导入永远只写**当前方案**（本弹窗没有方案选择器），所以这里把那一份点名出来——
+    预览里的「原位不动 / 换座位」也全是按它算的，表选错了，这一行是最后一道提醒。
+  */
+  const planName = seatStore.currentPlan?.name
+  if (planName) {
+    list.push({
+      tone: 'info',
+      text: `导入到当前座位表「${planName}」，其他座位表不受影响`,
+    })
+  }
   if (current.changed > 0) {
     list.push({ tone: 'info', text: `${current.changed} 名学生的座位会发生变化` })
   }

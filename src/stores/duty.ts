@@ -11,8 +11,10 @@ import {
   DEFAULT_DUTY_SETTINGS,
   describeRotation,
   dutyDaysFrom,
-  dutyGroupFor,
+  dutyGroupForDay,
+  findDayAssignment,
   isDutyDateKey,
+  isDutyDayAssignment,
   isDutyGroup,
   isDutySettings,
   normalizeStudentIds,
@@ -58,11 +60,67 @@ export const useDutyStore = defineStore('duty', () => {
   /** 今天（日期键），与工作台 / 课表同一个共享时钟 */
   const todayKey = computed(() => formatDateKey(now.value))
 
-  /** 今天值日的组；不值日（周末不排）或还没有组时为 undefined */
-  const todayGroup = computed(() => dutyGroupFor(todayKey.value, groups.value, settings.value))
+  /** 按天指定（v3.7.5）：教师给某一天单独指定的值日组 */
+  const dayAssignments = computed(() => records.value.filter(isDutyDayAssignment))
 
-  /** 接下来 7 天的值日安排（含今天） */
-  const upcomingDays = computed(() => dutyDaysFrom(todayKey.value, 7, groups.value, settings.value))
+  /** 今天值日的组；不值日（周末不排）或还没有组时为 undefined */
+  const todayGroup = computed(() =>
+    dutyGroupForDay(todayKey.value, groups.value, settings.value, dayAssignments.value),
+  )
+
+  /** 今天的组是不是教师按天指定的（页面标注「已指定」） */
+  const todayAssigned = computed(() =>
+    Boolean(findDayAssignment(dayAssignments.value, todayKey.value)),
+  )
+
+  /** 接下来 7 天的值日安排（含今天；按天指定的日期以指定为准） */
+  const upcomingDays = computed(() =>
+    dutyDaysFrom(todayKey.value, 7, groups.value, settings.value, dayAssignments.value),
+  )
+
+  /** 某天是否被教师按天指定过 */
+  function hasDayAssignment(dateKey: string): boolean {
+    return Boolean(findDayAssignment(dayAssignments.value, dateKey))
+  }
+
+  /** 某天实际值日的组（按天指定优先，其余按轮换）——与页面、工作台卡片同一口径 */
+  function dayGroup(dateKey: string): DutyGroup | undefined {
+    return dutyGroupForDay(dateKey, groups.value, settings.value, dayAssignments.value)
+  }
+
+  /**
+   * 给某一天指定值日组（v3.7.5）：同一天已有指定就**覆盖**它（同一天只留一条）。
+   *
+   * 日期必须是合法日期键、组必须在现有值日组里，否则拒绝返回 false——写进去一个
+   * 不存在的日期或组，这一天会凭空多出一个「指定的未知组」。
+   * 只影响这一天：轮换起点、其他日期、组序都不动（改完即持久化 + 广播 + 同步）。
+   */
+  function setDayGroup(dateKey: string, groupId: string): boolean {
+    if (!isDutyDateKey(dateKey)) return false
+    if (!groups.value.some((group) => group.id === groupId)) return false
+    const createdAt = new Date().toISOString()
+    const existing = findDayAssignment(dayAssignments.value, dateKey)
+    if (existing) {
+      records.value = records.value.map((record) =>
+        isDutyDayAssignment(record) && record.id === existing.id
+          ? { ...record, groupId, createdAt }
+          : record,
+      )
+      return true
+    }
+    records.value = [...records.value, { id: createId(), kind: 'day', dateKey, groupId, createdAt }]
+    return true
+  }
+
+  /** 取消某一天的指定：删掉这条记录，这一天回到按轮换自动排 */
+  function clearDayGroup(dateKey: string): boolean {
+    const existing = findDayAssignment(dayAssignments.value, dateKey)
+    if (!existing) return false
+    records.value = records.value.filter(
+      (record) => !(isDutyDayAssignment(record) && record.id === existing.id),
+    )
+    return true
+  }
 
   /**
    * 起点组已失效（指定的那个组被删 / 被清空示例数据删掉）：
@@ -309,6 +367,12 @@ export const useDutyStore = defineStore('duty', () => {
     settings,
     todayKey,
     todayGroup,
+    todayAssigned,
+    dayAssignments,
+    hasDayAssignment,
+    dayGroup,
+    setDayGroup,
+    clearDayGroup,
     upcomingDays,
     rotationMisaligned,
     rotationSummary,

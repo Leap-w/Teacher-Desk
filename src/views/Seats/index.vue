@@ -55,11 +55,14 @@ import SeatConstraintModal from './components/SeatConstraintModal.vue'
 import { Armchair } from 'lucide-vue-next'
 type SeatView = 'teacher' | 'student'
 
-/** 座位强调标记图例（颜色一律取自 theme.css，与 SeatClassroom 标记一致） */
+/**
+ * 座位标记图例（颜色一律取自 theme.css，与 SeatClassroom / SeatCard 上的标记一致）。
+ * v3.7.5（§4.3）：座位图只剩「班委 / 女生」两种标记——高个与其他标签已从座位卡撤下，
+ * 图例跟着收敛（图例与图对不上，比没有图例更误导）。
+ */
 const ACCENT_LEGEND = [
-  { key: 'cadre', label: '班委', cls: 'is-cadre', dot: false },
-  { key: 'tall', label: '高个', cls: 'is-tall', dot: false },
-  { key: 'tag', label: '其他标签', cls: 'is-tag', dot: true },
+  { key: 'cadre', label: '班委', cls: 'is-cadre' },
+  { key: 'girl', label: '女生', cls: 'is-girl' },
 ] as const
 
 const seatStore = useSeatStore()
@@ -401,6 +404,44 @@ function saveAdjustments() {
   if (committed.length === 0) return
   summaryEntries.value = committed
   summaryOpen.value = true
+}
+
+/* ========== v3.7.5（§4.1）：撤销修改（撤销本轮全部换座，不是只撤最后一次拖拽） ========== */
+
+const undoOpen = ref(false)
+
+/** 本轮改动的学生数（确认弹窗照实说「N 名学生回到原来的座位」） */
+const undoChangedCount = computed(() => seatStore.sessionChangedStudentIds.size)
+
+/** 灰按钮必须说得清为什么灰：没有方案 / 本轮什么都没改，是两种不同的「没得撤」 */
+const undoDisabledReason = computed(() =>
+  seatStore.currentPlan ? '本轮还没有修改过座位' : '当前没有座位表',
+)
+
+function askUndoSession() {
+  if (!seatStore.canUndoSession) return
+  undoOpen.value = true
+}
+
+/**
+ * 确认撤销：把当前方案恢复到**本轮第一次换座之前**的完整布局。
+ *
+ * 落库在 store 的 `undoSession()` 里一次赋值完成（座位 + 更新时间 + 换座记录），
+ * 因此撤销后的布局**立即持久化**——刷新、重开应用都还是撤销后的样子；
+ * 学生档案一个字段都不动，其他座位表一份都不碰（见 store 上那段说明）。
+ */
+function confirmUndoSession() {
+  undoOpen.value = false
+  const changed = undoChangedCount.value
+  if (!seatStore.undoSession()) {
+    toast.danger('撤销失败：本轮修改已失效，请刷新后重试')
+    return
+  }
+  // 撤销后源座位可能已经换人，点击换座模式与闪烁定位都要退出（同「换一种排法」）
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  toast.success(changed > 0 ? `已撤销本轮修改：${changed} 名学生回到原位` : '已撤销本轮修改')
 }
 
 /* ========== Phase 3C：方案对比查看（只读高亮模式） ========== */
@@ -906,11 +947,11 @@ function undoArrange() {
   toast.success(`已撤销自动排座，已切回「${prevPlan.name}」`)
 }
 
-/* ========== v3.7.4：顺序轮换（预览 → 确认应用；覆盖当前方案的座位） ========== */
+/* ========== v3.7.4：顺序轮换（预览 → 生成新座位表；v3.7.5 起不覆盖原表） ========== */
 
 /**
  * 顺序轮换弹窗开关。**预览在弹窗内部算**（`utils/seatRotate.ts` 的纯函数），
- * 本页只在「确认应用」时落库——于是「取消」路径天然不改任何数据，
+ * 本页只在「生成新座位表」时落库——于是「取消」路径天然不改任何数据，
  * 不需要为了回滚去备份一份座位表（那种备份本身就是新的出错点）。
  */
 const rotateOpen = ref(false)
@@ -921,24 +962,23 @@ function openRotate() {
 }
 
 /**
- * 确认应用：把轮换后的座位写回**当前方案**——不新建方案，方案名 / 约束 / 换座记录历史都不动。
+ * 生成新座位表：用轮换后的座位**新建一张独立的座位表**并切换为当前（v3.7.5 §4.2）。
  *
- * 走 store 既有的整表替换入口 `replacePlanSeats()`：它按行列重算座位号、强制固定空位留空、
- * 整表重建 63 座并**只写盘一次**，与「换一种排法」完全同一条数据路径（Local-first + Repository First）。
+ * v3.7.4 那版是整表替换当前方案（`replacePlanSeats`），§4.2 要求的是「生成新的、独立保存的
+ * 座位表」——所以改走 store 既有的 `createPlanFromSeats()`（「自动排座」新建方案用的就是它）：
+ * 新表有自己的 id / 名称 / 座位 / 约束，**源座位表一个字节都不改**，两张表此后各改各的、
+ * 互不影响；座位仍经 `occupantsFromSeats` + `buildSeatGrid` 清洗重建（按行列重算座位号、
+ * 固定空位强制留空）并只写盘一次，与其余落库路径同一条管道。
  */
 function applyRotate(seats: Seat[]) {
-  const plan = seatStore.currentPlan
-  if (!plan) return
+  if (!seatStore.currentPlan) return
   const hadPending = seatStore.pendingLogsCount > 0
-  if (!seatStore.replacePlanSeats(plan.id, seats)) {
-    toast.danger('顺序轮换失败：方案已变化，请刷新后重试')
-    return
-  }
+  const created = seatStore.createPlanFromSeats(seats, seatStore.nextRotateName())
   selectedSeatId.value = undefined
   cancelPicker()
   clearFlash()
   if (hadPending) toast.info('已顺序轮换：未保存的「本次调整」记录已清空')
-  toast.success('已顺序轮换，当前方案已更新')
+  toast.success(`已生成「${created.name}」并切换为当前，原座位表原样保留`)
 }
 
 /* ========== Phase 3C：导出（PNG / PDF；离屏静态图渲染，不触碰页面状态） ========== */
@@ -1078,6 +1118,23 @@ async function runCompareExport() {
     >
       <!-- 第一层：与「已保存 / 编辑中」同处一行的状态动作 -->
       <template #state>
+        <!--
+          v3.7.5（§4.1）「撤销修改」：**常驻**，没有可撤销内容时灰着。
+          按钮忽隐忽现会让教师以为功能坏了；灰着 + title 说明，才答得上「为什么现在不能撤」。
+          它撤的是**本轮**（第一次换座之前），不是「上一次拖拽」——这正是 §4.1 明确要的口径。
+        -->
+        <AppButton
+          variant="secondary"
+          :disabled="!seatStore.canUndoSession"
+          :title="
+            seatStore.canUndoSession
+              ? '恢复到本轮第一次换座之前的完整布局（不影响学生档案）'
+              : undoDisabledReason
+          "
+          @click="askUndoSession"
+        >
+          撤销修改
+        </AppButton>
         <AppButton
           v-if="hasPending"
           variant="secondary"
@@ -1109,9 +1166,10 @@ async function runCompareExport() {
           约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
         </AppButton>
         <!--
-          自动排座 / 顺序轮换 / 方案对比**都已实现**（Phase 3D / v3.7.4 / Phase 3C，
-          各有弹窗与撤销），按「未实现才删」的原则保留；收进「更多」只是不再让它们常驻占一排。
-          自动排座与顺序轮换是两种互不相干的换座方式，各自独立、互不影响。
+          自动排座 / 顺序轮换 / 方案对比**都已实现**（Phase 3D / v3.7.4 / Phase 3C），
+          按「未实现才删」的原则保留；收进「更多」只是不再让它们常驻占一排。
+          自动排座与顺序轮换都是「**生成一张新座位表**」（v3.7.5 起轮换也不再覆盖原表），
+          两者互不相干；不满意时把新表删掉、切回原表即可。
         -->
         <SeatMoreMenu
           v-if="!compareActive"
@@ -1138,6 +1196,7 @@ async function runCompareExport() {
           <SeatExportMenu
             :disabled="!seatStore.currentPlan"
             :busy="exportBusy"
+            :plan-name="seatStore.currentPlan?.name ?? ''"
             @request="runExport"
           />
         </template>
@@ -1284,7 +1343,7 @@ async function runCompareExport() {
     >
       <ul class="legend" aria-label="座位标记图例">
         <li v-for="item in ACCENT_LEGEND" :key="item.key" class="legend-item">
-          <i class="swatch" :class="[item.cls, { 'is-dot': item.dot }]" aria-hidden="true"></i>
+          <i class="swatch" :class="item.cls" aria-hidden="true"></i>
           {{ item.label }}
         </li>
       </ul>
@@ -1447,6 +1506,24 @@ async function runCompareExport() {
       </template>
     </AppModal>
 
+    <!-- v3.7.5（§4.1）：撤销修改确认（说清撤到哪儿、影响谁、不动什么） -->
+    <AppModal v-model="undoOpen" title="撤销修改" :width="400">
+      <p v-if="undoChangedCount > 0" class="confirm-text">
+        将把当前方案
+        <strong>{{ seatStore.currentPlan?.name ?? '' }}</strong>
+        的座位恢复到<strong>本轮第一次换座之前</strong>的布局，共
+        <strong>{{ undoChangedCount }}</strong> 名学生回到原来的座位。
+      </p>
+      <p v-else class="confirm-text">本轮座位已与本轮开始前一致，撤销只会收回本轮的换座记录。</p>
+      <p class="confirm-text confirm-text--sub">
+        本轮的换座记录一并收回；学生档案不受影响，其他座位表也不受影响。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" @click="undoOpen = false">取消</AppButton>
+        <AppButton @click="confirmUndoSession">撤销修改</AppButton>
+      </template>
+    </AppModal>
+
     <!-- 保存本次调整后的自动摘要 -->
     <AppModal v-model="summaryOpen" title="本次调整" :width="420">
       <div class="summary-list">
@@ -1541,25 +1618,19 @@ async function runCompareExport() {
   white-space: nowrap;
 }
 
-/* 图例色块：横条（班委 / 高个）与圆点（其他标签）都取自 theme.css */
+/* 图例色块：两条横条（班委顶条 / 女生底条），颜色与 SeatCard 上的标记同一份 theme.css 变量 */
 .swatch {
   width: 18px;
   height: 3px;
   border-radius: var(--radius-full);
 }
 
-.swatch.is-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--color-text-secondary);
-}
-
 .swatch.is-cadre {
   background: var(--color-primary-strong);
 }
 
-.swatch.is-tall {
-  background: var(--color-warning);
+.swatch.is-girl {
+  background: var(--color-gender-female);
 }
 
 /* 点击换座模式提示条 */

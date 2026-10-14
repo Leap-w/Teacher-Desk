@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CalendarClock, Trash2 } from 'lucide-vue-next'
+import { CalendarClock, CalendarRange, Trash2 } from 'lucide-vue-next'
 
 import { AppButton, AppModal, AppSegmented } from '@/components/ui'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import { useToast } from '@/composables/useToast'
 import { useAppSettingsStore } from '@/stores/appSettings'
+import { useSemesterStore } from '@/stores/semester'
 import { useTimetableStore } from '@/stores/timetable'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { SeatView } from '@/types/seat'
@@ -49,6 +50,16 @@ const courseTimeValue = computed(() => {
 const seatLayoutValue = computed(
   () =>
     `${DEFAULT_CLASSROOM_CONFIG.rows} 排 × ${DEFAULT_CLASSROOM_CONFIG.cols} 列 · ${DEFAULT_CLASSROOM_CONFIG.blocks.length} 区`,
+)
+
+/* ---------- v3.7.5：学期设置（教学周次的统一来源） ---------- */
+
+const semesterStore = useSemesterStore()
+
+/** 学期设置一句话摘要：名称 + 总周数 + 开学日期 */
+const semesterValue = computed(
+  () =>
+    `${semesterStore.settings.name} · ${semesterStore.weekCount} 周 · 开学 ${semesterStore.settings.startDate}`,
 )
 
 const VIEW_OPTIONS: { value: SeatView; label: string }[] = [
@@ -95,6 +106,20 @@ async function confirmClear(): Promise<void> {
 
 <template>
   <SettingsPage title="教学设置" subtitle="课表与座位图的默认口径">
+    <SettingsSection title="学期">
+      <!--
+        v3.7.5：学期设置（名称 / 开学日期 / 总周数 / 结束日期）。
+        放在教学设置里、排在课程之前——它是教学周次的统一来源，
+        课程表换课选周次、周次推算都从这一页读，不另建重复入口。
+      -->
+      <SettingsCell
+        :icon="CalendarRange"
+        title="学期设置"
+        :subtitle="`${semesterValue} · 点击调整`"
+        @click="router.push('/my/settings/teaching/semester')"
+      />
+    </SettingsSection>
+
     <SettingsSection title="课程">
       <SettingsCell
         :icon="CalendarClock"

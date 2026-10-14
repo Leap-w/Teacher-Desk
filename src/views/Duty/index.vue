@@ -14,6 +14,8 @@ import {
   weekdayOfDateKey,
 } from '@/utils/date'
 import { WEEKDAY_LABELS } from '@/utils/timetable'
+import { findDayAssignment, dutyGroupFor } from '@/utils/duty'
+import DutyDayAssignModal from './components/DutyDayAssignModal.vue'
 import DutyGroupCard from './components/DutyGroupCard.vue'
 import DutyGroupEditModal from './components/DutyGroupEditModal.vue'
 import DutyHero from './components/DutyHero.vue'
@@ -88,8 +90,53 @@ const timelineEntries = computed<DutyTimelineEntry[]>(() =>
       ? { name: day.group.name, memberCount: dutyStore.membersOf(day.group).length }
       : undefined,
     isToday: day.dateKey === dutyStore.todayKey,
+    assigned: day.assigned === true,
   })),
 )
+
+/* ---------- 按天指定值日组（v3.7.5） ---------- */
+
+const assignOpen = ref(false)
+/** 正在指定的日期：时间轴那一行点进来就是那一天，页头入口默认今天 */
+const assignDate = ref(dutyStore.todayKey)
+
+/** 这一天已指定的组 id（对话框据此预选、并显示「取消指定」） */
+const assignAssignedId = computed(
+  () => findDayAssignment(dutyStore.dayAssignments, assignDate.value)?.groupId,
+)
+
+/** 这一天按轮换轮到哪一组（未指定时的预选与说明文案） */
+const assignRotationId = computed(
+  () => dutyGroupFor(assignDate.value, dutyStore.groups, dutyStore.settings)?.id,
+)
+
+function openAssign(dateKey: string = dutyStore.todayKey): void {
+  if (dutyStore.groups.length === 0) {
+    toast.warning('先建好值日组，再来指定某一天的值日组')
+    return
+  }
+  assignDate.value = dateKey
+  assignOpen.value = true
+}
+
+function onAssignSave(payload: { dateKey: string; groupId: string }): void {
+  if (!dutyStore.setDayGroup(payload.dateKey, payload.groupId)) {
+    toast.danger('没有保存：日期要不早于 2000 年、不晚于 2099 年，且要选一个现有的值日组')
+    return
+  }
+  const name = dutyStore.groups.find((group) => group.id === payload.groupId)?.name ?? ''
+  assignOpen.value = false
+  toast.success(`已把 ${formatMonthDay(payload.dateKey)} 的值日组指定为「${name}」`)
+}
+
+function onAssignClear(dateKey: string): void {
+  if (!dutyStore.clearDayGroup(dateKey)) {
+    toast.danger('没有可取消的指定：这一天可能已经改回自动轮换了')
+    return
+  }
+  assignOpen.value = false
+  toast.success(`已取消 ${formatMonthDay(dateKey)} 的指定，这一天回到自动轮换`)
+}
 
 /**
  * 成员选择器的候选名单：在读学生在前（按学号升序），已不在档案的排在后面并标注——
@@ -227,6 +274,7 @@ function openImport(mode: 'groups' | 'arrange'): void {
         <SettingsEntryButton module="duty" />
         <AppButton variant="secondary" @click="openImport('groups')">导入分组</AppButton>
         <AppButton variant="secondary" @click="openImport('arrange')">导入安排</AppButton>
+        <AppButton variant="secondary" @click="openAssign()">按天指定</AppButton>
         <AppButton @click="openCreate">＋ 新建值日组</AppButton>
       </div>
     </header>
@@ -239,6 +287,7 @@ function openImport(mode: 'groups' | 'arrange'): void {
       :weekday-label="formatWeekdayLabel(now)"
       :weekend-skipped="weekendSkipped"
       :needs-setup="needsSetup"
+      :assigned="dutyStore.todayAssigned"
       @create="openCreate"
     />
 
@@ -257,8 +306,16 @@ function openImport(mode: 'groups' | 'arrange'): void {
       <section class="layer-section">
         <h2 class="layer-title">轮换安排（近 7 天）</h2>
         <div class="panel">
-          <DutyTimeline v-if="dutyStore.groups.length > 0" :entries="timelineEntries" />
+          <DutyTimeline
+            v-if="dutyStore.groups.length > 0"
+            :entries="timelineEntries"
+            assignable
+            @assign="openAssign"
+          />
           <p v-else class="panel-empty">建好值日组后，这里会显示按天轮换的安排。</p>
+          <p v-if="dutyStore.groups.length > 0" class="timeline-hint">
+            某一天想换人，点那一行的「指定」——只改这一天，轮换起点与其他日期都不动。
+          </p>
         </div>
       </section>
     </div>
@@ -298,6 +355,17 @@ function openImport(mode: 'groups' | 'arrange'): void {
       :active-ids="activeIds"
       :groups="dutyStore.groups"
       @submit="onSubmitGroup"
+    />
+
+    <!-- 按天指定值日组（v3.7.5）：只改这一天，轮换与组序都不动 -->
+    <DutyDayAssignModal
+      v-model="assignOpen"
+      v-model:date-key="assignDate"
+      :groups="dutyStore.groups"
+      :assigned-group-id="assignAssignedId"
+      :rotation-group-id="assignRotationId"
+      @save="onAssignSave"
+      @clear="onAssignClear"
     />
 
     <!-- Excel 批量导入（分组 / 安排共用一个弹窗，按 mode 切换管道） -->
@@ -393,6 +461,15 @@ function openImport(mode: 'groups' | 'arrange'): void {
   padding: var(--space-4) 0;
   text-align: center;
   font-size: var(--font-secondary);
+  color: var(--color-text-tertiary);
+}
+
+.timeline-hint {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-light);
+  font-size: var(--font-secondary);
+  line-height: 1.7;
   color: var(--color-text-tertiary);
 }
 

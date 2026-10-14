@@ -11,6 +11,7 @@
 import { appConfig } from '@/config'
 import { createSeedLessons } from '@/services/mock'
 import { createId } from '@/utils/id'
+import { normalizeExchangeWeeks } from '@/utils/exchange'
 import {
   classIdOf,
   isValidLessonType,
@@ -124,6 +125,10 @@ function normalizeExchange(raw: Partial<CourseExchange>): CourseExchange | null 
         ? snapshot.courseGroupId
         : undefined,
   }
+  // v3.7.5：生效周次。**三种输入的区分很重要**（见 types/timetable.ts 的 `weeks` 说明）：
+  // 没有这个字段 = 旧记录（当时直接改过基础课表），保持 `undefined`；
+  // 是数组就规范化（空数组也照原样留成 `[]`，界面提示重选，**绝不丢记录**、绝不猜成旧记录）。
+  const weeks = normalizeExchangeWeeks(raw.weeks)
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : createId(),
     from,
@@ -131,6 +136,7 @@ function normalizeExchange(raw: Partial<CourseExchange>): CourseExchange | null 
     fromLesson,
     group: raw.group === true,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : '',
+    ...(weeks === undefined ? {} : { weeks }),
   }
 }
 
@@ -295,6 +301,20 @@ export const scheduleRepository = {
       return exchangesRepository.load() ?? []
     } catch (error) {
       console.warn('[timetable] 读取本地存储失败：', error)
+      return []
+    }
+  },
+
+  /**
+   * 只读换课记录（v3.7.5，给 macOS 小组件快照用）。
+   * 与 `loadExchanges()` 是同一套读法与同一套 normalize / revive，只是**明确保证不写盘**
+   * ——小组件那条路径一个字节都不能写（见 `peekLessons` 的说明）。
+   */
+  peekExchanges(): CourseExchange[] {
+    try {
+      return exchangesRepository.load() ?? []
+    } catch (error) {
+      console.warn('[timetable] 只读换课记录失败：', error)
       return []
     }
   },

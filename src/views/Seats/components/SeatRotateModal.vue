@@ -12,11 +12,12 @@ import type { Seat, SeatView } from '@/types/seat'
 import type { Student } from '@/types'
 
 /**
- * 顺序轮换弹窗（v3.7.4）。
+ * 顺序轮换弹窗（v3.7.4；v3.7.5 起落库目标是**新建的独立座位表**，见 §4.2）。
  *
  * **预览先于落库**：本组件打开时只调一次纯函数 `rotateSeats()`，把结果渲染成座位图给教师看；
- * 「确认应用」才把那份座位数组 emit 给页面落库，「取消」/ 关闭则什么都不做——
+ * 「生成新座位表」才把那份座位数组 emit 给页面落库，「取消」/ 关闭则什么都不做——
  * 因此「取消后当前座位必须保持不变」是**结构上**成立的，不靠额外的回滚代码。
+ * 落库那一步由页面走 `createPlanFromSeats()`（新建方案），**源座位表一个字节都不改**。
  *
  * 校验失败（人数与可用座位不一致、同一学生占两个座位…）时：显示 `reason`，
  * 「确认应用」保持禁用，座位图不渲染——宁可不给入口，也不让教师以为已经换好了。
@@ -43,7 +44,7 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<{
   'update:modelValue': [open: boolean]
-  /** 确认应用：把轮换后的座位数组交给页面落库 */
+  /** 生成新座位表：把轮换后的座位数组交给页面落库（页面据此新建一张独立座位表） */
   apply: [seats: Seat[]]
 }>()
 
@@ -154,7 +155,7 @@ function confirm() {
       <p class="rotate-error-title">本次不能轮换，已取消：</p>
       <p class="rotate-error-reason">{{ rotation.reason }}</p>
       <p class="rotate-error-tip">
-        座位表没有被改动。「确认应用」已禁用——先按上面的提示把数据对齐，再回来试。
+        座位表没有被改动。「生成新座位表」已禁用——先按上面的提示把数据对齐，再回来试。
       </p>
     </div>
 
@@ -213,13 +214,14 @@ function confirm() {
         = {{ fixedEmptyLabel }}，永久留空：轮换后仍留在原位，任何学生都不会被排到这里。
       </p>
       <p class="rotate-note">
-        轮换只在当前方案上生效（不新建方案，方案名与约束不变）。确认后可在座位图上继续拖拽微调。
+        确认后会<strong>新建一张独立的座位表</strong>并切换为当前：当前这张原位原样保留，
+        两张表各改各的、互不影响。新表建好后可在座位图上继续拖拽微调。
       </p>
     </template>
 
     <template #footer>
       <AppButton variant="ghost" @click="close">取消</AppButton>
-      <AppButton :disabled="!rotation.ok" @click="confirm">确认应用</AppButton>
+      <AppButton :disabled="!rotation.ok" @click="confirm">生成新座位表</AppButton>
     </template>
   </AppModal>
 </template>

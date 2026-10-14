@@ -5,11 +5,18 @@ import type { DutyTimelineEntry } from './DutyTimeline.vue'
 /**
  * DutyTimelineItem — 轮换时间轴单条（V2.0.6-alpha · Phase UI-4D 沉淀）：
  * 日期节点（今天松石青实心高亮）+ 组名 + 人数；不值日的日子灰节点标注。
+ * v3.7.5：教师按天指定的日子标注「已指定」，并给出「指定 / 改派」入口。
  */
 defineProps<{
   entry: DutyTimelineEntry
   /** 渐入延迟序号（父级遍历赋值） */
   index?: number
+  /** 是否给出「指定」入口（没有值日组时关掉） */
+  assignable?: boolean
+}>()
+
+const emit = defineEmits<{
+  assign: [dateKey: string]
 }>()
 </script>
 
@@ -23,12 +30,21 @@ defineProps<{
       </p>
       <p v-if="entry.group" class="tl-group">
         {{ entry.group.name }}<span class="tl-meta"> · {{ entry.group.memberCount }} 人</span>
+        <span v-if="entry.assigned" class="tl-assigned">已指定</span>
       </p>
       <p v-else class="tl-skip">
         <Moon :size="12" :stroke-width="2" aria-hidden="true" />
         不值日
       </p>
     </div>
+    <button
+      v-if="assignable"
+      type="button"
+      class="tl-assign"
+      @click="emit('assign', entry.dateKey)"
+    >
+      {{ entry.assigned ? '改派' : '指定' }}
+    </button>
   </div>
 </template>
 
@@ -103,6 +119,33 @@ defineProps<{
 
 .tl-meta {
   color: var(--color-text-tertiary);
+}
+
+/* 「已指定」：这一天的组是教师按天指定的（与自动轮换区分开） */
+.tl-assigned {
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+  font-size: var(--font-caption);
+}
+
+.tl-assign {
+  flex-shrink: 0;
+  align-self: center;
+  border: none;
+  background: transparent;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: var(--font-caption);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-primary-strong);
+  cursor: pointer;
+}
+
+.tl-assign:hover {
+  text-decoration: underline;
 }
 
 .tl-skip {

@@ -5,6 +5,7 @@ import { seatRepository } from '@/repositories/seat/seatRepository'
 import { createId } from '@/utils/id'
 import {
   buildSeatGrid,
+  compareSeatPlans,
   createEmptySeatPlanConstraints,
   createSeatPlan,
   getSeatKey,
@@ -139,6 +140,7 @@ export const useSeatStore = defineStore('seat', () => {
       .map((item) => (item.isCurrent ? { ...item, isCurrent: false } : item))
       .concat({ ...plan, isCurrent: true })
     clearCurrentLogs()
+    endSession()
     return { ...plan, isCurrent: true }
   }
 
@@ -147,6 +149,16 @@ export const useSeatStore = defineStore('seat', () => {
     let n = 1
     while (plans.value.some((plan) => plan.name === `自动排座 ${n}`)) n++
     return `自动排座 ${n}`
+  }
+
+  /**
+   * 顺序轮换方案默认名：顺序轮换 N（v3.7.5 起轮换**新建**一张独立座位表，见 §4.2；
+   * v3.7.4 那版是覆盖当前方案，不产生新名字）。命名规则与另外两处一致。
+   */
+  function nextRotateName(): string {
+    let n = 1
+    while (plans.value.some((plan) => plan.name === `顺序轮换 ${n}`)) n++
+    return `顺序轮换 ${n}`
   }
 
   /**
@@ -173,6 +185,7 @@ export const useSeatStore = defineStore('seat', () => {
       .map((item) => (item.isCurrent ? { ...item, isCurrent: false } : item))
       .concat(plan)
     clearCurrentLogs()
+    endSession()
     return { ...plan }
   }
 
@@ -180,6 +193,9 @@ export const useSeatStore = defineStore('seat', () => {
    * 用求解器结果替换既有方案的座位（Phase 3D「换一种排法」；方案名与 changeLogs 历史不变）。
    * 与其余方案编辑一致更新 updatedAt；目标为当前方案时清空「本次调整」待提交记录
    * （待提交记录描述的是替换前的排法）。方案不存在返回 false。
+   *
+   * v3.7.5：目标为当前方案时同样结束「本轮修改」（撤销快照作废）——整表改写是另起一轮，
+   * 保留旧快照会让「撤销修改」把教师刚生成的那张表悄悄抹掉。
    */
   function replacePlanSeats(
     planId: string,
@@ -193,7 +209,10 @@ export const useSeatStore = defineStore('seat', () => {
         ? { ...plan, updatedAt: new Date().toISOString(), seats: nextSeats }
         : plan,
     )
-    if (target.isCurrent) clearCurrentLogs()
+    if (target.isCurrent) {
+      clearCurrentLogs()
+      endSession()
+    }
     return true
   }
 
@@ -203,6 +222,7 @@ export const useSeatStore = defineStore('seat', () => {
     if (!target || target.isCurrent) return false
     plans.value = plans.value.map((plan) => ({ ...plan, isCurrent: plan.id === id }))
     clearCurrentLogs()
+    endSession()
     return true
   }
 
@@ -224,6 +244,98 @@ export const useSeatStore = defineStore('seat', () => {
     const target = plans.value.find((plan) => plan.id === id)
     if (!target || target.isCurrent || plans.value.length <= 1) return false
     plans.value = plans.value.filter((plan) => plan.id !== id)
+    // 撤销快照指向的就是这一份（正常走不到：切方案时已经结束本轮），留着只会指向一张没了的表
+    if (sessionBaseline.value?.planId === id) endSession()
+    return true
+  }
+
+  /* ========== v3.7.5（§4.1）：撤销「本轮修改」（会话内轻量快照，不写 localStorage） ========== */
+
+  /**
+   * 「本轮修改」开始前的座位布局快照（当前方案的完整座位）。
+   *
+   * **只放在内存里**：刷新后要保住的是**撤销的结果**（座位已经写盘、重开就是撤销后的布局），
+   * 而不是「撤销按钮还能再按一次」；把快照也写进 localStorage 等于再养一份可能与学生表、
+   * 方案表分叉的座位数据，反而制造新的出错点（§4.1 也明确「优先使用轻量快照方案」）。
+   *
+   * 「本轮」＝从第一次换座起，到撤销、或换/新建/整表替换方案为止。**「保存本次调整」不算边界**：
+   * 它归档的是换座记录，座位本身没有变化，教师按下撤销时想回到的仍是「这一轮开始之前」，
+   * 所以撤销会连同本轮归档的记录一起收回（见 undoSession）。
+   */
+  const sessionBaseline = ref<{ planId: string; seats: Seat[]; logCount: number } | undefined>(
+    undefined,
+  )
+
+  /**
+   * 记下本轮起点：**只在第一次真正改动座位之前拍一次**，之后不再覆盖——
+   * 每次换座都重拍的话，撤销就退化成「撤销最后一次拖拽」，正是 §4.1 明确不要的做法。
+   */
+  function captureSessionBaseline(): void {
+    const plan = currentPlan.value
+    if (!plan) return
+    // 已有快照且指向同一方案：本轮已经在进行中，保持最初那一份
+    if (sessionBaseline.value?.planId === plan.id) return
+    sessionBaseline.value = {
+      planId: plan.id,
+      seats: plan.seats.map((seat) => ({ ...seat })),
+      logCount: plan.changeLogs.length,
+    }
+  }
+
+  /** 结束本轮：快照作废，之后的改动算新一轮 */
+  function endSession(): void {
+    sessionBaseline.value = undefined
+  }
+
+  /** 本轮是否还有可撤销的改动（页面据此启用「撤销修改」；没有可撤销内容时按钮灰着） */
+  const canUndoSession = computed(() => {
+    const baseline = sessionBaseline.value
+    return Boolean(baseline && currentPlan.value?.id === baseline.planId)
+  })
+
+  /**
+   * 本轮改动涉及的学生（撤销确认弹窗里的「N 名学生回到原位」）：
+   * 复用方案对比的既有口径（`compareSeatPlans`）——相对本轮起点换了座位、或从没有座位
+   * 变成有座位的算一名，不另写一套「谁算变了」的判断。
+   */
+  const sessionChangedStudentIds = computed<ReadonlySet<string>>(() => {
+    const baseline = sessionBaseline.value
+    const plan = currentPlan.value
+    if (!baseline || !plan || plan.id !== baseline.planId) return new Set<string>()
+    const students = new Map(studentStore.activeStudents.map((item) => [item.id, item]))
+    return compareSeatPlans({ ...plan, seats: baseline.seats }, plan, students).changedStudentIds
+  })
+
+  /**
+   * 撤销本轮修改（§4.1）：把当前方案的座位整表恢复成**本轮第一次换座之前**的样子，
+   * 而不是只撤销最近一次拖拽。
+   *
+   * - 座位经与整表替换同一条管道重建（`occupantsFromSeats` + `buildSeatGrid`：按行列重算座位号、
+   *   固定空位强制留空），**一次赋值写全**（座位 + updatedAt + 换座记录），因此只写一次盘、
+   *   只广播一次，**撤销后的布局立即持久化**，刷新 / 重开后仍是撤销后的样子；
+   * - 本轮归档的换座记录一并收回（座位回到原点、记录却还留着，两边就对不上了）；
+   * - 学生档案一个字段都不动：这里只写 seats，不碰 students；
+   * - 快照为空 / 方案已变（换了方案、方案被删）时返回 false，绝不错撤到另一份方案上。
+   */
+  function undoSession(): boolean {
+    const baseline = sessionBaseline.value
+    const plan = currentPlan.value
+    if (!baseline || !plan || plan.id !== baseline.planId) return false
+    const seats = buildSeatGrid(occupantsFromSeats(baseline.seats, config), config)
+    sessionBaseline.value = undefined
+    // 「本次调整」待提交记录描述的是已经被撤掉的那些改动，一起清空
+    pendingLogs.value = []
+    plans.value = plans.value.map((item) =>
+      item.id === plan.id
+        ? {
+            ...item,
+            updatedAt: new Date().toISOString(),
+            seats,
+            // 换座记录回退到本轮开始时的条数（commitPendingLogs 追加式入档，截断即收回本轮）
+            changeLogs: item.changeLogs.slice(0, baseline.logCount),
+          }
+        : item,
+    )
     return true
   }
 
@@ -285,6 +397,8 @@ export const useSeatStore = defineStore('seat', () => {
     const studentA = findActiveStudent(fromSeat.studentId)
     const studentB = findActiveStudent(toSeat.studentId)
     if (!studentA || !studentB) return false
+    // 校验都过了、马上要真的改座位：本轮若是第一次换座，先把「换之前」的样子拍下来
+    captureSessionBaseline()
     const now = new Date().toISOString()
     plans.value = plans.value.map((item) => {
       if (item.id !== plan.id) return item
@@ -314,6 +428,8 @@ export const useSeatStore = defineStore('seat', () => {
     if (!fromSeat || !toSeat || !fromSeat.studentId || toSeat.studentId) return false
     const student = findActiveStudent(fromSeat.studentId)
     if (!student) return false
+    // 同 swapSeats：真的改动之前拍下本轮起点
+    captureSessionBaseline()
     const now = new Date().toISOString()
     plans.value = plans.value.map((item) => {
       if (item.id !== plan.id) return item
@@ -357,6 +473,17 @@ export const useSeatStore = defineStore('seat', () => {
     if (touched) {
       plans.value = next
       pendingLogs.value = pendingLogs.value.filter((log) => log.studentId !== studentId)
+      // 撤销快照里也要去掉这名学生：撤销时把一个已经不在档案的学生放回座位，
+      // 留下的是一张「看不见的占座」——座位卡当作空位显示，却谁也拖不进去
+      const baseline = sessionBaseline.value
+      if (baseline) {
+        sessionBaseline.value = {
+          ...baseline,
+          seats: baseline.seats.map((seat) =>
+            seat.studentId === studentId ? { ...seat, studentId: undefined } : seat,
+          ),
+        }
+      }
     }
     return released
   }
@@ -631,6 +758,9 @@ export const useSeatStore = defineStore('seat', () => {
     const relocated = valid.filter(
       (item) => before.get(item.studentId) !== getSeatKey(item.row, item.col),
     ).length
+    // 导入同样改变座位位置（§4.1：其他会改变座位位置的操作都属于本轮修改），
+    // 校验通过、整批应用之前拍下本轮起点
+    captureSessionBaseline()
     const now = new Date().toISOString()
     plans.value = plans.value.map((item) =>
       item.id === plan.id ? { ...item, updatedAt: now, seats } : item,
@@ -684,6 +814,7 @@ export const useSeatStore = defineStore('seat', () => {
     applySeatImport,
     createPlan,
     createPlanFromSeats,
+    nextRotateName,
     replacePlanSeats,
     switchPlan,
     renamePlan,
@@ -694,5 +825,9 @@ export const useSeatStore = defineStore('seat', () => {
     appendSeatChangeLog,
     clearCurrentLogs,
     commitPendingLogs,
+    // v3.7.5（§4.1）：撤销「本轮修改」——快照只读暴露给页面确认弹窗数人数
+    canUndoSession,
+    sessionChangedStudentIds,
+    undoSession,
   }
 })

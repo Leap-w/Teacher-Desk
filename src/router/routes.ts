@@ -120,6 +120,17 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Works/index.vue'),
         meta: { title: '工作清单' },
       },
+      {
+        /*
+         * v3.7.5（§6）：代课管理——**独立的工作量台账**，不是课程表的子功能。
+         * 排在两个既有子页**之后**：二级导航顺序由本表决定，插在中间会把教师已经
+         * 习惯的「课程表 / 工作清单」整体挪位（§9.10：不改变现有有效功能的导航位置）。
+         */
+        path: 'substitutes',
+        name: 'substitutes',
+        component: () => import('@/views/Substitutes/index.vue'),
+        meta: { title: '代课管理' },
+      },
     ],
   },
   /* ---- 旧路径兼容（V1.1.5 前的稳定 URL）：重定向到班级管理层级，旧链接不失效 ---- */
@@ -171,6 +182,13 @@ export const routes: RouteRecordRaw[] = [
     name: 'settings-teaching-periods',
     component: () => import('@/views/My/settings/CourseTimeSettings.vue'),
     meta: { title: '课程时间', hidden: true },
+  },
+  {
+    // v3.7.5：学期设置（教学周次的统一来源，课程表换课按它取周次）
+    path: '/my/settings/teaching/semester',
+    name: 'settings-teaching-semester',
+    component: () => import('@/views/My/settings/SemesterSettings.vue'),
+    meta: { title: '学期设置', hidden: true },
   },
   {
     path: '/my/settings/class',

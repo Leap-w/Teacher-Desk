@@ -225,6 +225,9 @@ export interface CourseSlot {
  * 换课不是「改科目」，因此不复用编辑：原位置的课程被移走（原时间由本记录渲染「调课」标记），
  * 目标位置生成一条 `type: 'adjusted'` 的新课程（`exchangeId` 指回本记录）；
  * `fromLesson` 存原课程快照，撤销时原样放回。
+ *
+ * **v3.7.5 起新换课一律按教学周次生效**（见 `weeks`）：不再改基础课表，
+ * 只在选中的周次上把课「搬」到目标时段（叠加层，`utils/exchange.ts` 的 `resolveWeekLessons`）。
  */
 export interface CourseExchange {
   id: string
@@ -235,4 +238,15 @@ export interface CourseExchange {
   /** 是否属于「整组晚自习一起调」 */
   group: boolean
   createdAt: string
+  /**
+   * **v3.7.5**：这条换课在哪些教学周生效（1 起的教学周序号，升序去重）。
+   * 周次表来自学期设置（`stores/semester.ts`），**不写死 20 周**。
+   *
+   * - 非空数组 = 周次级换课：**只在这些周**把 `from` 的课搬到 `to`，基础课表一个字节都不动；
+   *   选中的周数变少 / 学期总周数改小都不会删记录（超范围的周次保留，界面提示）。
+   * - 空数组 = 记录还在但哪一周都不生效（如外部改坏），界面提示教师重选，**不删记录**。
+   * - `undefined` = v3.7.5 之前的旧记录：当时换课**直接改过基础课表**（课已被搬走、
+   *   目标位置已是 `adjusted` 课程）。保留其既有行为与撤销路径，**不做破坏性迁移**。
+   */
+  weeks?: number[]
 }

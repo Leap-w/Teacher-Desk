@@ -41,6 +41,8 @@ const CONSTRAINT_KEY = `${appConfig.storageKeyPrefix}:seatConstraints`
 const TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable`
 /** V1.1.3：换课记录（课程表的第二块，与课程分键存放） */
 const EXCHANGE_KEY = `${appConfig.storageKeyPrefix}:timetable:exchanges`
+/** v3.7.5：学期设置（教学周次的统一来源，单元素数组） */
+const SEMESTER_KEY = `${appConfig.storageKeyPrefix}:semester`
 /** V1.1.3：工作清单（「工作管理」的第二个板块） */
 const WORK_KEY = `${appConfig.storageKeyPrefix}:works`
 /** V1.1.6：教师个人资料（「我的」页；单元素数组——数组里只有这一份） */
@@ -58,6 +60,8 @@ const HOLIDAYS_KEY = `${appConfig.storageKeyPrefix}:holidays`
 const HOLIDAY_RECORDS_KEY = `${appConfig.storageKeyPrefix}:holidayRecords`
 /** v3.6.0：班费管理的三个键（流水 / 收费批次 / 自定义支出类型），见 types/fund.ts */
 const FUND_RECORDS_KEY = `${appConfig.storageKeyPrefix}:fund:records`
+/** v3.7.5：代课台账（独立一键，与课程表 / 换课记录互不影响） */
+const SUBSTITUTES_KEY = `${appConfig.storageKeyPrefix}:substitutes`
 const FUND_COLLECTIONS_KEY = `${appConfig.storageKeyPrefix}:fund:collections`
 const FUND_CATEGORIES_KEY = `${appConfig.storageKeyPrefix}:fund:expenseCategories`
 /** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
@@ -74,6 +78,8 @@ export const BACKUP_MODULES: BackupModule[] = [
   { key: CONSTRAINT_KEY, label: '座位约束', unit: '条' },
   { key: TIMETABLE_KEY, label: '课程表', unit: '节' },
   { key: EXCHANGE_KEY, label: '换课记录', unit: '条' },
+  // v3.7.5：学期设置（换课等按教学周次生效，丢了它周次会回默认的 2026 秋季学期）
+  { key: SEMESTER_KEY, label: '学期设置', unit: '份' },
   { key: WORK_KEY, label: '工作清单', unit: '条' },
   { key: LEAVE_KEY, label: '请假记录', unit: '条' },
   // 值日组与轮换设置同存一个数组（见 types/duty.ts），因此这里只有一行
@@ -88,6 +94,8 @@ export const BACKUP_MODULES: BackupModule[] = [
   { key: FUND_RECORDS_KEY, label: '班费流水', unit: '笔' },
   { key: FUND_COLLECTIONS_KEY, label: '收费批次', unit: '个' },
   { key: FUND_CATEGORIES_KEY, label: '自定义支出类型', unit: '个' },
+  // v3.7.5：代课台账（独立于课程表；它记的是「某天某节谁替谁上」，丢了统计就对不上了）
+  { key: SUBSTITUTES_KEY, label: '代课记录', unit: '条' },
   { key: PROFILE_KEY, label: '个人资料', unit: '份' },
 ]
 
@@ -415,6 +423,18 @@ function describeItem(key: string, item: unknown): string {
     return `${slotText(item.from)} → ${slotText(item.to)}`
   }
   if (key === WORK_KEY) return textOf(item.title) || '（未命名的工作）'
+  if (key === SUBSTITUTES_KEY) {
+    // 代课记录：日期 + 节次 + 谁替谁（与列表页同一句读法，核对时不用再去翻页面）
+    const date = textOf(item.date)
+    const periodId = typeof item.periodId === 'string' ? item.periodId : ''
+    const periodLabel = periodId ? periodLabelOf(periodId) : '未填写节次'
+    const subject = textOf(item.subject) || '未填写科目'
+    const swap = `${textOf(item.originalTeacher) || '未知教师'} → ${
+      textOf(item.substituteTeacher) || '未知教师'
+    }`
+    return `${date || '未填写日期'} ${periodLabel} ${subject}（${swap}）`
+  }
+  if (key === SEMESTER_KEY) return textOf(item.name) || '学期设置'
   if (key === PROFILE_KEY) return textOf(item.nickname) || '（未命名教师）'
   if (key === LEAVE_KEY || key === WEEKEND_KEY) {
     // 请假与周末返家同款带 studentName 快照，描述口径一致
@@ -422,6 +442,8 @@ function describeItem(key: string, item: unknown): string {
   }
   if (key === DUTY_KEY) {
     if (item.kind === 'settings') return '轮换设置'
+    // v3.7.5：按天指定的记录（没有组名可读，用日期说清是哪一天）
+    if (item.kind === 'day') return `按天指定 ${textOf(item.dateKey) || '（未填日期）'}`
     return textOf(item.name) || '（未命名的值日组）'
   }
   return '一条记录'

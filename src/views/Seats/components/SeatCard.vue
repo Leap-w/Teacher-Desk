@@ -2,11 +2,14 @@
 /**
  * SeatCard — 座位卡（V2.0.4-alpha · Phase UI-4B）：
  * Apple Classroom 风的统一座位块——上：首字头像 + 姓名；中：座位号；边缘：强调标记
- * （班委顶条 / 高个顶条 / 女生底条 / 标签角点，颜色一律来自 theme.css）。
+ * （班委顶条 / 女生底条，颜色一律来自 theme.css）。
  *
  * v3.3.2：新增**女生底条**（`is-girl`，由父级 `seatClass` 计算）——顶部条画的是「角色」
- * （班委 / 高个），底部条画的是「性别」，两条信息分列卡片两端、互不遮蔽。
+ * （班委），底部条画的是「性别」，两条信息分列卡片两端、互不遮蔽。
  * **只在网站屏幕上**：导出图走的是另一套实现（`SeatExportGraphic.vue`），不带性别标记。
+ *
+ * v3.7.5（§4.3）：座位图展示精简——**高个顶条与其他标签角点已撤下**，
+ * 卡上只剩姓名 / 座位号 / 女生底条 / 班委顶条。学生档案里的标签与备注一个字段都没删。
  *
  * v3.7.4：新增**固定空位**（`fixedEmpty`）——教室里有且只有一个格子永久留空
  * （第 1 排第 9 列，见 `types/classroom.ts` 的 `fixedEmptySeat`）。它**不是普通空座**，
@@ -51,8 +54,8 @@ withDefaults(
     :class="[classes, { 'is-fixed-empty': fixedEmpty }]"
     :title="title"
   >
-    <!-- 女生标记（v3.3.2）：底部细条，与顶部条（班委 / 高个）分列两端、互不遮蔽。
-         伪元素只有 ::before / ::after 两个且已被顶条与标签角点占用，故这里用真实元素 -->
+    <!-- 女生标记（v3.3.2）：底部细条，与顶部的班委条分列两端、互不遮蔽。
+         伪元素只有 ::before / ::after 两个且 ::before 已被班委顶条占用，故这里用真实元素 -->
     <span v-if="classes['is-girl']" class="seat-gender-bar" aria-hidden="true" />
     <template v-if="!empty">
       <span class="seat-avatar" aria-hidden="true">{{ char }}</span>
@@ -267,9 +270,10 @@ withDefaults(
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- 强调标记：班委 = 顶条主色，高个 = 顶条琥珀，其他标签 = 角点 ---- */
-.seat.is-cadre::before,
-.seat.is-tall::before {
+/* ---- 强调标记（v3.7.5 §4.3：只剩「班委」= 顶条主色）----
+   高个顶条与其他标签角点已从座位卡撤下：座位图上只有姓名 / 性别 / 班委三样信息。
+   档案里的身高相关标签与其它标签一个字段都没删，只是不再画到座位上。 */
+.seat.is-cadre::before {
   content: '';
   position: absolute;
   top: 0;
@@ -280,8 +284,8 @@ withDefaults(
 }
 
 /*
-  女生 = 底条（v3.3.2）。**为什么是底部而不是顶部**：顶部条已经被班委 / 高个占用，
-  两者都画在 `::before` 上——同一个学生既是班委又是女生时，若都往顶部画就只剩一条。
+  女生 = 底条（v3.3.2）。**为什么是底部而不是顶部**：顶部条被班委占用，它也画在
+  `::before` 上——同一个学生既是班委又是女生时，若都往顶部画就只剩一条。
   分列上下两端之后，顶部说的是「角色」、底部说的是「性别」，两条同时成立、各自可见。
   高度与顶条同是 3px、圆角跟着卡片下沿走，视觉上就是同一套标记语言的下半部分。
 */
@@ -297,21 +301,6 @@ withDefaults(
 
 .seat.is-cadre::before {
   background: var(--color-primary-strong);
-}
-
-.seat.is-tall::before {
-  background: var(--color-warning);
-}
-
-.seat.is-tag::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-text-secondary);
 }
 
 /* ---- 拖拽 / 换座模式反馈（状态类由父级计算，样式归卡片） ---- */

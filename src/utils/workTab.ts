@@ -7,8 +7,11 @@ import { readRaw, writeJSON } from '@/services/storage'
  * 路由 `/work` 的空路径不再写死重定向到某一页，而是**先看这个记忆**：
  * 没记过 → 课程表（v3.1.0 的新默认）；记过 → 回到教师上次停留的那一页。
  *
+ * v3.7.5（§6）：工作管理多了第三个子页「代课管理」，它同样进这份记忆——
+ * 否则在代课管理页刷新后会被弹回课程表。
+ *
  * 与 `utils/studentViewPrefs.ts` 同一套边界（那里是本仓库「纯界面状态」的第一份）：
- * ① **不注册 `syncPersisted`**——「刚才在看课程表还是工作清单」是这台设备上的
+ * ① **不注册 `syncPersisted`**——「刚才在看课程表、工作清单还是代课管理」是这台设备上的
  *    观看位置，不该推到云端，更不该参与「最后写入胜出」的冲突判定；
  * ② **不进 `BACKUP_MODULES`**——它不是教师录入的数据，导出备份时不该混进去
  *    （「清空本机数据」按前缀扫描，它会被一起清掉，这是对的）；
@@ -16,7 +19,7 @@ import { readRaw, writeJSON } from '@/services/storage'
  *    本文件在 vitest 的 node 环境下也会被 routes.ts 加载，故对 `localStorage`
  *    缺失做了兜底（`services/storage` 内部已判过，这里再兜一层是防 readRaw 抛错）。
  */
-export const WORK_TABS = ['/work/schedule', '/work/works'] as const
+export const WORK_TABS = ['/work/schedule', '/work/works', '/work/substitutes'] as const
 
 export type WorkTab = (typeof WORK_TABS)[number]
 
@@ -48,7 +51,7 @@ export function loadWorkTab(): WorkTab {
   }
 }
 
-/** 记下当前停留的 Tab（只认 `/work` 下的两个子页，别的路径一律忽略） */
+/** 记下当前停留的 Tab（只认 `/work` 下的三个子页，别的路径一律忽略） */
 export function rememberWorkTab(path: string): void {
   if (!isWorkTab(path)) return
   try {

@@ -16,6 +16,8 @@ const props = defineProps<{
   weekdayLabel: string
   weekendSkipped: boolean
   needsSetup: boolean
+  /** 今天的组是教师**按天指定**的（v3.7.5）：与自动轮换区分开，标一个「按天指定」 */
+  assigned?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +41,7 @@ const hasGroup = () => Boolean(props.group)
         <div class="hero-date-row">
           <span class="hero-date">{{ dateLabel }}</span>
           <AppBadge variant="primary" size="sm">今日值日</AppBadge>
+          <AppBadge v-if="assigned" variant="neutral" size="sm">按天指定</AppBadge>
         </div>
         <h2 class="hero-group">{{ group?.name }}</h2>
         <ul v-if="members.length" class="hero-members">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-import { buildNameCounts, formatStudentShortName, seatAccentOf } from '@/utils/student'
+import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { isFixedEmptySeat, seatOrdinal, seatPositionLong } from '@/utils/seat'
 import {
   doorSidesOf,
@@ -149,9 +149,14 @@ function occupantName(seat: Seat): string {
   return student ? formatStudentShortName(student, nameCounts.value) : ''
 }
 
+/**
+ * 座位卡上的标记（v3.7.5 §4.3 起**只剩两种**）：班委（顶条）与女生（底条）。
+ * 高个顶条与其他标签角点已从座位图撤下——座位图只答「谁坐在哪、是男是女、是不是班委」；
+ * 档案里的身高相关标签与其它标签照旧留在学生档案里，只是不再画到座位上
+ * （自动排座仍按「高个」标签派生后排偏好，那是排座输入，不是座位图展示）。
+ */
 function seatClass(seat: Seat): Record<string, boolean> {
   const student = occupantOf(seat)
-  const accent = student ? seatAccentOf(student) : undefined
   return {
     'is-empty': !student,
     'is-selected': props.selectedId === seat.id,
@@ -160,15 +165,14 @@ function seatClass(seat: Seat): Record<string, boolean> {
     'is-drag-source': drag.value?.fromId === seat.id,
     'is-flashing': props.flashSeatIds?.has(seat.id) ?? false,
     'is-changed': seat.studentId ? (props.changedStudentIds?.has(seat.studentId) ?? false) : false,
-    'is-cadre': accent === 'cadre',
-    'is-tall': accent === 'tall',
-    'is-tag': accent === 'tag',
+    'is-cadre': Boolean(student?.cadreRole),
     // 女生底条（v3.3.2）：空座位与性别未填都落到 false——不臆造性别。
-    // 与顶部条分列两端，班委 / 高个与女生两个标记可以同时成立（见 SeatCard 的说明）。
+    // 与顶部条分列两端，班委与女生两个标记可以同时成立（见 SeatCard 的说明）。
     'is-girl': student?.gender === 'female',
   }
 }
 
+/** 悬停信息：与座位卡同一口径——姓名（含重名尾号）+ 班委身份，标签不再出现在座位图上 */
 function seatTitle(seat: Seat): string {
   const student = occupantOf(seat)
   if (!student) {
@@ -176,9 +180,8 @@ function seatTitle(seat: Seat): string {
       ? `固定空位：${seatPositionLong(seat.row, seat.col)}（永久留空，不安排学生）`
       : '空位'
   }
-  const extra = [student.cadreRole, ...(student.tags ?? [])].filter(Boolean).join(' · ')
   const name = formatStudentShortName(student, nameCounts.value)
-  return extra ? `${name} · ${extra}` : name
+  return student.cadreRole ? `${name} · ${student.cadreRole}` : name
 }
 
 /** 该座位是否是「固定空位」（教室属性，与有没有人坐无关） */

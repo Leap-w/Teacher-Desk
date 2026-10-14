@@ -15,6 +15,11 @@ import type { SeatExportKind } from '@/utils/seatExport'
  * **v3.5.1：菜单只剩这两项**。撤掉的三项是 PNG 老师视角 / PNG 学生视角 /
  * PDF 老师视角——同一个「双视角」文件里两个视角都在，单视角入口是重复的。
  * 文案里的「（2 页横向 A4）」也一并去掉：那两个数字是给实现看的，不是给老师看的。
+ *
+ * v3.7.5（§4.4）：多张座位表并存后，「导出的是哪一份」必须在按下之前就说清，
+ * 于是下拉顶部常驻一行「当前座位表 · 方案名」。**只是把既有事实说出来**——
+ * 导出图里的副标题与文件名本来就带着方案名（见页面 `exportSubtitle` / `baseFilename`），
+ * 这里补的是「点之前就看得见」。
  */
 const ITEMS: { kind: SeatExportKind; label: string; icon: typeof FileText }[] = [
   { kind: 'pdf-dual', label: 'PDF · 双视角', icon: FileText },
@@ -25,6 +30,8 @@ const props = defineProps<{
   disabled?: boolean
   /** 正在导出的 kind（null = 空闲）；busy 时菜单整体禁用 */
   busy?: SeatExportKind | null
+  /** 当前方案名（§4.4：一份方案一张表，导的是哪一份要说在明处） */
+  planName?: string
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +81,10 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
     <Transition name="export-pop">
       <div v-if="open" class="export-pop" role="menu" aria-label="导出座位图">
+        <!-- §4.4：导的永远是「当前」这一份——先把它写在最上面，再列导出的格式 -->
+        <p class="export-scope">
+          当前座位表 · <strong>{{ planName || '—' }}</strong>
+        </p>
         <button
           v-for="item in ITEMS"
           :key="item.kind"
@@ -160,6 +171,26 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+}
+
+/* 「当前座位表 · 方案名」：下拉顶部的定位行，弱于下面的格式项、但一眼能读到方案名 */
+.export-scope {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px var(--space-3) 6px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border-light);
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.export-scope strong {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-text-secondary);
 }
 
 .export-item {
