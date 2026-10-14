@@ -104,6 +104,17 @@
 - 固定空位按 `r1c9` 实现，`docs/座位图-9.3.xlsx`（示意表）里那个空格在**第 7 排第 3 列**，
   两者不一致——本次以**需求原文**为准（已确认），示意表未改动。
 
+### 发布
+
+- 提交 `e4b1162`，tag **`v3.7.4`**；已推送到 GitHub（`Leap-w/Teacher-Desk`）。
+- 已部署到 CloudBase 静态托管（环境 `teacher-desk-d6gdsgqb8f9dc13d2`，`tcb hosting deploy dist /`）。
+  线上抽查 `/`、`/work/schedule/`、`/my/settings/`、`/students/`、`/class/seats/` 全 200，
+  入口分块 `index-DLQtZ3SG.js` 与本机构建一致，产物含「顺序轮换」「固定空位」与版本串 3.7.4。
+- **部署踩坑（已记入开发手册 §9.77 ⑨）**：`tcb hosting deploy` **不要加 `--verify` / `--safe`**——
+  本机代理下校验会把远端读成空、误判「全部 missing」，`--safe` 随即回滚并删掉线上根级文件
+  （站点一度 404），且它声称的本地备份并不存在。去掉这两个开关重传即恢复；
+  校验请自己用 `curl` 抽查路由 + 比对入口分块哈希。
+
 ---
 
 ## v3.7.3 —— macOS Widget 视觉精修（2026-10-01，tag `v3.7.3`）
