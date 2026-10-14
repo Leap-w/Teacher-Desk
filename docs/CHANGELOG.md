@@ -125,6 +125,21 @@
   `prettier --check`、`vue-tsc --noEmit`、`eslint`、`npm run build` 四项全部通过，
   构建校验的深链静态占位 **27 → 28 条**（新增 `/work/substitutes`）。
 
+### 发布
+
+- 提交 `093479c`，tag **`v3.7.5`**；已推送到 GitHub（`Leap-w/Teacher-Desk`）——
+  `github.com` 本次重新可达，`git push origin main` 与推 tag 都是一次成功
+  （不再需要 2026-10-14 那套 REST API 绕行；这条链路时好时坏，下次动手前仍先探一下）。
+- 已部署到 CloudBase 静态托管（环境 `teacher-desk-d6gdsgqb8f9dc13d2`，
+  `tcb hosting deploy dist /`，**未加 `--verify` / `--safe`**，见 §9.77 ⑨）：上传 171 个文件；
+  线上抽查 `/`、`/work/substitutes/`、`/my/settings/teaching/semester/`、`/class/duty/`、
+  `/work/schedule/`、`/class/seats/` 全 200，入口分块 `index-ypNmQJJ0.js`
+  **与本机构建 sha256 逐字节一致**，线上产物含版本串 3.7.5。
+- **又一次「 2」幽灵副本**：部署时 dist 里被 iCloud 生成了 13 个 `*/index 2.html` 并一起传了上去
+  （都是各路由目录下的深链占位那一批），按逐文件删除法清掉、线上复查 0 个，幽灵地址现为 404。
+  教训与 2026-09-29 那次一致：**部署前用 `find dist -name "* 2.*"` 扫一遍**（本次扫过、当时为 0，
+  副本是在扫描与部署之间的几分钟里冒出来的）。
+
 ---
 
 ## v3.7.4 —— 座位管理升级：新增「顺序轮换」（2026-10-14，tag `v3.7.4`）
