@@ -8,6 +8,7 @@ import {
   createEmptySeatPlanConstraints,
   createSeatPlan,
   getSeatKey,
+  isFixedEmptySeat,
   isValidSeatPosition,
   normalizeSeatPlanConstraints,
   seatOrdinal,
@@ -37,7 +38,11 @@ export interface SeatImportOutcome {
 /**
  * 求解器结果 → 座位号映射（createPlanFromSeats / replacePlanSeats 共用）。
  * **不信任传入的座位数组**：按行列重算座位号（与传入的 id / 顺序无关），
- * 同一学生只保留序号最小的座位，末排尾座固定留空（§2.4）。
+ * 同一学生只保留序号最小的座位，固定空位（第 1 排第 9 列，v3.7.4 起）强制留空。
+ *
+ * 这里必须用 `isFixedEmptySeat(row, col)` 而不是「跳过最后一个座位号」：固定空位是
+ * **坐标**上的一个格子，用位置猜（旧写法 `ordinal === config.totalSeats`）会在空位换角
+ * 之后把真正该留空的那个座位排上人，同时把原本坐那儿的学生整条丢掉。
  */
 function occupantsFromSeats(
   seats: Array<Pick<Seat, 'row' | 'col' | 'studentId'>>,
@@ -49,6 +54,7 @@ function occupantsFromSeats(
     const { row, col } = seat
     if (!Number.isInteger(row) || row < 1 || row > config.rows) continue
     if (!Number.isInteger(col) || col < 1 || col > config.cols) continue
+    if (isFixedEmptySeat(row, col, config)) continue
     candidates.push({ ordinal: seatOrdinal(row, col, config), studentId: seat.studentId })
   }
   // 按座位号升序去重：结果与传入数组的顺序无关（同一学生只保留序号最小者）。
@@ -57,7 +63,6 @@ function occupantsFromSeats(
   const occupants = new Map<number, string>()
   const placed = new Set<string>()
   for (const item of candidates) {
-    if (item.ordinal === config.totalSeats) continue
     if (placed.has(item.studentId)) continue
     placed.add(item.studentId)
     occupants.set(item.ordinal, item.studentId)
@@ -114,7 +119,7 @@ export const useSeatStore = defineStore('seat', () => {
   /** 当前方案（方案切换后唯一 isCurrent）；无方案时为 undefined */
   const currentPlan = computed(() => plans.value.find((plan) => plan.isCurrent))
 
-  /** 当前方案全部座位（63 个，含空位）：同一批 Seat 对象，切换视角只改显示顺序 */
+  /** 当前方案全部座位（63 个，含空位与固定空位）：同一批 Seat 对象，切换视角只改显示顺序 */
   const currentSeats = computed<Seat[]>(() => currentPlan.value?.seats ?? [])
 
   /** 已就座数量（studentId 计数；悬空座位已由启动清扫与删除监听清理，Phase 3B 起不悬空） */
@@ -127,7 +132,7 @@ export const useSeatStore = defineStore('seat', () => {
     return `座位方案 ${n}`
   }
 
-  /** 新建方案并切换为当前：学生按 seatNumber 自动就座（前 62 号，63 号尾座留空） */
+  /** 新建方案并切换为当前：学生按 seatNumber 自动就座（62 个可用座位，固定空位 第1排第9列 留空） */
   function createPlan(name?: string): SeatPlan {
     const plan = createSeatPlan(name?.trim() || nextPlanName(), studentProfiles())
     plans.value = plans.value

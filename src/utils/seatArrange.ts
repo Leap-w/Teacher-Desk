@@ -4,7 +4,12 @@ import {
   HARD_CONSTRAINT_TYPES,
   isPairConstraintType,
 } from '@/utils/constraint'
-import { areSeatsAdjacent, areSeatsSameDesk, buildSeatGrid } from '@/utils/seat'
+import {
+  areSeatsAdjacent,
+  areSeatsSameDesk,
+  availableSeatOrdinals,
+  buildSeatGrid,
+} from '@/utils/seat'
 import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
 import type { ClassroomConfig } from '@/types/classroom'
@@ -49,7 +54,7 @@ export interface ArrangeInput {
 export type ArrangeResult =
   | {
       ok: true
-      /** 完整网格（恒为 rows × cols 座，末排尾座为空位） */
+      /** 完整网格（恒为 rows × cols 座，固定空位为空位） */
       seats: Seat[]
       /** 超出教室容量、未安排的学生 id（按学号升序截断的尾部） */
       unplacedStudentIds: string[]
@@ -118,9 +123,13 @@ function swapAt(target: Placement, a: number, b: number): void {
 
 /* ========== 输入解析（求解与弹窗摘要共用，避免两处口径漂移） ========== */
 
-/** 教室可排座位数：末排尾座固定留空（§2.4），容量以配置为准 */
+/**
+ * 教室可排座位数：固定空位（第 1 排第 9 列，v3.7.4 起）永远不排人，容量以配置为准。
+ * 可用座位号是**一份显式集合**（`availableSeatOrdinals()`，升序、跳过固定空位），
+ * 不再假设「可用 = 前 62 号」——固定空位换个角落时那种假设会静默少排一个人。
+ */
 function capacityOf(config: ClassroomConfig): number {
-  return Math.max(1, Math.min(config.occupiedSeats, config.totalSeats - 1))
+  return Math.max(1, Math.min(config.occupiedSeats, availableSeatOrdinals(config).length))
 }
 
 /** 参与求解的约束：启用 + 涉及学生仍存在（学生删除时 constraint store 已清理，此处为防御） */
@@ -155,8 +164,11 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
   const students = [...input.students].sort((a, b) => a.studentNo.localeCompare(b.studentNo))
   const byId = new Map(students.map((student) => [student.id, student]))
 
-  /** 可用座位号 1..capacity：末排尾座固定留空（§2.4） */
+  /** 可用座位号（升序，跳过固定空位）——**所有**取位 / 换位都只在这份集合里发生 */
+  const ordinals = availableSeatOrdinals(config)
+  /** 实际参与排座的座位号（容量内的那一截） */
   const capacity = capacityOf(config)
+  const usable = ordinals.slice(0, capacity)
   const seated = students.slice(0, capacity)
   const unplacedStudentIds = students.slice(capacity).map((student) => student.id)
 
@@ -282,7 +294,7 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
 
     for (const student of order) {
       const candidates: number[] = []
-      for (let ordinal = 1; ordinal <= capacity; ordinal++) {
+      for (const ordinal of usable) {
         if (placement.cells[ordinal - 1] !== undefined) continue
         if (canPlace(placement, student.id, ordinal)) candidates.push(ordinal)
       }
@@ -316,9 +328,10 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
     let current = placement
     let currentScore = scoreOf(current)
     for (let step = 0; step < MAX_SEARCH_STEPS; step++) {
-      const a = 1 + Math.floor(random() * capacity)
-      const b = 1 + Math.floor(random() * capacity)
-      if (a === b) continue
+      // 只在可用座位集合里取两个位置（固定空位不在其中，永远不会被换进人）
+      const a = usable[Math.floor(random() * usable.length)]
+      const b = usable[Math.floor(random() * usable.length)]
+      if (a === undefined || b === undefined || a === b) continue
       if (!current.cells[a - 1] && !current.cells[b - 1]) continue
       const next: Placement = { cells: [...current.cells], position: new Map(current.position) }
       swapAt(next, a, b)
@@ -368,7 +381,7 @@ export function arrangeSeats(input: ArrangeInput): ArrangeResult {
 export interface ArrangeInputSummary {
   /** 参与排座的学生数（全部活跃学生，含超出容量者） */
   studentCount: number
-  /** 教室可排座位数（末排尾座固定留空） */
+  /** 教室可排座位数（固定空位 第1排第9列 留空） */
   capacity: number
   /** 硬约束条数（不能同桌 / 不能相邻） */
   hardCount: number

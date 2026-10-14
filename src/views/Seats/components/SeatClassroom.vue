@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 import { buildNameCounts, formatStudentShortName, seatAccentOf } from '@/utils/student'
-import { seatOrdinal } from '@/utils/seat'
+import { isFixedEmptySeat, seatOrdinal, seatPositionLong } from '@/utils/seat'
 import {
   doorSidesOf,
   viewColUnits,
@@ -171,10 +171,19 @@ function seatClass(seat: Seat): Record<string, boolean> {
 
 function seatTitle(seat: Seat): string {
   const student = occupantOf(seat)
-  if (!student) return '空位'
+  if (!student) {
+    return isFixedEmptySeat(seat.row, seat.col, props.config)
+      ? `固定空位：${seatPositionLong(seat.row, seat.col)}（永久留空，不安排学生）`
+      : '空位'
+  }
   const extra = [student.cadreRole, ...(student.tags ?? [])].filter(Boolean).join(' · ')
   const name = formatStudentShortName(student, nameCounts.value)
   return extra ? `${name} · ${extra}` : name
+}
+
+/** 该座位是否是「固定空位」（教室属性，与有没有人坐无关） */
+function isFixedEmpty(seat: Seat): boolean {
+  return isFixedEmptySeat(seat.row, seat.col, props.config)
 }
 
 /* ========== Phase 3B：拖拽换座（Pointer Events，无第三方库） ========== */
@@ -521,6 +530,7 @@ defineExpose({ revealSeat, openQuickCard, stageEls })
                           :data-seat-id="seat.id"
                           :title="seatTitle(seat)"
                           :empty="!occupantOf(seat)"
+                          :fixed-empty="isFixedEmpty(seat) && !occupantOf(seat)"
                           :name="occupantName(seat)"
                           :char="occupantChar(seat)"
                           :ordinal="`${seatOrdinal(seat.row, seat.col, config)} 号`"
@@ -564,8 +574,10 @@ defineExpose({ revealSeat, openQuickCard, stageEls })
 
     <p class="room-note">{{ viewNote }}</p>
     <p class="room-note">
-      第 {{ config.totalSeats }} 号座位（末排末尾）默认留空，自动就座不占此座，可手动拖入。
-      拖动已就座学生可交换 / 移入空位；长按（约 0.4 秒）查看学生信息。
+      固定空位（第 {{ config.fixedEmptySeat.row }} 排第 {{ config.fixedEmptySeat.col }} 列，即
+      {{ seatOrdinal(config.fixedEmptySeat.row, config.fixedEmptySeat.col, config) }} 号）永久留空：
+      新建方案的就座与自动排座都不占此座，顺序轮换后仍留在原位。 拖动已就座学生可交换 /
+      移入空位；长按（约 0.4 秒）查看学生信息。
     </p>
   </div>
 </template>

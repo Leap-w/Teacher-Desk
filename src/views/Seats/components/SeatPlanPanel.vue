@@ -174,8 +174,8 @@ function submitRename(planId: string, event?: KeyboardEvent) {
     </EmptyState>
 
     <p class="plan-hint">
-      方案仅保存在本机浏览器。新建方案时学生按档案座位号自动就座 1–62 号（第 63
-      号尾座默认留空，可手动拖入）；拖拽换座只改当前方案，不改学生档案。当前方案不可删除。
+      方案仅保存在本机浏览器。新建方案时学生按档案座位号自动就座 62 个可用座位（固定空位 第 1 排第 9
+      列永久留空）；拖拽换座只改当前方案，不改学生档案。当前方案不可删除。
     </p>
   </AppCard>
 </template>

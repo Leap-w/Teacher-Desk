@@ -133,6 +133,61 @@ export function seatOrdinal(
   return (row - 1) * config.cols + col
 }
 
+/* ==========================================================================
+ * 固定空位（v3.7.4：第 1 排第 9 列，**永久留空**）
+ *
+ * 这是全项目唯一判定「哪一个是那个不许坐人的座位」的地方。
+ * v3.7.4 之前，实现是「第 63 号 = 末排尾座」，散落在若干处 `ordinal === config.totalSeats`
+ * 的判断里——那种写法把「固定空位」和「最后一个座位号」绑死，一旦空位换个角落，
+ * 代码不会报错，只会**静默地少排一个人**。现在改成读 `config.fixedEmptySeat`，
+ * 位置只有一个来源（`types/classroom.ts`），判定只有一个出口（本节）。
+ *
+ * 消费方：`buildOccupantMap`（自动就座）、`normalizeSeatPlan`（旧数据迁移）、
+ * `utils/seatArrange.ts`（自动排座可用座位集合）、`stores/seat.ts`（整表重建时的兜底）、
+ * `utils/seatRotate.ts`（顺序轮换）。**任何地方都不许再写第二套判定。**
+ * ========================================================================== */
+
+/** 该坐标是否为固定空位（永久留空，不安排任何学生） */
+export function isFixedEmptySeat(
+  row: unknown,
+  col: unknown,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
+): boolean {
+  return row === config.fixedEmptySeat.row && col === config.fixedEmptySeat.col
+}
+
+/** 固定空位的座位号（默认 9 = 第 1 排第 9 列） */
+export function fixedEmptySeatOrdinal(config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG): number {
+  return seatOrdinal(config.fixedEmptySeat.row, config.fixedEmptySeat.col, config)
+}
+
+/** 该座位号是否为固定空位 */
+export function isFixedEmptyOrdinal(
+  ordinal: number,
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
+): boolean {
+  return ordinal === fixedEmptySeatOrdinal(config)
+}
+
+/** 固定空位的座位 id（如 `r1c9`）：界面文案、预览标识与测试断言共用 */
+export function fixedEmptySeatId(config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG): string {
+  return seatIdOf(config.fixedEmptySeat.row, config.fixedEmptySeat.col)
+}
+
+/**
+ * 可用座位号（升序，1 起）：1..totalSeats 去掉固定空位，共 `occupiedSeats` 个。
+ * 自动排座 / 顺序轮换都在这份集合上做分配——**不要在别处再算一遍**。
+ */
+export function availableSeatOrdinals(
+  config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
+): number[] {
+  const ordinals: number[] = []
+  for (let ordinal = 1; ordinal <= config.totalSeats; ordinal++) {
+    if (!isFixedEmptyOrdinal(ordinal, config)) ordinals.push(ordinal)
+  }
+  return ordinals
+}
+
 const BLOCK_KEYS: readonly SeatBlock[] = ['left', 'center', 'right']
 
 /** 列号 → 列块：按 config.blocks 的累计宽度自动切分（左 3｜中 3｜右 3） */
@@ -170,25 +225,31 @@ export function seatPositionShort(row: number, col: number): string {
 
 /**
  * 学生 → 座位号映射：按学生档案 seatNumber（1~occupiedSeats）对号入座。
- * 末位尾座（第 63 号）固定留空；同号冲突按学号升序先到先得；无 seatNumber 的学生不就座。
+ *
+ * seatNumber 是**第几个可用座位**（1 起），不是座位号本身：第 k 个可用座位 =
+ * `availableSeatOrdinals()` 的第 k 项（升序、跳过固定空位）。固定空位（第 1 排第 9 列）
+ * 永不落人；同号冲突按学号升序先到先得；无 seatNumber 的学生不就座。
  */
 export function buildOccupantMap(
   students: Array<Pick<Student, 'id' | 'studentNo' | 'seatNumber'>>,
   config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
 ): Map<number, string> {
   const occupants = new Map<number, string>()
+  const ordinals = availableSeatOrdinals(config)
+  const capacity = Math.min(config.occupiedSeats, ordinals.length)
   const valid = students
     .filter(
       (item) =>
         item.seatNumber !== undefined &&
         Number.isInteger(item.seatNumber) &&
         item.seatNumber >= 1 &&
-        item.seatNumber <= config.occupiedSeats,
+        item.seatNumber <= capacity,
     )
     .sort((a, b) => a.studentNo.localeCompare(b.studentNo))
   for (const item of valid) {
-    const seatNo = item.seatNumber as number
-    if (!occupants.has(seatNo)) occupants.set(seatNo, item.id)
+    const ordinal = ordinals[(item.seatNumber as number) - 1]
+    if (ordinal === undefined) continue
+    if (!occupants.has(ordinal)) occupants.set(ordinal, item.id)
   }
   return occupants
 }
@@ -207,7 +268,7 @@ export function buildSeatGrid(
   return seats
 }
 
-/** 新建座位方案：学生按 seatNumber 自动就座（前 62 号）；isCurrent 由 store 决定；约束为空 */
+/** 新建座位方案：学生按 seatNumber 自动就座（62 个可用座位，跳过固定空位）；isCurrent 由 store 决定；约束为空 */
 export function createSeatPlan(
   name: string,
   students: Array<Pick<Student, 'id' | 'studentNo' | 'seatNumber'>>,
@@ -235,7 +296,8 @@ export function createSeatPlan(
  *   planId 回填为本方案 id（历史数据无该字段，保证与 SeatPlan 关联不悬空）。
  * - **V1.1.2 Phase 1 起含 constraints**：旧数据缺失回空约束（**升级不丢方案**）；
  *   更早期只有「数组顺序」没有 row / col 的数据，按行优先序号做**一次性确定性迁移**：
- *   第 i 条（0 起）→ 第 i+1 号座位 → row = ⌊i / cols⌋ + 1、col = i % cols + 1。
+ *   第 i 条（0 起）→ 第 i+1 个**可用座位**（`availableSeatOrdinals()` 的第 i 项，
+ *   v3.7.4 起会跳过固定空位，因此旧数据里那个座位的人不会落到第 1 排第 9 列上）。
  *   只对**坐标非法**的条目生效，绝不覆盖已有坐标，也绝不触碰学生档案。
  */
 export function normalizeSeatPlan(
@@ -244,6 +306,8 @@ export function normalizeSeatPlan(
 ): SeatPlan {
   const planId = typeof raw.id === 'string' && raw.id ? raw.id : createId()
   const preserved = new Map<number, string>()
+  // 旧数据迁移用的可用座位号（升序、跳过固定空位）：只算一次，别在每个条目里重算
+  const availableOrdinals = availableSeatOrdinals(config)
   if (Array.isArray(raw.seats)) {
     raw.seats.forEach((item, index) => {
       if (!item || typeof item !== 'object') return
@@ -254,11 +318,12 @@ export function normalizeSeatPlan(
         preserved.set(seatOrdinal(seat.row as number, seat.col as number, config), studentId)
         return
       }
-      // 没有物理坐标的旧数据（Phase 3A 之前只有数组顺序）→ 数组下标即座位号（行优先），
-      // 确定性且可重放。**只在坐标整个缺失时兜底**：写了坐标却越界的那条是坏数据，
-      // 按下标猜一个座位反而会把学生悄悄挪到别处，宁可不收。
+      // 没有物理坐标的旧数据（Phase 3A 之前只有数组顺序）→ 数组下标即「第 k 个可用座位」
+      // （升序、跳过固定空位），确定性且可重放。**只在坐标整个缺失时兜底**：写了坐标却
+      // 越界的那条是坏数据，按下标猜一个座位反而会把学生悄悄挪到别处，宁可不收。
       const hasCoords = typeof seat.row === 'number' || typeof seat.col === 'number'
-      if (!hasCoords && index < config.totalSeats) preserved.set(index + 1, studentId)
+      const ordinal = availableOrdinals[index]
+      if (!hasCoords && ordinal !== undefined) preserved.set(ordinal, studentId)
     })
   }
   const changeLogs: SeatChangeLog[] = []

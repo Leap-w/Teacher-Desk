@@ -689,8 +689,8 @@ describe('数据兼容：旧方案照常打开，升级不丢学生', () => {
     expect(plan.seats.find((seat) => seat.id === 'r2c5')?.studentId).toBe('b')
   })
 
-  it('更早期只有数组顺序的数据 → 按行优先序号确定性迁移到 row / col', () => {
-    // 前 5 条没有 row / col：第 1 条 = 1 号座 (1,1) … 第 5 条 = 5 号座 (1,5)
+  it('更早期只有数组顺序的数据 → 按行优先序号确定性迁移到 row / col（跳过固定空位）', () => {
+    // 前 5 条没有 row / col：第 1 条 = 第 1 个可用座位 = 1 号 (1,1) … 第 5 条 = 5 号 (1,5)
     const raw = {
       id: 'p1',
       name: '远古方案',
@@ -700,7 +700,9 @@ describe('数据兼容：旧方案照常打开，升级不丢学生', () => {
         { studentId: 'c' },
         { studentId: 'd' },
         { studentId: 'e' },
-        // 第 10 条 = 第 10 号座 = (2,1)：证明是「行优先」而不是当列号用
+        // 第 10 条 = 第 10 个可用座位：v3.7.4 起固定空位是第 9 号（第 1 排第 9 列），
+        // 所以第 10 个可用座位是第 11 号 = (2,2)。这条同时证明两件事——
+        // 「行优先」而不是「当列号用」，以及「固定空位被跳过」（否则会落到 (2,1)）。
         ...Array.from({ length: 4 }, () => ({})),
         { studentId: 'f' },
       ],
@@ -709,7 +711,9 @@ describe('数据兼容：旧方案照常打开，升级不丢学生', () => {
 
     expect(plan.seats.find((seat) => seat.id === 'r1c1')?.studentId).toBe('a')
     expect(plan.seats.find((seat) => seat.id === 'r1c5')?.studentId).toBe('e')
-    expect(plan.seats.find((seat) => seat.id === 'r2c1')?.studentId).toBe('f')
+    expect(plan.seats.find((seat) => seat.id === 'r2c2')?.studentId).toBe('f')
+    // 固定空位在整条迁移路径上都不会被写进人
+    expect(plan.seats.find((seat) => seat.id === 'r1c9')?.studentId).toBeUndefined()
   })
 
   it('已有坐标的数据不会被下标迁移覆盖（迁移只对坐标非法的条目生效）', () => {

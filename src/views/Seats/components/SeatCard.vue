@@ -7,6 +7,12 @@
  * v3.3.2：新增**女生底条**（`is-girl`，由父级 `seatClass` 计算）——顶部条画的是「角色」
  * （班委 / 高个），底部条画的是「性别」，两条信息分列卡片两端、互不遮蔽。
  * **只在网站屏幕上**：导出图走的是另一套实现（`SeatExportGraphic.vue`），不带性别标记。
+ *
+ * v3.7.4：新增**固定空位**（`fixedEmpty`）——教室里有且只有一个格子永久留空
+ * （第 1 排第 9 列，见 `types/classroom.ts` 的 `fixedEmptySeat`）。它**不是普通空座**，
+ * 所以不能和普通空位长成一个样子：普通空位写「空」，它写「固定空位」并加一圈实线底纹，
+ * 让教师一眼看出「这个位置本来就不该有人」。座位上有学生时（手动拖入的例外情形）
+ * 仍按普通座位渲染——那是有人的座位，不该再声称它「固定留空」。
  * 纯展示组件：交互（点击 / 拖拽）由父级通过原生事件穿透绑定，data-seat-id 也由
  * 父级传入后落到根按钮（拖拽落点判定 `closest('[data-seat-id]')` 依赖它）。
  */
@@ -20,6 +26,8 @@ withDefaults(
     ordinal: string
     /** 空位 */
     empty?: boolean
+    /** 固定空位（永久留空的那一格；仅在该座位确实无人时由父级置真） */
+    fixedEmpty?: boolean
     /** 状态类（is-selected / is-flashing / is-changed / is-cadre…由父级 seatClass 计算） */
     classes?: Record<string, boolean>
     /** 原生 title（悬停信息） */
@@ -29,6 +37,7 @@ withDefaults(
     name: '',
     char: '',
     empty: false,
+    fixedEmpty: false,
     classes: () => ({}),
     title: '',
   },
@@ -36,7 +45,12 @@ withDefaults(
 </script>
 
 <template>
-  <button type="button" class="seat" :class="classes" :title="title">
+  <button
+    type="button"
+    class="seat"
+    :class="[classes, { 'is-fixed-empty': fixedEmpty }]"
+    :title="title"
+  >
     <!-- 女生标记（v3.3.2）：底部细条，与顶部条（班委 / 高个）分列两端、互不遮蔽。
          伪元素只有 ::before / ::after 两个且已被顶条与标签角点占用，故这里用真实元素 -->
     <span v-if="classes['is-girl']" class="seat-gender-bar" aria-hidden="true" />
@@ -58,7 +72,7 @@ withDefaults(
         <path d="M7 4h10a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
         <path d="M7 17v2M17 17v2" />
       </svg>
-      <span class="seat-empty-text">空</span>
+      <span class="seat-empty-text">{{ fixedEmpty ? '固定空位' : '空' }}</span>
     </template>
   </button>
 </template>
@@ -177,6 +191,35 @@ withDefaults(
   font-size: var(--font-caption);
   color: var(--color-text-faint);
   line-height: 1;
+}
+
+/*
+  固定空位（v3.7.4）：教室里有且只有一个格子永久留空（第 1 排第 9 列）。
+  与普通空座的区别必须**一眼看得出**，否则教师会把它当成「还有个空位」而反复拖人进去：
+  普通空座 = 虚线框 + 「空」；固定空位 = 实线框 + 斜纹底 + 「固定空位」。
+  颜色全部走主题变量，浅色 / 深色两套主题都成立（不写死颜色）。
+*/
+.seat.is-fixed-empty {
+  border-style: solid;
+  border-color: var(--color-border-medium);
+  background: repeating-linear-gradient(
+    45deg,
+    var(--color-bg-subtle) 0,
+    var(--color-bg-subtle) 5px,
+    var(--color-fill-disabled) 5px,
+    var(--color-fill-disabled) 10px
+  );
+  cursor: default;
+}
+
+.seat.is-fixed-empty .seat-empty-icon {
+  opacity: 0.5;
+}
+
+.seat.is-fixed-empty .seat-empty-text {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
 }
 
 .seat.is-drop-target.is-empty {

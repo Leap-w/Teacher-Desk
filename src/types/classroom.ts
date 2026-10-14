@@ -2,6 +2,10 @@
  * 真实教室固定配置（高一9班 · 7 排 × 9 列 · 3-3-3 · 63 座、占用 62）。
  * 字段类型使用字面量锁定：教室不是自由画布，编译期即禁止改列数 / 过道位置；
  * 布局代码统一从 DEFAULT_CLASSROOM_CONFIG 读取，禁止把教室参数硬编码进组件。
+ *
+ * **v3.7.4 起「固定空位」= 第 1 排第 9 列**（此前实现为「末排尾座」= 第 7 排第 9 列）。
+ * 固定空位是**教室本身**的属性（永久留空、不安排任何学生、换座后也不移动），
+ * 因此放在本文件而不是某个功能模块里；「自动排座」与「顺序轮换」共用同一份定义。
  */
 
 /** 讲台方位（固定：前方中央） */
@@ -36,8 +40,15 @@ export interface ClassroomConfig {
   blocks: readonly [3, 3, 3]
   /** 座位总数（rows × cols） */
   totalSeats: 63
-  /** 可安排学生的座位数（末排尾座固定留空） */
+  /** 可安排学生的座位数（= totalSeats − 1，扣掉 fixedEmptySeat 那一个固定空位） */
   occupiedSeats: 62
+  /**
+   * 固定空位：物理坐标（v3.7.4 起 = 第 1 排第 9 列）。
+   * **永久留空**：所有自动排布（新建方案的就座 / 自动排座 / 顺序轮换）都不占用它，
+   * 顺序轮换还会在结果里保证它为空（输入里若被手动拖入过学生，会先挪走并回报）。
+   * 由 `utils/seat.ts` 的 `isFixedEmptySeat` / `availableSeatOrdinals` 统一消费。
+   */
+  fixedEmptySeat: { readonly row: 1; readonly col: 9 }
   podium: PodiumPosition
   frontDoor: FrontDoorPosition
   backDoor: BackDoorPosition
@@ -52,6 +63,7 @@ export const DEFAULT_CLASSROOM_CONFIG = {
   blocks: [3, 3, 3],
   totalSeats: 63,
   occupiedSeats: 62,
+  fixedEmptySeat: { row: 1, col: 9 },
   podium: 'front-center',
   frontDoor: 'left-front',
   backDoor: 'left-back',

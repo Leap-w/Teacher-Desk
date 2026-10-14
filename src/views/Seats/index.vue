@@ -48,6 +48,7 @@ import SeatMoreMenu from './components/SeatMoreMenu.vue'
 import SeatZoomBar from './components/SeatZoomBar.vue'
 import type { SeatMoreAction } from './components/SeatMoreMenu.vue'
 import SeatArrangeModal from './components/SeatArrangeModal.vue'
+import SeatRotateModal from './components/SeatRotateModal.vue'
 import SeatImportModal from './components/SeatImportModal.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import SeatConstraintModal from './components/SeatConstraintModal.vue'
@@ -695,6 +696,7 @@ function clearFlash() {
  */
 function onMoreAction(action: SeatMoreAction): void {
   if (action === 'arrange') openArrange()
+  else if (action === 'rotate') openRotate()
   else if (action === 'compare') compareOpen.value = true
   else if (action === 'rename') askRename()
   else if (action === 'duplicate') duplicateCurrentPlan()
@@ -904,6 +906,41 @@ function undoArrange() {
   toast.success(`已撤销自动排座，已切回「${prevPlan.name}」`)
 }
 
+/* ========== v3.7.4：顺序轮换（预览 → 确认应用；覆盖当前方案的座位） ========== */
+
+/**
+ * 顺序轮换弹窗开关。**预览在弹窗内部算**（`utils/seatRotate.ts` 的纯函数），
+ * 本页只在「确认应用」时落库——于是「取消」路径天然不改任何数据，
+ * 不需要为了回滚去备份一份座位表（那种备份本身就是新的出错点）。
+ */
+const rotateOpen = ref(false)
+
+function openRotate() {
+  if (!seatStore.currentPlan) return
+  rotateOpen.value = true
+}
+
+/**
+ * 确认应用：把轮换后的座位写回**当前方案**——不新建方案，方案名 / 约束 / 换座记录历史都不动。
+ *
+ * 走 store 既有的整表替换入口 `replacePlanSeats()`：它按行列重算座位号、强制固定空位留空、
+ * 整表重建 63 座并**只写盘一次**，与「换一种排法」完全同一条数据路径（Local-first + Repository First）。
+ */
+function applyRotate(seats: Seat[]) {
+  const plan = seatStore.currentPlan
+  if (!plan) return
+  const hadPending = seatStore.pendingLogsCount > 0
+  if (!seatStore.replacePlanSeats(plan.id, seats)) {
+    toast.danger('顺序轮换失败：方案已变化，请刷新后重试')
+    return
+  }
+  selectedSeatId.value = undefined
+  cancelPicker()
+  clearFlash()
+  if (hadPending) toast.info('已顺序轮换：未保存的「本次调整」记录已清空')
+  toast.success('已顺序轮换，当前方案已更新')
+}
+
 /* ========== Phase 3C：导出（PNG / PDF；离屏静态图渲染，不触碰页面状态） ========== */
 
 const exportBusy = ref<SeatExportKind | null>(null)
@@ -1072,12 +1109,14 @@ async function runCompareExport() {
           约束{{ planConstraintCount > 0 ? `（${planConstraintCount}）` : '' }}
         </AppButton>
         <!--
-          自动排座与方案对比**都已实现**（Phase 3D / Phase 3C，各有弹窗与撤销），
-          按「未实现才删」的原则保留；收进「更多」只是不再让它们常驻占一排。
+          自动排座 / 顺序轮换 / 方案对比**都已实现**（Phase 3D / v3.7.4 / Phase 3C，
+          各有弹窗与撤销），按「未实现才删」的原则保留；收进「更多」只是不再让它们常驻占一排。
+          自动排座与顺序轮换是两种互不相干的换座方式，各自独立、互不影响。
         -->
         <SeatMoreMenu
           v-if="!compareActive"
           :arrange-disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
+          :rotate-disabled="!seatStore.currentPlan || studentStore.activeStudents.length === 0"
           :compare-disabled="plans.length < 2"
           :plan-disabled="!seatStore.currentPlan"
           :remove-disabled="plans.length < 2"
@@ -1438,6 +1477,16 @@ async function runCompareExport() {
       :config="config"
       :conflicts="arrangeConflicts"
       @generate="generateArrange"
+    />
+
+    <!-- v3.7.4：顺序轮换（弹窗内算预览，本页只在「确认应用」时落库） -->
+    <SeatRotateModal
+      v-model="rotateOpen"
+      :seats="seatStore.currentSeats"
+      :students="studentMap"
+      :config="config"
+      :view="view"
+      @apply="applyRotate"
     />
 
     <!-- V1.1.2 Phase 1：Excel 座位导入 + 方案级排座约束 -->

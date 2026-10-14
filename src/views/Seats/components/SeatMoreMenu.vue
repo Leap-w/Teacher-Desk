@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { ChevronDown, Copy, GitCompare, PencilLine, Sparkles, Trash2 } from 'lucide-vue-next'
+import {
+  ChevronDown,
+  Copy,
+  GitCompare,
+  PencilLine,
+  RotateCw,
+  Sparkles,
+  Trash2,
+} from 'lucide-vue-next'
 
 import type { LucideIcon } from 'lucide-vue-next'
 
@@ -10,8 +18,10 @@ import type { LucideIcon } from 'lucide-vue-next'
  * 工具栏改三层后，一排里只留得下最高频的几个动作（设置 / 约束 / 导入 / 导出）。
  * 这里收着两类动作，中间一条分隔线：
  *
- * ① **对这个班做什么**：自动排座（Phase 3D）、方案对比（Phase 3C）——
- *    都是真功能，各有自己的弹窗与撤销，按「未实现才删」的原则保留；
+ * ① **对这个班做什么**：自动排座（Phase 3D）、顺序轮换（v3.7.4）、方案对比（Phase 3C）——
+ *    都是真功能，各有自己的弹窗与撤销，按「未实现才删」的原则保留。
+ *    自动排座与顺序轮换是**两种互不相干的换座方式**：前者按约束与规则重新求解并生成新方案，
+ *    后者按固定的「右后方」规律整体平移、先预览再覆盖当前方案（见 `utils/seatRotate.ts`）；
  * ② **对这份方案做什么**：重命名 / 复制 / 删除。**v3.3.1 补的三项**：
  *    重命名与删除原先只在「方案下拉 → 管理方案」里能点到（入口太深，教师找不到），
  *    复制方案则是全项目都没有——三者现在都作用于**当前方案**，一点即达。
@@ -29,6 +39,12 @@ const ITEMS: { key: SeatMoreAction; label: string; desc: string; icon: LucideIco
     label: '自动排座',
     desc: '按约束与规则生成一份新方案',
     icon: Sparkles,
+  },
+  {
+    key: 'rotate',
+    label: '顺序轮换',
+    desc: '按固定规律整体换座（先预览再应用）',
+    icon: RotateCw,
   },
   {
     key: 'compare',
@@ -60,11 +76,13 @@ const ITEMS: { key: SeatMoreAction; label: string; desc: string; icon: LucideIco
 const DIVIDER_BEFORE: SeatMoreAction = 'rename'
 
 /** 全部动作的对外契约（父级据此分发） */
-export type SeatMoreAction = 'arrange' | 'compare' | 'rename' | 'duplicate' | 'remove'
+export type SeatMoreAction = 'arrange' | 'rotate' | 'compare' | 'rename' | 'duplicate' | 'remove'
 
 const props = defineProps<{
   /** 自动排座是否可用（无方案 / 无学生时不可用） */
   arrangeDisabled?: boolean
+  /** 顺序轮换是否可用（无方案 / 无学生时不可用） */
+  rotateDisabled?: boolean
   /** 方案对比是否可用（不足两份方案时不可用） */
   compareDisabled?: boolean
   /** 重命名 / 复制是否可用（没有当前方案时不可用） */
@@ -82,6 +100,7 @@ const rootEl = ref<HTMLElement>()
 
 function disabledOf(action: SeatMoreAction): boolean {
   if (action === 'arrange') return Boolean(props.arrangeDisabled)
+  if (action === 'rotate') return Boolean(props.rotateDisabled)
   if (action === 'compare') return Boolean(props.compareDisabled)
   if (action === 'remove') return Boolean(props.removeDisabled)
   return Boolean(props.planDisabled)
@@ -92,6 +111,7 @@ function titleOf(action: SeatMoreAction): string {
   const item = ITEMS.find((entry) => entry.key === action)
   if (!disabledOf(action)) return item?.desc ?? ''
   if (action === 'arrange') return '需要先有一份座位方案，且学生档案里至少有一名学生'
+  if (action === 'rotate') return '需要先有一份座位方案，且学生档案里至少有一名学生'
   if (action === 'compare') return '至少要有两份座位方案才能对比'
   if (action === 'remove') return '至少保留一份方案（删除后会切回另一份）'
   return '当前没有座位方案'
