@@ -52,7 +52,8 @@ const DUTY_KEY = `${appConfig.storageKeyPrefix}:duty`
 const WEEKEND_KEY = `${appConfig.storageKeyPrefix}:weekendReturns`
 /**
  * v3.6.1：假期管理。
- * `HOLIDAYS_KEY` 装自定义假期，`HOLIDAY_RECORDS_KEY` 装**周末的留校 + 全部自定义假期**的记录。
+ * `HOLIDAYS_KEY` 装自定义假期（v3.7.6 起也装教师编辑过的周末覆盖记录），
+ * `HOLIDAY_RECORDS_KEY` 装**周末的留校 + 全部自定义假期**的记录。
  * 旧键 `WEEKEND_KEY` **一个字节不动**——它仍是「周末回家」那一份，
  * 旧版本客户端只认得它，混着写会让长驻的旧标签页把新记录整批抹掉（见 stores/holiday.ts 顶部）。
  */

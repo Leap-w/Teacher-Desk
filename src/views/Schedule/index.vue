@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { AppButton, AppModal, AppSelect } from '@/components/ui'
+import { AppButton, AppModal } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useNow } from '@/composables/useToday'
 import { formatMonthDay } from '@/utils/date'
@@ -25,7 +26,6 @@ import type {
   LessonType,
   Weekday,
 } from '@/types/timetable'
-import type { SelectOption } from '@/types'
 import LessonDetailDrawer from './components/LessonDetailDrawer.vue'
 import LessonEditDrawer from './components/LessonEditDrawer.vue'
 import LessonSwapDrawer from './components/LessonSwapDrawer.vue'
@@ -37,13 +37,18 @@ import ScheduleWeekGrid from './components/ScheduleWeekGrid.vue'
 import SettingsEntryButton from '@/components/layout/SettingsEntryButton.vue'
 import TodaySchedule from './components/TodaySchedule.vue'
 import WeekView from './components/WeekView.vue'
-import WidgetBridgeCard from './components/WidgetBridgeCard.vue'
 
+const router = useRouter()
 const toast = useToast()
 const timetableStore = useTimetableStore()
 const appSettings = useAppSettingsStore()
 const semesterStore = useSemesterStore()
 const now = useNow()
+
+/** 周次选择已移入「设置 → 学期设置」；课程表页只留直达入口，不再重复一套选择控件 */
+function openWeekSettings(): void {
+  void router.push('/my/settings/teaching/semester')
+}
 
 /**
  * 生效的时段表（v3.3.0）：默认作息 + 「教学设置 → 课程时间」的覆盖。
@@ -87,17 +92,11 @@ const activeWeekday = ref<Weekday>(timetableStore.todayWeekday)
 /* ---------- v3.7.5：教学周次视图 ---------- */
 
 /**
- * 正在看的教学周（1 起）：默认落在**今天的教学周**（不在学期范围内时退回第 1 周）。
- * 换课只影响选中的周，因此周视图必须能一周一周地看；周次表来自学期设置，不写死 20 周。
+ * 正在看的教学周（1 起）：**状态在 timetable store 里**，与「设置 → 学期设置」共用同一份
+ * （v3.7.6 周次选择移入设置后，两个页面不再各存一个 selectedWeek）。
+ * 默认落在今天的教学周（不在学期范围内时退回第 1 周），切换与夹取规则都在 store。
  */
-const selectedWeek = ref<number>(timetableStore.currentWeek ?? 1)
-
-const weekOptions = computed<SelectOption<number>[]>(() =>
-  semesterStore.weeks.map((week) => ({
-    label: `第 ${week.index} 周 · ${formatMonthDay(week.startDate)}-${formatMonthDay(week.endDate)}`,
-    value: week.index,
-  })),
-)
+const selectedWeek = computed(() => timetableStore.selectedWeek)
 
 /** 正在看的这一周实际怎么上（基础课表 + 该周生效的换课；`utils/exchange.ts` 的叠加层） */
 const weekResolution = computed(() => timetableStore.weekView(selectedWeek.value))
@@ -116,7 +115,7 @@ const selectedWeekRange = computed(() => {
 })
 
 /** 今天就在正在看的这一周里（高亮「今天」列才有意义） */
-const viewingCurrentWeek = computed(() => timetableStore.currentWeek === selectedWeek.value)
+const viewingCurrentWeek = computed(() => timetableStore.viewingCurrentWeek)
 
 const todayHighlight = computed(() =>
   viewingCurrentWeek.value ? timetableStore.todayWeekday : undefined,
@@ -124,15 +123,6 @@ const todayHighlight = computed(() =>
 
 const dayLessons = computed(() =>
   timetableStore.lessonsOfWeek(activeWeekday.value, selectedWeek.value),
-)
-
-// 学期总周数被改小时，正在看的周次可能已经不存在：夹回范围内（**不删任何换课记录**，
-// 超出范围的周次由下面的提示条如实说明，教师自己决定怎么处理）
-watch(
-  () => semesterStore.weekCount,
-  (total) => {
-    if (selectedWeek.value > total) selectedWeek.value = Math.max(1, total)
-  },
 )
 
 /* ---------- 新增 / 编辑抽屉 ---------- */
@@ -372,55 +362,24 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         <h1 class="page-title">课程表</h1>
         <p class="head-sub">
           每周共 <strong>{{ timetableStore.weekLessonCount }}</strong> 节课 · 点课程卡片可查看详情
+          <span
+            v-if="timetableStore.currentWeek !== undefined && !viewingCurrentWeek"
+            class="head-week-hint"
+          >
+            · 正在查看其他教学周（第 {{ selectedWeek }} 周，{{ selectedWeekRange }}）
+          </span>
         </p>
       </div>
       <div class="head-actions">
+        <!-- v3.7.6：周次选择已移入设置；这里只保留当前周次与直达入口 -->
+        <AppButton variant="secondary" @click="openWeekSettings">
+          切换周次（第 {{ selectedWeek }} 周）
+        </AppButton>
         <SettingsEntryButton module="work" />
         <AppButton variant="secondary" @click="importOpen = true">从 Excel 导入</AppButton>
         <AppButton @click="openCreate()">＋ 新增课程</AppButton>
       </div>
     </header>
-
-    <!--
-      v3.7.5：教学周次选择。换课按周生效，因此周视图要能一周一周地看——
-      周次表来自学期设置（不写死 20 周），默认落在今天所在的周。
-    -->
-    <section class="week-bar" aria-label="选择教学周次">
-      <div class="week-bar-main">
-        <span class="week-bar-label">{{ semesterStore.settings.name }}</span>
-        <div class="week-bar-control">
-          <AppButton
-            variant="ghost"
-            size="sm"
-            :disabled="selectedWeek <= 1"
-            @click="selectedWeek -= 1"
-          >
-            上一周
-          </AppButton>
-          <AppSelect v-model="selectedWeek" class="week-select" :options="weekOptions" />
-          <AppButton
-            variant="ghost"
-            size="sm"
-            :disabled="selectedWeek >= semesterStore.weekCount"
-            @click="selectedWeek += 1"
-          >
-            下一周
-          </AppButton>
-          <AppButton
-            v-if="timetableStore.currentWeek !== undefined && !viewingCurrentWeek"
-            variant="secondary"
-            size="sm"
-            @click="selectedWeek = timetableStore.currentWeek!"
-          >
-            回到本周
-          </AppButton>
-        </div>
-        <p class="week-bar-range">
-          {{ selectedWeekRange }} · 共 {{ semesterStore.weekCount }} 周
-          <span v-if="!viewingCurrentWeek" class="week-bar-hint">（正在看别的周）</span>
-        </p>
-      </div>
-    </section>
 
     <!-- 该周的换课冲突：**只提示，不静默覆盖**（冲突的那些换课不生效，课表按基础课表显示） -->
     <p v-if="weekConflicts.length > 0" class="notice is-warning" role="status">
@@ -521,9 +480,6 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
         <h2 class="layer-title">课时统计</h2>
         <ScheduleStats :stats="stats" />
       </section>
-
-      <!-- macOS 桌面小组件：把这份课表写成 Widget 能读的快照（v3.7.0，只读单向） -->
-      <WidgetBridgeCard />
     </div>
 
     <!-- 编辑抽屉 -->
@@ -662,45 +618,8 @@ function onImportApplied(outcome: { added: number; replaced: number }): void {
   color: var(--color-primary-strong);
 }
 
-/* v3.7.5：教学周次选择条 */
-.week-bar {
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-}
-
-.week-bar-main {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.week-bar-label {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.week-bar-control {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.week-select {
-  min-width: 220px;
-}
-
-.week-bar-range {
-  font-size: var(--text-xs);
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.week-bar-hint {
-  color: var(--color-text-faint);
+.head-week-hint {
+  color: var(--color-text-tertiary);
 }
 
 /* 提示条：换课冲突 / 超范围周次（都只说事实，不自动改数据） */

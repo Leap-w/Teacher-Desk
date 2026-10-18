@@ -18,17 +18,19 @@ import type { FamilyScope, Gender, Student } from '@/types'
 import type { HolidayStatus } from '@/types/holiday'
 
 /**
- * 「昌都市外」这个返家范围的字面值（`FamilyScope` 的既有取值之一）。
+ * 「市区外」包含的两个返家范围（v3.7.6 Phase 5）。
  *
- * 第三张统计卡片与它的筛选都按它取数。**不修改 `FamilyScope` 的定义**（规格第 8 节），
- * 这里只是给它一个带名字的引用，别在几处各写一遍字符串字面量。
+ * 教师口中的「市区外」= 昌都市其他县 + 昌都市外；昌都市区不在其中。
+ * **不修改 `FamilyScope` 的定义与存储值**，这里只是把两个既有取值收成一份引用，
+ * 统计与名单筛选都从这一处取数，避免两边各写一遍条件后悄悄走样。
  */
-export const OUTSIDE_CHANGDU_SCOPE: FamilyScope = 'outside-changdu'
+export const OUT_OF_CITY_SCOPES: readonly FamilyScope[] = ['changdu-county', 'outside-changdu']
 
 /**
  * 顶部三张统计卡片对应的快捷筛选。
  *
- * 注意 `'outside'` **不是第三种状态**：它是「离校 ∩ 昌都市外」，是离校里的一维。
+ * 注意 `'outside'` **不是第三种状态**：它是「离校 ∩ 市区外」，
+ * 市区外 = 昌都市其他县 + 昌都市外，仍只是离校里的一维。
  */
 export type HolidayCardFilter = 'home' | 'stay' | 'outside'
 
@@ -73,7 +75,8 @@ function matchesCard(
   if (card === undefined) return true
   if (card === 'stay') return status === 'stay'
   if (card === 'outside') {
-    return status === 'home' && student.familyLocation?.scope === OUTSIDE_CHANGDU_SCOPE
+    const scope = student.familyLocation?.scope
+    return status === 'home' && scope !== undefined && OUT_OF_CITY_SCOPES.includes(scope)
   }
   return status === 'home'
 }

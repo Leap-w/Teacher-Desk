@@ -35,6 +35,7 @@ import { useHolidayStore } from '@/stores/holiday'
 import { useStudentStore } from '@/stores/student'
 import { useWeekendStore } from '@/stores/weekend'
 import { weekendHolidayId } from '@/utils/holiday'
+import { filterRoster } from '@/utils/holidayQuery'
 import { readRaw } from '@/services/storage'
 import { syncedKeys } from '@/services/sync'
 import {
@@ -147,30 +148,52 @@ describe('二态派生与计数', () => {
     expect(Object.keys(store.countsOf(created.id)).sort()).toEqual(['home', 'stay'])
   })
 
-  it('第三张卡片（昌都市外离校）= 离校 ∩ 市外，且恒 ≤ 离校', async () => {
+  it('第三张卡片（市区外离校）= 离校 ∩（其他县 | 市外），且恒 ≤ 离校', async () => {
     browser.localStorage.seed(
       STUDENTS_KEY,
       JSON.stringify([
+        // 昌都市区 × 2 / 昌都市其他县 × 2 / 昌都市外 × 2，覆盖三种范围 × 离校留校
         {
           id: 's1',
           name: '甲',
           studentNo: '01',
           gender: 'male',
-          familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+          familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
         },
         {
           id: 's2',
           name: '乙',
           studentNo: '02',
           gender: 'female',
-          familyLocation: { prefecture: '拉萨市', county: '堆龙德庆区', scope: 'outside-changdu' },
+          familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
         },
         {
           id: 's3',
           name: '丙',
           studentNo: '03',
           gender: 'male',
-          familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+          familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+        },
+        {
+          id: 's4',
+          name: '丁',
+          studentNo: '04',
+          gender: 'male',
+          familyLocation: { prefecture: '昌都市', county: '察雅县', scope: 'changdu-city' },
+        },
+        {
+          id: 's5',
+          name: '戊',
+          studentNo: '05',
+          gender: 'female',
+          familyLocation: { prefecture: '昌都市', county: '芒康县', scope: 'changdu-county' },
+        },
+        {
+          id: 's6',
+          name: '己',
+          studentNo: '06',
+          gender: 'female',
+          familyLocation: { prefecture: '拉萨市', county: '堆龙德庆区', scope: 'outside-changdu' },
         },
       ]),
     )
@@ -181,20 +204,89 @@ describe('二态派生与计数', () => {
       endDate: '2026-10-07',
     })!
 
-    expect(store.outsideHomeCountOf(created.id)).toBe(0)
+    expect(store.beyondCityHomeCountOf(created.id)).toBe(0)
 
+    // s1 市区 / s2 其他县 / s3 市外登记离校，s4~s6 留校
     store.setStatuses(created.id, ['s1', 's2', 's3'], 'home')
     await nextTick()
-    expect(store.countsOf(created.id)).toEqual({ home: 3, stay: 0 })
-    expect(store.outsideHomeCountOf(created.id)).toBe(2)
+    expect(store.countsOf(created.id)).toEqual({ home: 3, stay: 3 })
+    // 市区的 s1 不算；其他县 s2 + 市外 s3 才进数
+    expect(store.beyondCityHomeCountOf(created.id)).toBe(2)
 
-    // 把两位市外学生改成留校：市外离校随之变成 0，而「留校 + 离校 = 全班」不受影响
-    store.setStatuses(created.id, ['s1', 's2'], 'stay')
+    // 把其他县 / 市外两位改成留校：市区外离校变成 0（市区离校的 s1 依旧不算）
+    store.setStatuses(created.id, ['s2', 's3'], 'stay')
     await nextTick()
-    expect(store.outsideHomeCountOf(created.id)).toBe(0)
+    expect(store.beyondCityHomeCountOf(created.id)).toBe(0)
+    expect(store.countsOf(created.id)).toEqual({ home: 1, stay: 5 })
+
+    // 再把一位其他县学生设为离校：第三张卡片变 1，且始终 ≤ 离校人数
+    store.setStatuses(created.id, ['s5'], 'home')
+    await nextTick()
+    expect(store.beyondCityHomeCountOf(created.id)).toBe(1)
     const counts = store.countsOf(created.id)
-    expect(counts.home + counts.stay).toBe(3)
-    expect(store.outsideHomeCountOf(created.id)).toBeLessThanOrEqual(counts.home)
+    expect(counts.home + counts.stay).toBe(6)
+    expect(store.beyondCityHomeCountOf(created.id)).toBeLessThanOrEqual(counts.home)
+  })
+
+  it('切换假期后人数与名单各按当期登记重算，不串假期（v3.7.6 Phase 5）', async () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        {
+          id: 's1',
+          name: '甲',
+          studentNo: '01',
+          gender: 'male',
+          familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
+        },
+        {
+          id: 's2',
+          name: '乙',
+          studentNo: '02',
+          gender: 'female',
+          familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
+        },
+        {
+          id: 's3',
+          name: '丙',
+          studentNo: '03',
+          gender: 'male',
+          familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
+        },
+      ]),
+    )
+    const store = useHolidayStore()
+    const first = store.createHoliday({
+      name: '国庆',
+      startDate: '2026-10-01',
+      endDate: '2026-10-07',
+    })!
+    const second = store.createHoliday({
+      name: '雪顿节',
+      startDate: '2026-10-20',
+      endDate: '2026-10-22',
+    })!
+
+    // 第一期：市区 s1 与其余县 s2 离校 → 市区外离校 1；第二期：市外 s3 离校 → 1
+    store.setStatuses(first.id, ['s1', 's2'], 'home')
+    store.setStatuses(second.id, ['s3'], 'home')
+    await nextTick()
+
+    expect(store.countsOf(first.id)).toEqual({ home: 2, stay: 1 })
+    expect(store.countsOf(second.id)).toEqual({ home: 1, stay: 2 })
+    expect(store.beyondCityHomeCountOf(first.id)).toBe(1)
+    expect(store.beyondCityHomeCountOf(second.id)).toBe(1)
+
+    // 统计与名单同口径：两期的「市区外离校」行数分别与卡片数字一致
+    for (const holiday of [first, second]) {
+      const rows = filterRoster(
+        store.activeStudents,
+        { keyword: '', card: 'outside' },
+        (studentId) => store.statusIn(holiday.id, studentId),
+      )
+      expect(rows.map((row) => row.student.id)).toEqual(holiday.id === first.id ? ['s2'] : ['s3'])
+      expect(rows).toHaveLength(store.beyondCityHomeCountOf(holiday.id))
+    }
   })
 
   it('已退档学生不进任何人数，但记录仍读得出来（页面用 stale 计数说出来）', async () => {
@@ -696,10 +788,111 @@ describe('假期本身的增删改', () => {
     expect(created).toMatchObject({ startDate: '2026-10-01', endDate: '2026-10-07' })
   })
 
-  it('虚拟周末不可编辑、不可删除', async () => {
+  it('自动生成的周末可编辑：第一次编辑落一条同 id 的覆盖记录（v3.7.6）', async () => {
     const store = openHoliday()
-    expect(store.updateHoliday(WEEKEND_ID, { name: '改个名' })).toBeUndefined()
-    expect(store.removeHoliday(WEEKEND_ID)).toBe(false)
+    const weekendKey = useWeekendStore().currentWeekend
+    const id = weekendHolidayId(weekendKey)
+
+    const updated = store.updateHoliday(id, {
+      name: '运动会调休',
+      startDate: weekendKey,
+      endDate: '2026-10-05',
+      note: '周一补课',
+    })
+    expect(updated).toMatchObject({
+      id,
+      name: '运动会调休',
+      startDate: weekendKey,
+      endDate: '2026-10-05',
+      note: '周一补课',
+    })
+
+    await nextTick()
+    const rows = rawArray(HOLIDAYS_KEY)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id, name: '运动会调休' })
+
+    // 列表里仍只有这一项，kind 仍是 weekend（登记继续走这一期）
+    const entries = store.entries.filter((entry) => entry.holiday.id === id)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({
+      kind: 'weekend',
+      weekendKey,
+      holiday: { name: '运动会调休', startDate: weekendKey, endDate: '2026-10-05' },
+    })
+    // 周末仍不是可删对象
+    expect(store.removeHoliday(id)).toBe(false)
+  })
+
+  it('编辑过的周末刷新后仍是新值（覆盖记录随 holidays 键持久化）', async () => {
+    const store = openHoliday()
+    const weekendKey = useWeekendStore().currentWeekend
+    const id = weekendHolidayId(weekendKey)
+    expect(
+      store.updateHoliday(id, {
+        name: '调休周末',
+        startDate: weekendKey,
+        endDate: '2026-10-05',
+      }),
+    ).toBeTruthy()
+    await nextTick()
+
+    // 模拟重新打开应用：新 pinia + 新 store 从盘上读
+    setActivePinia(createPinia())
+    const reopened = openHoliday()
+    const entry = reopened.entries.find((item) => item.holiday.id === id)
+    expect(entry).toMatchObject({
+      kind: 'weekend',
+      weekendKey,
+      holiday: { name: '调休周末', startDate: weekendKey, endDate: '2026-10-05' },
+    })
+  })
+
+  it('时间推进、周末重新计算后不覆盖用户修改；它也不再依赖「本周末 / 下周末」才显示', async () => {
+    const store = openHoliday()
+    const weekendKey = useWeekendStore().currentWeekend
+    const id = weekendHolidayId(weekendKey)
+    store.updateHoliday(id, { name: '调休周末', startDate: weekendKey, endDate: '2026-10-05' })
+    await nextTick()
+
+    // 往后推 8 周：这个周末既不是本周末也不是下周末，且没有任何登记
+    useNow().value = new Date(2026, 10, 26, 10, 0, 0)
+    await nextTick()
+
+    const entry = store.entries.find((item) => item.holiday.id === id)
+    expect(entry).toMatchObject({
+      kind: 'weekend',
+      weekendKey,
+      holiday: { name: '调休周末', startDate: weekendKey, endDate: '2026-10-05' },
+    })
+  })
+
+  it('编辑周末的名称 / 日期不影响这一期的离校登记、留校判断与学生备注', async () => {
+    const store = openHoliday()
+    const weekendKey = useWeekendStore().currentWeekend
+    const id = weekendHolidayId(weekendKey)
+    store.setStatuses(id, ['s1'], 'home')
+    store.setNote(id, 's2', '留校复习')
+    await nextTick()
+
+    expect(
+      store.updateHoliday(id, {
+        name: '调休周末',
+        startDate: weekendKey,
+        endDate: '2026-10-05',
+      }),
+    ).toBeTruthy()
+    await nextTick()
+
+    // id 没变，登记就还属于这一期：s1 离校、s2 留校且有备注
+    expect(store.statusIn(id, 's1')).toBe('home')
+    expect(store.statusIn(id, 's2')).toBe('stay')
+    expect(store.noteIn(id, 's2')).toBe('留校复习')
+  })
+
+  it('`weekend:` 前缀但日期部分坏掉的 id 仍然拒绝写入（说不出是哪一期）', async () => {
+    const store = openHoliday()
+    expect(store.updateHoliday('weekend:2026-09-20', { name: '改个名' })).toBeUndefined()
     await nextTick()
     expect(browser.localStorage.writesFor(HOLIDAYS_KEY)).toBe(0)
   })

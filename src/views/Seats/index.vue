@@ -1048,6 +1048,7 @@ async function runExport(kind: SeatExportKind) {
       // 两个视角各一张工作表。样式一律来自模板本身，这里只给标题 / 日期 / 63 个姓名。
       // 文件名照需求方口径走「{班级}座位图_{YYYY-MM-DD}.xlsx」（表内日期是点分格式，
       // 两个格式都是需求方写死的，见 utils/seatExport.ts 的 exportDateDotted）
+      const currentPlan = seatStore.currentPlan
       const buffer = await buildSeatWorkbookFromTemplate(await loadSeatTemplate(), {
         title: `${config.name}座位图`,
         date: new Date(),
@@ -1055,6 +1056,17 @@ async function runExport(kind: SeatExportKind) {
           { sheetName: '学生视角', seats: seatStore.currentSeats, students: studentMap.value },
           { sheetName: '老师视角', seats: seatStore.currentSeats, students: studentMap.value },
         ],
+        // v3.7.6：布局 / 方案 / 版本 / 排座约束一并写进隐藏数据表，供重新导入时核对与恢复
+        config: seatStore.config,
+        plan: currentPlan
+          ? {
+              name: currentPlan.name,
+              createdAt: currentPlan.createdAt,
+              updatedAt: currentPlan.updatedAt,
+            }
+          : undefined,
+        appVersion: import.meta.env.APP_VERSION,
+        constraints: seatStore.currentConstraints,
       })
       if (!downloadXlsx(buffer, `${config.name}座位图_${exportDateStamp()}.xlsx`)) {
         throw new Error('浏览器未接受下载')

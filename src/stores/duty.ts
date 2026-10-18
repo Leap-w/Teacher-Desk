@@ -60,7 +60,11 @@ export const useDutyStore = defineStore('duty', () => {
   /** 今天（日期键），与工作台 / 课表同一个共享时钟 */
   const todayKey = computed(() => formatDateKey(now.value))
 
-  /** 按天指定（v3.7.5）：教师给某一天单独指定的值日组 */
+  /**
+   * 按天指定（v3.7.5）：教师给某一天单独指定的值日组。
+   * v3.7.6 起，一条指定还会成为之后自动轮换的衔接基准（见 `utils/duty.ts`
+   * 的 `dutyGroupForDay`）——这里只存记录，不改变组序或轮换起点。
+   */
   const dayAssignments = computed(() => records.value.filter(isDutyDayAssignment))
 
   /** 今天值日的组；不值日（周末不排）或还没有组时为 undefined */
@@ -93,7 +97,8 @@ export const useDutyStore = defineStore('duty', () => {
    *
    * 日期必须是合法日期键、组必须在现有值日组里，否则拒绝返回 false——写进去一个
    * 不存在的日期或组，这一天会凭空多出一个「指定的未知组」。
-   * 只影响这一天：轮换起点、其他日期、组序都不动（改完即持久化 + 广播 + 同步）。
+   * v3.7.6 起：这一天固定为指定组，并成为**之后自动轮换的衔接基准**；之前的日期、
+   * 轮换起点与组序都不动（改完即持久化 + 广播 + 同步）。
    */
   function setDayGroup(dateKey: string, groupId: string): boolean {
     if (!isDutyDateKey(dateKey)) return false
@@ -112,7 +117,10 @@ export const useDutyStore = defineStore('duty', () => {
     return true
   }
 
-  /** 取消某一天的指定：删掉这条记录，这一天回到按轮换自动排 */
+  /**
+   * 取消某一天的指定：删掉这条记录。这一天**及其之后**的自动安排会依据原有轮换
+   * 与其他仍然有效的按天指定重新衔接；其他日期的指定记录一条都不动。
+   */
   function clearDayGroup(dateKey: string): boolean {
     const existing = findDayAssignment(dayAssignments.value, dateKey)
     if (!existing) return false

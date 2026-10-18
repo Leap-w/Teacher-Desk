@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CalendarClock, CalendarRange, Trash2 } from 'lucide-vue-next'
+import { AppWindowMac, CalendarClock, CalendarRange, Trash2 } from 'lucide-vue-next'
 
 import { AppButton, AppModal, AppSegmented } from '@/components/ui'
 import { runLockedOperation } from '@/composables/useOperationLock'
@@ -36,6 +36,7 @@ import SettingsField from '../components/SettingsField.vue'
 const appSettings = useAppSettingsStore()
 const router = useRouter()
 const toast = useToast()
+const timetableStore = useTimetableStore()
 
 /** 生效作息的一句话摘要：节数 + 首课时间，改过几节一并说清 */
 const courseTimeValue = computed(() => {
@@ -56,10 +57,10 @@ const seatLayoutValue = computed(
 
 const semesterStore = useSemesterStore()
 
-/** 学期设置一句话摘要：名称 + 总周数 + 开学日期 */
+/** 学期设置一句话摘要：名称 + 总周数 + 正在查看的周次（周次状态与课程表页共用） */
 const semesterValue = computed(
   () =>
-    `${semesterStore.settings.name} · ${semesterStore.weekCount} 周 · 开学 ${semesterStore.settings.startDate}`,
+    `${semesterStore.settings.name} · ${semesterStore.weekCount} 周 · 正在看第 ${timetableStore.selectedWeek} 周`,
 )
 
 const VIEW_OPTIONS: { value: SeatView; label: string }[] = [
@@ -77,7 +78,6 @@ function setView(view: SeatView): void {
 
 /* ---------- v3.3.1：删除所有课程（危险操作，二次确认） ---------- */
 
-const timetableStore = useTimetableStore()
 const clearOpen = ref(false)
 
 /** 待删除的课程条数（打开确认弹窗时固定，弹窗内不再变） */
@@ -138,6 +138,19 @@ async function confirmClear(): Promise<void> {
         title="删除所有课程"
         :subtitle="`清空课程表中的全部课程（当前 ${timetableStore.lessons.length} 节），保留课程时间设置`"
         @click="askClear"
+      />
+    </SettingsSection>
+
+    <SettingsSection title="桌面小组件">
+      <!--
+        v3.7.6：macOS 小组件卡片从课程表页整体移入设置。
+        这一行只负责进入设置页；连接 / 同步 / 下载 / 复制路径仍在原来的卡片组件里。
+      -->
+      <SettingsCell
+        :icon="AppWindowMac"
+        title="macOS 桌面小组件"
+        subtitle="连接小组件目录、同步并刷新课程快照（只读，不会改动课程表）"
+        @click="router.push('/my/settings/teaching/widget')"
       />
     </SettingsSection>
 

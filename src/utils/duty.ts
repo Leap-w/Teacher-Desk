@@ -158,8 +158,96 @@ export function findDayAssignment(
 }
 
 /**
- * 某天**实际**值日的组：教师按天指定的优先（v3.7.5），其次是轮换推算。
- * 指定的那个组已被删除时回落到轮换（页面另有提示），不影响其他日期。
+ * 某天之前（不含当天）最近一条**仍然有效**的按天指定（v3.7.6）。
+ *
+ * 这条记录就是后续自动轮换的衔接基准：从它的日期与组出发，按组序向后顺延。
+ * 两条排除规则：
+ *   - 组已被删除的记录不参与衔接——它连自己那一天都落回轮换了，更不该给后面定基准；
+ *   - **轮换起点之前**的指定不参与衔接。起点日期是教师后来重设的轮换基准
+ *     （「轮换对不上时把起点改成今天」），比它更早的指定属于旧安排，
+ *     让它们继续支配新起点之后的日子，会把重设起点这件事悄悄抵消掉。
+ *     这些指定在自己的那一天仍然照常生效，只是不再向后衔接。
+ * 同一天有多条时按 `findDayAssignment` 的口径取最后一条（后一次操作才是教师意图）。
+ */
+function latestAssignmentBefore(
+  dateKey: string,
+  groups: DutyGroup[],
+  assignments: readonly DutyDayAssignment[],
+  notBefore: string | undefined,
+): DutyDayAssignment | undefined {
+  const dates = new Set<string>()
+  for (const item of assignments) {
+    if (item.dateKey >= dateKey) continue
+    if (notBefore && item.dateKey < notBefore) continue
+    dates.add(item.dateKey)
+  }
+  // 日期键是 YYYY-MM-DD，字符串倒序即日期倒序；从最近的指定往前找第一条有效的
+  const sorted = [...dates].sort((a, b) => (a < b ? 1 : -1))
+  for (const key of sorted) {
+    const hit = findDayAssignment(assignments, key)
+    if (hit && groups.some((group) => group.id === hit.groupId)) return hit
+  }
+  return undefined
+}
+
+/**
+ * 从一个**按天指定**的日期推到目标日，中间的有效值日天数（anchor < target）。
+ *
+ * 与 `effectiveDayOffset` 的差别只有一处：**不把落在周末的 anchor 对齐到下一个值日**。
+ * 按天指定是教师明确安排的「这一天值日」，它就占一个轮换位——周六指定了第 2 组，
+ * 周一（下一个值日）就从第 3 组继续，而不是再让第 2 组值一天。
+ */
+function dutyDaysAfter(anchorKey: string, targetKey: string, includeWeekend: boolean): number {
+  let offset = 0
+  let cursor = anchorKey
+  while (cursor < targetKey) {
+    cursor = addDaysToDateKey(cursor, 1)
+    if (includeWeekend || !isWeekendDateKey(cursor)) offset += 1
+  }
+  return offset
+}
+
+/**
+ * 某天在**不考虑当天自己的按天指定**时的自动轮换结果（v3.7.6）。
+ *
+ * 用途有两处，必须是同一个口径：
+ *   - 页面上的「不指定的话轮到哪一组」（按天指定弹窗的说明）；
+ *   - 取消某一天的指定后，这一天会自动落到哪一组。
+ *
+ * 规则：以这一天之前最近一条仍然有效（组未删、且不早于当前轮换起点）的按天指定
+ * 为基准，从那一组按组序向后顺延；没有可用的指定时，按轮换设置
+ * （起点日期 + 起点组）推算。不排周末时，未指定过的周末仍然不值日（返回 undefined）。
+ */
+export function dutyAutoGroupForDay(
+  dateKey: string,
+  groups: DutyGroup[],
+  settings: DutySettings,
+  assignments: readonly DutyDayAssignment[] = [],
+): DutyGroup | undefined {
+  if (groups.length === 0) return undefined
+  if (!isDateKey(dateKey)) return undefined
+  if (!settings.includeWeekend && isWeekendDateKey(dateKey)) return undefined
+
+  const anchor = latestAssignmentBefore(
+    dateKey,
+    groups,
+    assignments,
+    isDutyDateKey(settings.startDate) ? settings.startDate : undefined,
+  )
+  if (!anchor) return dutyGroupFor(dateKey, groups, settings)
+
+  const anchorIndex = groups.findIndex((group) => group.id === anchor.groupId)
+  // latestAssignmentBefore 已过滤失效组；这里只做防御，不改语义
+  if (anchorIndex < 0) return dutyGroupFor(dateKey, groups, settings)
+  const offset = dutyDaysAfter(anchor.dateKey, dateKey, settings.includeWeekend)
+  const index = (((anchorIndex + offset) % groups.length) + groups.length) % groups.length
+  return groups[index]
+}
+
+/**
+ * 某天**实际**值日的组：教师按天指定的优先（v3.7.5），其次是自动轮换（v3.7.6：
+ * 后续日期会从最近一条按天指定继续衔接）。
+ * 指定的那个组已被删除时忽略这条记录、回落到自动轮换（页面另有提示），不影响其他日期。
  */
 export function dutyGroupForDay(
   dateKey: string,
@@ -167,12 +255,14 @@ export function dutyGroupForDay(
   settings: DutySettings,
   assignments: readonly DutyDayAssignment[] = [],
 ): DutyGroup | undefined {
+  if (groups.length === 0) return undefined
+  if (!isDateKey(dateKey)) return undefined
   const assigned = findDayAssignment(assignments, dateKey)
   if (assigned) {
     const group = groups.find((item) => item.id === assigned.groupId)
     if (group) return group
   }
-  return dutyGroupFor(dateKey, groups, settings)
+  return dutyAutoGroupForDay(dateKey, groups, settings, assignments)
 }
 
 /**
@@ -239,13 +329,17 @@ export interface DutyDay {
   weekday: Weekday
   /** 该日值日的组；不值日（不排周末的周六 / 周日）或还没有组时为 undefined */
   group?: DutyGroup
-  /** 这一天的组是不是教师**按天指定**的（v3.7.5）：页面据此标注「已指定」 */
+  /**
+   * 这一天的组是不是教师**按天指定**的（v3.7.5）：页面据此标注「已指定」。
+   * v3.7.6 起指定还会给后续自动轮换定衔接基准（见 `dutyAutoGroupForDay`）。
+   */
   assigned?: boolean
 }
 
 /**
  * 从 `fromDateKey` 起连续 `days` 天的值日安排（含当天）。
- * `assignments`（按天指定）传入后即按「指定优先、其余轮换」出这一天的组（v3.7.5）。
+ * `assignments`（按天指定）传入后按「指定优先、其余从最近的指定继续衔接」出每一天的组
+ * （v3.7.5 引入按天指定；v3.7.6 起指定影响后续轮换的衔接基准）。
  */
 export function dutyDaysFrom(
   fromDateKey: string,

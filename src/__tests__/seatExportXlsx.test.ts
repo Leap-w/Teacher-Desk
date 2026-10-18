@@ -127,13 +127,14 @@ const SEAT_CELLS: Record<string, string[]> = {
 /* ==================== ① 独立解析器读回来：文件真能打开、名字真在格子里 ==================== */
 
 describe('导出 .xlsx：拿独立的解析器读回来验', () => {
-  it('是真 ZIP（PK 头），工作表名与顺序照模板：学生视角在前、老师视角在后', async () => {
+  it('是真 ZIP（PK 头），工作表顺序照模板，隐藏数据表在末尾', async () => {
     const bytes = new Uint8Array(await buildWorkbook())
     expect(bytes[0]).toBe(0x50)
     expect(bytes[1]).toBe(0x4b)
 
     const workbook = XLSX.read(bytes, { type: 'array' })
-    expect(workbook.SheetNames).toEqual(['学生视角', '老师视角'])
+    // v3.7.6：模板的两张可视化表顺序不变，机器可读的座位数据表追加在最后
+    expect(workbook.SheetNames).toEqual(['学生视角', '老师视角', 'TeacherDesk座位数据'])
   })
 
   it('标题与日期：A1 用班级名、日期格是点分格式（`-` 与 `/` 都是需求方点名禁用的）', async () => {
@@ -414,16 +415,15 @@ describe('导出菜单精简：只剩 PDF 双视角与 Excel 两个视角', () =
     // 只许改值——出现任何一个样式 API 的**调用 / 赋值写法**就说明又在「重画」了。
     // 盯语法不盯词：模块顶部那段说明本来就写着「font / mergeCells 一个都不用」，
     // 纯字符串匹配会把那句自述当成违规（第一版就误伤过）。
-    for (const forbidden of [
-      'addWorksheet(',
-      'mergeCells(',
-      '.font =',
-      '.border =',
-      '.fill =',
-      '.alignment =',
-    ]) {
+    for (const forbidden of ['mergeCells(', '.font =', '.border =', '.fill =', '.alignment =']) {
       expect(source, `模板驱动模块不该出现 ${forbidden}`).not.toContain(forbidden)
     }
+    /*
+      v3.7.6 有一处**新增工作表**的合法调用：隐藏数据表。它不参与版面，
+      所以只允许这一处，且必须就是隐藏表——多出第二处仍按「又在重画」处理。
+    */
+    expect(source.match(/addWorksheet\(/g), 'addWorksheet 只许用于隐藏数据表').toHaveLength(1)
+    expect(source).toContain("addWorksheet(SEAT_EXPORT_SHEET, { state: 'hidden' })")
   })
 
   it('模板进了 PWA 预缓存，否则离线点导出会拉不到模板', () => {

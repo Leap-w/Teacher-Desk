@@ -2,7 +2,8 @@
  * 假期管理的纯函数（v3.6.2）。
  *
  * 本模块只做三件事，都不碰存储、不碰 Vue：
- * 1. **虚拟周末假期**的派生与识别（周末没有实体，`id` 由周六日期键现算）；
+ * 1. **虚拟周末假期**的派生与识别（周末没有实体，`id` 由周六日期键现算；
+ *    v3.7.6 起，教师编辑过的周末会有一条同 id 的覆盖记录，由 `buildHolidayEntries` 合并）；
  * 2. 假期与登记的**复活规则**（`normalizeHoliday` / `normalizeHolidayRecord`）；
  * 3. **二态**（离校 / 留校）的判定与计数——口径只在这里实现一次，
  *    首页卡片、详情页统计、导出名单全从这里取（§11.1）。
@@ -45,7 +46,23 @@ export function weekendKeyOfHolidayId(holidayId: unknown): string | undefined {
 }
 
 /**
- * 周六日期键 → 内存里的那条虚拟假期（**不落库**）。
+ * 周六日期键 → 自动生成的周末名称（v3.7.6）：
+ * **直接把日期范围写进名称**，如 `10月24日—10月25日`；跨月时两端都带月份
+ * （`10月31日—11月1日`），不会出现「11月1日」这种要教师自己猜年份/月份的写法。
+ *
+ * 日期只经 `formatMonthDay` / `addDaysToDateKey` 处理（字符串键 ↔ `Date` 只在
+ * `utils/date.ts` 内部做一次日历换算），不经过本地时区解析，避免某台设备上差一天。
+ */
+export function formatWeekendHolidayName(weekendKey: string): string {
+  return `${formatMonthDay(weekendKey)}—${formatMonthDay(addDaysToDateKey(weekendKey, 1))}`
+}
+
+/**
+ * 周六日期键 → 内存里的那条虚拟假期（**默认不落库**）。
+ *
+ * v3.7.6 起教师可以编辑自动生成的周末：编辑结果以同形状、同 id（`weekend:<周六键>`）
+ * 的覆盖记录存进 `teacherdesk:holidays`；读取时 `buildHolidayEntries` 优先用覆盖记录，
+ * 没有覆盖才用这里现算的默认值。所以本函数仍然只负责「默认长什么样」。
  *
  * `createdAt` / `updatedAt` 用 `startDate` 占位，只为让排序稳定（列表里所有项共用一条
  * 排序规则，虚拟项没有「建立时间」这回事，用日期本身当它就是确定的）。
@@ -53,7 +70,7 @@ export function weekendKeyOfHolidayId(holidayId: unknown): string | undefined {
 export function buildWeekendHoliday(weekendKey: string): Holiday {
   return {
     id: weekendHolidayId(weekendKey),
-    name: '周末',
+    name: formatWeekendHolidayName(weekendKey),
     startDate: weekendKey,
     endDate: addDaysToDateKey(weekendKey, 1),
     createdAt: weekendKey,
@@ -304,25 +321,27 @@ export function countStatuses(
 }
 
 /**
- * 「离校 ∩ 某个返家范围」的人数（v3.6.2 规格第七节的第三张卡片：昌都市外离校）。
+ * 「离校 ∩ 一组返家范围」的人数（v3.7.6 Phase 5 的第三张卡片：市区外离校）。
  *
  * 它**不是第三种状态**——只是「离校」里的一个筛选维度，所以这里数的是
- * 「状态是 `home` 且 `familyLocation.scope === scope`」的在读学生，
+ * 「状态是 `home` 且 `familyLocation.scope` 落在 `scopes` 里」的在读学生，
  * 分母同 `countStatuses`（一律在读学生）。`familyLocation` 缺失的学生自然不进这个数
- * （家庭所在地没填 ≠ 昌都市外）。
+ * （家庭所在地没填 ≠ 市区外）。
  *
- * `scope` 由调用方给（页面写 `'outside-changdu'`），**不修改 `FamilyScope` 的定义**。
+ * 「市区外」的两个既有取值由调用方给（`OUT_OF_CITY_SCOPES`：昌都市其他县 + 昌都市外），
+ * **不修改 `FamilyScope` 的定义与存储值**。
  */
-export function countHomeInScope(
+export function countHomeInScopes(
   holidayId: string,
   students: readonly Student[],
   index: Map<string, boolean>,
-  scope: FamilyScope,
+  scopes: readonly FamilyScope[],
   weekendRegisteredIds?: Set<string>,
 ): number {
   let count = 0
   for (const student of students) {
-    if (student.familyLocation?.scope !== scope) continue
+    const scope = student.familyLocation?.scope
+    if (!scope || !scopes.includes(scope)) continue
     if (statusOf(holidayId, student.id, index, weekendRegisteredIds) === 'home') count += 1
   }
   return count
@@ -338,19 +357,32 @@ export function holidayCoversDate(holiday: Holiday, dateKey: string): boolean {
 /**
  * 页面列表：**自定义假期 ∪ 给定的周末**。
  *
- * `weekendKeys` 由 store 给（有登记的周末 ∪ 本周末 ∪ 下周末），本函数不再自己推导——
- * 「哪些周末该出现在列表里」是业务口径，与老键的记录有关，那是 store 的事。
+ * `weekendKeys` 由 store 给（有登记的周末 ∪ 本周末 ∪ 下周末 ∪ 被编辑过的周末），
+ * 本函数不再自己推导——「哪些周末该出现在列表里」是业务口径，与老键的记录有关，
+ * 那是 store 的事。
+ *
+ * v3.7.6：`holidays` 里可能夹着教师**编辑过的周末**（id 为 `weekend:<周六键>` 的覆盖记录）。
+ * 它们不是自定义假期，不能变成第二张卡；这里按 id 前缀把它们挑出来，遇到对应周末时
+ * 用覆盖记录替代自动生成的那条。未编辑的周末仍然只是一个内存对象，不落库。
  */
 export function buildHolidayEntries(
   holidays: Holiday[],
   weekendKeys: string[],
   todayKey: string,
 ): HolidayEntry[] {
+  const weekendOverrides = new Map<string, Holiday>()
+  const customs: Holiday[] = []
+  for (const holiday of holidays) {
+    const weekendKey = weekendKeyOfHolidayId(holiday.id)
+    if (weekendKey) weekendOverrides.set(weekendKey, holiday)
+    else customs.push(holiday)
+  }
+
   const entries: HolidayEntry[] = [
-    ...holidays.map((holiday): HolidayEntry => ({ kind: 'custom', holiday })),
+    ...customs.map((holiday): HolidayEntry => ({ kind: 'custom', holiday })),
     ...weekendKeys.map((weekendKey): HolidayEntry => ({
       kind: 'weekend',
-      holiday: buildWeekendHoliday(weekendKey),
+      holiday: weekendOverrides.get(weekendKey) ?? buildWeekendHoliday(weekendKey),
       weekendKey,
     })),
   ]

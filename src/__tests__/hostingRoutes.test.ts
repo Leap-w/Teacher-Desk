@@ -39,7 +39,7 @@ describe('hosting routes（SPA 深链占位）', () => {
     expect(hostingRoutes.parseStaticPaths(source)).toEqual(flatten(appRoutes))
   })
 
-  it('解析覆盖全部 28 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
+  it('解析覆盖全部 29 条静态路径（快照锚定，防解析意外放宽/收窄）', () => {
     const source = readFileSync(path.resolve(process.cwd(), 'src/router/routes.ts'), 'utf8')
     expect(hostingRoutes.parseStaticPaths(source)).toEqual([
       '/class',
@@ -64,6 +64,8 @@ describe('hosting routes（SPA 深链占位）', () => {
       '/my/settings/teaching/periods',
       // v3.7.5：学期设置（教学周次的统一来源）
       '/my/settings/teaching/semester',
+      // v3.7.6：桌面小组件设置（从课程表页移入）
+      '/my/settings/teaching/widget',
       '/my/settings/term',
       '/my/tools',
       '/seats',

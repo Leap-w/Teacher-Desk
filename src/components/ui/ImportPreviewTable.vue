@@ -40,8 +40,8 @@ function metaOf(actions: Record<string, ImportActionMeta>, action: string): Impo
       </thead>
       <tbody>
         <tr
-          v-for="row in rows"
-          :key="row.rowNumber"
+          v-for="(row, index) in rows"
+          :key="`${row.rowNumber}-${index}`"
           :class="{ 'is-blocked': metaOf(actions, row.action).tone === 'bad' }"
         >
           <td class="col-no">{{ row.rowNumber }}</td>

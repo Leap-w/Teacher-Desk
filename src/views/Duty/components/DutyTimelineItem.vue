@@ -6,6 +6,7 @@ import type { DutyTimelineEntry } from './DutyTimeline.vue'
  * DutyTimelineItem — 轮换时间轴单条（V2.0.6-alpha · Phase UI-4D 沉淀）：
  * 日期节点（今天松石青实心高亮）+ 组名 + 人数；不值日的日子灰节点标注。
  * v3.7.5：教师按天指定的日子标注「已指定」，并给出「指定 / 改派」入口。
+ * v3.7.6：指定日之后的自动轮换从指定组继续衔接，「已指定」徽标带说明。
  */
 defineProps<{
   entry: DutyTimelineEntry
@@ -30,7 +31,12 @@ const emit = defineEmits<{
       </p>
       <p v-if="entry.group" class="tl-group">
         {{ entry.group.name }}<span class="tl-meta"> · {{ entry.group.memberCount }} 人</span>
-        <span v-if="entry.assigned" class="tl-assigned">已指定</span>
+        <span
+          v-if="entry.assigned"
+          class="tl-assigned"
+          title="这一天由教师指定，之后的自动轮换从这一组继续衔接"
+          >已指定</span
+        >
       </p>
       <p v-else class="tl-skip">
         <Moon :size="12" :stroke-width="2" aria-hidden="true" />

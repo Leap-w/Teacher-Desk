@@ -8,11 +8,12 @@ import type { HolidayCardFilter } from '@/utils/holidayQuery'
  *
  *     离校          = 登记了回家的学生
  *     留校          = 没有登记回家的学生（留校 + 离校 = 全班）
- *     昌都市外离校  = 离校 ∩ familyLocation.scope === 昌都市外
+ *     市区外离校    = 离校 ∩ 返家范围是「昌都市其他县」或「昌都市外」
  *
- * 三个数字的关系是**全部学生 = 留校 + 离校**，而「昌都市外离校」是「离校」里的一个维度，
+ * 三个数字的关系是**全部学生 = 留校 + 离校**，而「市区外离校」是「离校」里的一个维度，
  * 不是第三种状态——所以它没有自己的底色，用与「离校」同一族的主色系，
- * 只靠标题里的「昌都市外」限定语与卡片上的小图标区分。
+ * 只靠标题里的「市区外」限定语与卡片上的小图标区分。返家范围是「昌都市区」的
+ * 离校学生**不进**这张卡（v3.7.6 Phase 5）。
  *
  * 交互（规格第 9 节）：
  * - 点一张卡片 = 按它筛选当前名单，被选中的卡片有明确的 active 视觉（描边 + 底色 + 字重）；
@@ -23,8 +24,8 @@ const props = defineProps<{
   home: number
   /** 留校人数 */
   stay: number
-  /** 昌都市外离校人数 */
-  outside: number
+  /** 市区外离校人数（昌都市其他县 + 昌都市外） */
+  beyondCity: number
   /** 当前生效的卡片筛选；undefined = 全部学生 */
   active?: HolidayCardFilter
 }>()
@@ -50,9 +51,9 @@ const cards = computed<
   },
   {
     key: 'outside',
-    label: '昌都市外离校',
-    count: props.outside,
-    hint: '离校且家庭所在地在昌都市外',
+    label: '市区外离校',
+    count: props.beyondCity,
+    hint: '离校且返家范围在昌都市区外（其他县或市外）',
     tone: 'is-outside',
   },
 ])

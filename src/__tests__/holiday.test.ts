@@ -7,7 +7,7 @@
  *    否则同一期在两端会变成两个假期，登记各记各的。
  * ② **二态由事实推导**：有离校记录 → 离校，**没有记录 → 留校**（v3.6.1 的第三态
  *    「未登记」已被 v3.6.2 删除，旧数据直接按「没有登记回家」算留校）。
- *    三张统计卡片的关系也钉在这里：离校 + 留校 = 全班，昌都市外离校 ≤ 离校。
+ *    三张统计卡片的关系也钉在这里：离校 + 留校 = 全班，市区外离校 ≤ 离校。
  * ③ **批量只改选中的学生**。这是规格第 5 节的核心承诺，也是最容易在实现里悄悄破掉的一条：
  *    函数签名里根本没有「取全班」的入口，断言就照这一点写。
  * ④ **幂等**。已是目标状态的人不进任何一侧 —— 否则每点一次按钮就把两个键各推一次云，
@@ -25,10 +25,11 @@ import {
   buildHolidayEntries,
   buildStatusIndex,
   buildWeekendHoliday,
-  countHomeInScope,
+  countHomeInScopes,
   countStatuses,
   describeHoliday,
   formatHolidayRange,
+  formatWeekendHolidayName,
   holidayCoversDate,
   isWeekendHolidayId,
   normalizeHoliday,
@@ -43,6 +44,7 @@ import {
   weekendKeyOfHolidayId,
 } from '@/utils/holiday'
 import {
+  OUT_OF_CITY_SCOPES,
   isEmptyPlan,
   planStatusChange,
   filterRoster,
@@ -106,14 +108,22 @@ describe('虚拟周末假期：身份由周六日期键派生，不落库', () =
     expect(weekendKeyOfHolidayId('h1')).toBeUndefined()
   })
 
-  it('虚拟假期是「周六 – 周日」两天，名字就是「周末」', () => {
+  it('虚拟假期是「周六 – 周日」两天，名称直接写日期范围（v3.7.6）', () => {
     const built = buildWeekendHoliday(SAT)
     expect(built).toMatchObject({
       id: 'weekend:2026-09-19',
-      name: '周末',
+      name: '9月19日—9月20日',
       startDate: SAT,
       endDate: SUN,
     })
+    expect(formatWeekendHolidayName(SAT)).toBe('9月19日—9月20日')
+  })
+
+  it('周末名称跨月时两端都带月份，日期只走日期键、不经本地时区', () => {
+    expect(formatWeekendHolidayName('2026-10-24')).toBe('10月24日—10月25日')
+    expect(formatWeekendHolidayName('2026-10-31')).toBe('10月31日—11月1日')
+    // 周六跨年（12/31 → 1/1）也不能少掉任何一端的月份
+    expect(formatWeekendHolidayName('2022-12-31')).toBe('12月31日—1月1日')
   })
 })
 
@@ -334,29 +344,63 @@ describe('二态：离校 / 留校（v3.6.2 删掉第三态「未登记」）', 
   })
 })
 
-/* ==================== 昌都市外离校（第三张卡片） ==================== */
+/* ==================== 市区外离校（第三张卡片，v3.7.6 Phase 5） ==================== */
 
-describe('countHomeInScope：离校 ∩ 昌都市外', () => {
+describe('countHomeInScopes：离校 ∩ 市区外（其他县 / 市外）', () => {
   const students = [
     student('s1', '甲', {
       familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
     }),
     student('s2', '乙', {
-      familyLocation: { prefecture: '拉萨市', county: '堆龙德庆区', scope: 'outside-changdu' },
+      familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
     }),
     student('s3', '丙', {
       familyLocation: { prefecture: '昌都市', county: '卡若区', scope: 'changdu-city' },
     }),
     student('s4', '丁'), // 家庭所在地没填
+    student('s5', '戊', {
+      familyLocation: { prefecture: '昌都市', county: '芒康县', scope: 'changdu-county' },
+    }),
   ]
   const index = buildStatusIndex([
     record({ id: 'r1', studentId: 's1', returnHome: true }), // 市外 + 离校 ✔
-    record({ id: 'r2', studentId: 's2', returnHome: false }), // 市外但留校 ✘
+    record({ id: 'r2', studentId: 's2', returnHome: true }), // 其他县 + 离校 ✔
     record({ id: 'r3', studentId: 's3', returnHome: true }), // 离校但市区 ✘
   ])
 
-  it('只数「离校 且 市外」——留校的市外学生与没填所在地的都不算', () => {
-    expect(countHomeInScope('h1', students, index, 'outside-changdu')).toBe(1)
+  it('只数「离校 且 市区外」——其他县与市外都算；市区离校、留校、没填所在地的都不算', () => {
+    expect(countHomeInScopes('h1', students, index, OUT_OF_CITY_SCOPES)).toBe(2)
+  })
+
+  it('三种返家范围 × 离校 / 留校六种组合：只有「市区外 × 离校」进数', () => {
+    const scopes = ['changdu-city', 'changdu-county', 'outside-changdu'] as const
+    const labels = ['昌都市区', '昌都市其他县', '昌都市外'] as const
+    const people = scopes.flatMap((scope, i) => [
+      student(`home-${scope}`, `离校·${labels[i]}`, {
+        familyLocation: { prefecture: '', county: '', scope },
+      }),
+      student(`stay-${scope}`, `留校·${labels[i]}`, {
+        familyLocation: { prefecture: '', county: '', scope },
+      }),
+    ])
+    const statusIndex = buildStatusIndex(
+      scopes.map((scope, i) =>
+        record({ id: `r${i}`, studentId: `home-${scope}`, returnHome: true }),
+      ),
+    )
+
+    // 六人里只有「其他县离校」「市外离校」两人符合；市区离校与三位留校都不进数
+    expect(countHomeInScopes('h1', people, statusIndex, OUT_OF_CITY_SCOPES)).toBe(2)
+    // 逐档核对：每一档都只有一个离校生，且只有市区外两档被选中
+    expect(
+      people
+        .filter(
+          (item) =>
+            statusOf('h1', item.id, statusIndex) === 'home' &&
+            OUT_OF_CITY_SCOPES.includes(item.familyLocation!.scope),
+        )
+        .map((item) => item.id),
+    ).toEqual(['home-changdu-county', 'home-outside-changdu'])
   })
 
   it('**它不是第三种状态**：恒 ≤ 离校人数，且留校 + 离校 = 全班', () => {
@@ -365,18 +409,18 @@ describe('countHomeInScope：离校 ∩ 昌都市外', () => {
       students.map((item) => item.id),
       index,
     )
-    const outside = countHomeInScope('h1', students, index, 'outside-changdu')
-    expect(outside).toBeLessThanOrEqual(counts.home)
+    const beyondCity = countHomeInScopes('h1', students, index, OUT_OF_CITY_SCOPES)
+    expect(beyondCity).toBeLessThanOrEqual(counts.home)
     expect(counts.home + counts.stay).toBe(students.length)
   })
 
   it('周末也走同一个出口：老键里的离校记录算数', () => {
-    // s2 在老键里有这一期的离校记录 → 他变成「市外离校」，数字从 1 变 2
-    expect(countHomeInScope('h1', students, index, 'outside-changdu', new Set(['s2']))).toBe(2)
+    // s5（其他县）原本没有记录 = 留校；老键里有这一期的离校记录 → 数字从 2 变 3
+    expect(countHomeInScopes('h1', students, index, OUT_OF_CITY_SCOPES, new Set(['s5']))).toBe(3)
   })
 
-  it('没有市外学生时是 0（页面据此显示空状态），不是 NaN / undefined', () => {
-    expect(countHomeInScope('h1', students.slice(2), index, 'outside-changdu')).toBe(0)
+  it('没有市区外学生时是 0（页面据此显示空状态），不是 NaN / undefined', () => {
+    expect(countHomeInScopes('h1', students.slice(2), index, OUT_OF_CITY_SCOPES)).toBe(0)
   })
 })
 
@@ -395,6 +439,34 @@ describe('列表与默认项', () => {
       'h1',
     ])
     expect(entries[1]).toMatchObject({ kind: 'weekend', weekendKey: '2026-09-26' })
+  })
+
+  it('编辑过的周末是**覆盖记录**，仍算周末、不会变成第二条自定义假期（v3.7.6）', () => {
+    const override = holiday({
+      id: 'weekend:2026-09-19',
+      name: '运动会调休',
+      startDate: SAT,
+      endDate: '2026-09-21',
+      note: '周一补课',
+    })
+    const entries = buildHolidayEntries([holiday({ id: 'h1' }), override], [SAT, '2026-09-26'], WED)
+
+    // 只出现一次，且仍是 kind='weekend'（页面据此仍走周末登记的老键 / 新键路径）
+    const weekendEntries = entries.filter((entry) => entry.holiday.id === 'weekend:2026-09-19')
+    expect(weekendEntries).toHaveLength(1)
+    expect(weekendEntries[0]).toMatchObject({
+      kind: 'weekend',
+      weekendKey: SAT,
+      holiday: { name: '运动会调休', startDate: SAT, endDate: '2026-09-21', note: '周一补课' },
+    })
+    // 自定义假期仍然只有教师手建的那一条
+    expect(entries.filter((entry) => entry.kind === 'custom')).toHaveLength(1)
+    expect(entries.find((entry) => entry.kind === 'custom')?.holiday.id).toBe('h1')
+  })
+
+  it('没有覆盖记录的周末仍然用日期范围自动名称', () => {
+    const entries = buildHolidayEntries([], [SAT], WED)
+    expect(entries[0]?.holiday.name).toBe('9月19日—9月20日')
   })
 
   /**
@@ -640,15 +712,15 @@ describe('全选：三态 + 只作用于当前筛选结果', () => {
   })
 
   /**
-   * 规格第 13 节的现场：全班 62 人 → 离校 45 / 留校 17 / 昌都市外离校 12。
-   * 在「昌都市外离校」里全选 12 人，再切到「留校」——那 17 人必须**一个都没被继承为选中**，
+   * 规格第 13 节的现场：全班 62 人 → 离校 45 / 留校 17 / 市区外离校 12。
+   * 在「市区外离校」里全选 12 人，再切到「留校」——那 17 人必须**一个都没被继承为选中**，
    * 而原来那 12 人的选择数据也不能被切换筛选这件事改掉。
    */
-  it('筛「昌都市外离校」全选 12 人 → 切到「留校」：三态回到未选，选中数据仍是那 12 人', () => {
+  it('筛「市区外离校」全选 12 人 → 切到「留校」：三态回到未选，选中数据仍是那 12 人', () => {
     const outside = Array.from({ length: 12 }, (_, i) => `out${i}`)
     const stay = Array.from({ length: 17 }, (_, i) => `stay${i}`)
 
-    // 1) 昌都市外离校：点全选
+    // 1) 市区外离校：点全选
     let selected = toggleSelectAll(outside, new Set())
     expect(selected.size).toBe(12)
     expect(selectAllState(outside, selected)).toBe('all')
@@ -689,11 +761,18 @@ describe('filterRoster：五组条件全部 AND 组合', () => {
       studentNo: '03',
       familyLocation: { prefecture: '拉萨市', county: '城关区', scope: 'outside-changdu' },
     }),
+    // v3.7.6 Phase 5：其他县离校——属于「市区外离校」
+    student('s4', '赵六', {
+      gender: 'female',
+      studentNo: '04',
+      familyLocation: { prefecture: '昌都市', county: '江达县', scope: 'changdu-county' },
+    }),
   ]
   const statusMap: Record<string, 'home' | 'stay'> = {
     s1: 'home',
     s2: 'stay',
     s3: 'home',
+    s4: 'home',
   }
   const statusOf = (id: string) => statusMap[id] ?? 'stay'
   const notes = new Map([['s3', '由姐姐接回']])
@@ -701,9 +780,9 @@ describe('filterRoster：五组条件全部 AND 组合', () => {
 
   it('不给条件就是全班（学号升序），行上带着去向与备注', () => {
     const rows = filterRoster(students, { keyword: '' }, statusOf, noteOf)
-    expect(rows.map((row) => row.student.id)).toEqual(['s1', 's2', 's3'])
-    expect(rows.map((row) => row.status)).toEqual(['home', 'stay', 'home'])
-    expect(rows.map((row) => row.note)).toEqual(['', '', '由姐姐接回'])
+    expect(rows.map((row) => row.student.id)).toEqual(['s1', 's2', 's3', 's4'])
+    expect(rows.map((row) => row.status)).toEqual(['home', 'stay', 'home', 'home'])
+    expect(rows.map((row) => row.note)).toEqual(['', '', '由姐姐接回', ''])
   })
 
   it('四组条件逐条生效，且叠加时是 AND（不是 OR）', () => {
@@ -731,22 +810,33 @@ describe('filterRoster：五组条件全部 AND 组合', () => {
         statusOf,
       ).map((r) => r.student.id),
     ).toEqual(['s1'])
-    // 换成 female 就一个都不剩（AND 不是 OR）
+    // 换成 female 且卡片「离校」：只剩其他县的 s4（AND 不是 OR）
     expect(
-      filterRoster(students, { keyword: '', gender: 'female', card: 'home' }, statusOf),
-    ).toEqual([])
+      filterRoster(students, { keyword: '', gender: 'female', card: 'home' }, statusOf).map(
+        (r) => r.student.id,
+      ),
+    ).toEqual(['s4'])
   })
 
-  it('卡片筛选三档：离校 / 留校 / 昌都市外离校', () => {
+  it('卡片筛选三档：离校 / 留校 / 市区外离校（其他县 + 市外）', () => {
     expect(
       filterRoster(students, { keyword: '', card: 'home' }, statusOf).map((r) => r.student.id),
-    ).toEqual(['s1', 's3'])
+    ).toEqual(['s1', 's3', 's4'])
     expect(
       filterRoster(students, { keyword: '', card: 'stay' }, statusOf).map((r) => r.student.id),
     ).toEqual(['s2'])
+    // s4 是昌都市其他县、s3 是昌都市外；市区的 s1 与留校的 s2 都不进
     expect(
       filterRoster(students, { keyword: '', card: 'outside' }, statusOf).map((r) => r.student.id),
-    ).toEqual(['s3'])
+    ).toEqual(['s3', 's4'])
+  })
+
+  it('卡片筛选与 store 统计同一口径：市区外离校人数 = 名单行数', () => {
+    const beyondCity = filterRoster(students, { keyword: '', card: 'outside' }, statusOf)
+    expect(beyondCity).toHaveLength(2)
+    expect(beyondCity.every((row) => row.status === 'home')).toBe(true)
+    // 市区离校生（s1）明确不在结果里
+    expect(beyondCity.some((row) => row.student.id === 's1')).toBe(false)
   })
 
   it('**卡片是筛选不是状态**：`undefined` 就是全部，且离校 + 留校 = 全班', () => {
@@ -838,5 +928,44 @@ describe('源码哨兵（v3.6.2）', () => {
     expect(roster).toBeGreaterThan(-1)
     expect(actionRow).toBeLessThan(statCards)
     expect(statCards).toBeLessThan(roster)
+  })
+
+  it('自动生成的周末也有编辑入口，删除仍只给自定义假期（v3.7.6）', () => {
+    const detail = readFileSync(
+      fileURLToPath(new URL('../views/Holiday/components/HolidayDetail.vue', import.meta.url)),
+      'utf8',
+    )
+    const actionRow = detail.slice(
+      detail.indexOf('class="action-row"'),
+      detail.indexOf('<HolidayStatCards'),
+    )
+    // 整行不再被 isWeekend 排除；编辑按钮无条件渲染，删除按钮才按周末隐去
+    expect(detail).not.toContain('<div v-if="!isWeekend" class="action-row">')
+    expect(actionRow).toContain("emit('edit')")
+    expect(actionRow).toContain('v-if="!isWeekend"')
+    expect(actionRow).toContain("emit('remove')")
+
+    const page = readFileSync(
+      fileURLToPath(new URL('../views/Holiday/index.vue', import.meta.url)),
+      'utf8',
+    )
+    const askEdit = page.slice(page.indexOf('function askEdit'), page.indexOf('function onSubmit'))
+    expect(askEdit).not.toContain("entry.kind === 'weekend'")
+  })
+
+  it('第三张卡片文案是「市区外离校」，口径同时含其他县与市外（v3.7.6 Phase 5）', () => {
+    const cards = readFileSync(
+      fileURLToPath(new URL('../views/Holiday/components/HolidayStatCards.vue', import.meta.url)),
+      'utf8',
+    )
+    expect(cards).toContain("label: '市区外离校'")
+    expect(cards).not.toContain('昌都市外离校')
+    // 统计与筛选共用同一份范围清单，不能一边含其他县、另一边只认市外
+    const query = readFileSync(
+      fileURLToPath(new URL('../utils/holidayQuery.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(query).toContain("'changdu-county'")
+    expect(query).toContain("'outside-changdu'")
   })
 })

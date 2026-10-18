@@ -40,8 +40,8 @@ import type { HolidayRosterFilters } from '@/utils/holidayQuery'
  * 刷新会回到列表——这是为了不给 CloudBase 静态托管多出一堆动态占位付的代价，
  * 而详情本来就只在「刚登记完接着核对」这一个动作里停留。
  *
- * 页面自己不做任何计数：二态人数问 `holidayStore.countsOf`、市外离校问
- * `holidayStore.outsideHomeCountOf`、名单问 `filterRoster`、落库问 `holidayStore.setStatuses`
+ * 页面自己不做任何计数：二态人数问 `holidayStore.countsOf`、市区外离校问
+ * `holidayStore.beyondCityHomeCountOf`、名单问 `filterRoster`、落库问 `holidayStore.setStatuses`
  * / `holidayStore.setNote`。页面只负责把按钮和它们接起来（§11.1）。
  *
  * ## v3.6.2 的结构调整（规格第 14 节）
@@ -50,6 +50,9 @@ import type { HolidayRosterFilters } from '@/utils/holidayQuery'
  *
  * 「编辑 / 删除假期」从名单**下方**移到了统计卡片**上方**：62 人的名单会把它们推到页面底部，
  * 而这两个动作与名单上的学生无关，不该被名单的长度推到看不见的地方。
+ *
+ * v3.7.6：自动生成的周末也显示「编辑」（名称 / 日期 / 备注可改，保存后落覆盖记录）；
+ * 「删除」仍只属于自定义假期。
  */
 const props = defineProps<{ entry: HolidayEntry }>()
 
@@ -99,8 +102,8 @@ const allRows = computed(() =>
 )
 
 const counts = computed(() => holidayStore.countsOf(holidayId.value))
-/** 第三张卡片：离校 ∩ 昌都市外（不是第三种状态，只是离校里的一维） */
-const outsideHomeCount = computed(() => holidayStore.outsideHomeCountOf(holidayId.value))
+/** 第三张卡片：离校 ∩ 市区外（其他县 + 市外；不是第三种状态，只是离校里的一维） */
+const beyondCityHomeCount = computed(() => holidayStore.beyondCityHomeCountOf(holidayId.value))
 const staleCount = computed(() => holidayStore.staleCountOf(holidayId.value))
 
 function toggleCard(key: HolidayCardFilter): void {
@@ -324,8 +327,11 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
           <AppBadge v-if="isWeekend" variant="neutral" size="sm">周末</AppBadge>
         </div>
         <p class="head-meta">
-          {{ formatHolidayRange(entry.holiday) }}
-          <span class="dot" aria-hidden="true">·</span>
+          <!-- 周末的自动名称本身就是日期范围（v3.7.6），不必再原样重复一遍 -->
+          <template v-if="entry.holiday.name !== formatHolidayRange(entry.holiday)">
+            {{ formatHolidayRange(entry.holiday) }}
+            <span class="dot" aria-hidden="true">·</span>
+          </template>
           {{ describeHoliday(entry.holiday, holidayStore.todayKey) }}
         </p>
       </div>
@@ -334,13 +340,13 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
     <p v-if="entry.holiday.note" class="holiday-note">{{ entry.holiday.note }}</p>
 
     <!-- ===== 编辑 / 删除：**在统计卡片与名单之上**（v3.6.2 规格第 14 节） ===== -->
-    <!-- 虚拟周末不可编辑 / 删除：日期由日历决定，删了下次刷新还会回来 -->
-    <div v-if="!isWeekend" class="action-row">
+    <!-- v3.7.6：自动生成的周末也可以编辑（名称 / 日期 / 备注）；删除仍只给自定义假期 -->
+    <div class="action-row">
       <AppButton variant="ghost" size="sm" @click="emit('edit')">
         <Pencil :size="15" :stroke-width="2" aria-hidden="true" />
         编辑
       </AppButton>
-      <AppButton variant="danger" size="sm" @click="emit('remove')">
+      <AppButton v-if="!isWeekend" variant="danger" size="sm" @click="emit('remove')">
         <Trash2 :size="15" :stroke-width="2" aria-hidden="true" />
         删除
       </AppButton>
@@ -350,7 +356,7 @@ async function runExport(scope: HolidayExportScope): Promise<void> {
     <HolidayStatCards
       :home="counts.home"
       :stay="counts.stay"
-      :outside="outsideHomeCount"
+      :beyond-city="beyondCityHomeCount"
       :active="card"
       @select="toggleCard"
     />

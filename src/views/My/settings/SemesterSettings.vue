@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
-import { AppInput } from '@/components/ui'
+import { AppButton, AppInput, AppSelect } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import { useSemesterStore } from '@/stores/semester'
+import { useTimetableStore } from '@/stores/timetable'
 import { formatMonthDay } from '@/utils/date'
 import { computedSemesterEnd } from '@/utils/semester'
+import type { SelectOption } from '@/types'
 import SettingsPage from '../components/SettingsPage.vue'
 import SettingsSection from '../components/SettingsSection.vue'
 import SettingsField from '../components/SettingsField.vue'
@@ -21,12 +24,48 @@ import SettingsField from '../components/SettingsField.vue'
  * 名称与周数改用「失焦 / 回车提交」的草稿值，避免每敲一个字写一次盘。
  */
 const semester = useSemesterStore()
+const timetable = useTimetableStore()
+const router = useRouter()
 const toast = useToast()
 
 const settings = computed(() => semester.settings)
 const weeks = computed(() => semester.weeks)
 const endMismatch = computed(() => semester.endMismatch)
 const computedEndLabel = computed(() => formatMonthDay(computedSemesterEnd(settings.value)))
+
+/* ---------- v3.7.6：查看周次（与课程表页共用 timetable store 里的同一份状态） ---------- */
+
+/** 正在查看的教学周：课程表页读的是同一个值，不从本页另存一份 */
+const selectedWeek = computed(() => timetable.selectedWeek)
+const viewingCurrentWeek = computed(() => timetable.viewingCurrentWeek)
+
+/** 下拉选项：周次表来自学期设置（v3.7.5 起唯一的周次来源，不写死 20 周） */
+const weekOptions = computed<SelectOption<number>[]>(() =>
+  weeks.value.map((week) => ({
+    label: `第 ${week.index} 周 · ${formatMonthDay(week.startDate)}-${formatMonthDay(week.endDate)}`,
+    value: week.index,
+  })),
+)
+
+const selectedWeekRange = computed(() => {
+  const week = weeks.value.find((item) => item.index === selectedWeek.value)
+  return week ? `${formatMonthDay(week.startDate)} — ${formatMonthDay(week.endDate)}` : ''
+})
+
+function selectWeek(value: number): void {
+  timetable.setSelectedWeek(value)
+}
+
+function backToCurrentWeek(): void {
+  const current = timetable.currentWeek
+  if (current === undefined) return
+  timetable.goToCurrentWeek()
+  toast.success(`已回到本周（第 ${current} 周）`)
+}
+
+function openSchedule(): void {
+  void router.push('/work/schedule')
+}
 
 /* ---------- 名称 / 周数：草稿 + 提交（失焦或回车），失败弹回 ---------- */
 const nameDraft = ref(settings.value.name)
@@ -129,6 +168,47 @@ function commitEndDate(value: string): void {
 
     <SettingsSection title="教学周次">
       <div class="weeks">
+        <!-- v3.7.6：周次选择从课程表页移到这里；课程表页只保留一个直达入口 -->
+        <div class="week-switch" aria-label="切换课程表正在查看的教学周">
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="selectedWeek <= 1"
+            @click="timetable.stepSelectedWeek(-1)"
+          >
+            上一周
+          </AppButton>
+          <AppSelect
+            class="week-select"
+            :model-value="selectedWeek"
+            :options="weekOptions"
+            aria-label="选择教学周次"
+            @update:model-value="selectWeek"
+          />
+          <AppButton
+            variant="ghost"
+            size="sm"
+            :disabled="selectedWeek >= semester.weekCount"
+            @click="timetable.stepSelectedWeek(1)"
+          >
+            下一周
+          </AppButton>
+          <AppButton
+            v-if="timetable.currentWeek !== undefined && !viewingCurrentWeek"
+            variant="secondary"
+            size="sm"
+            @click="backToCurrentWeek"
+          >
+            回到本周
+          </AppButton>
+          <AppButton variant="secondary" size="sm" @click="openSchedule">去课程表查看</AppButton>
+        </div>
+
+        <p class="week-switch-note">
+          正在查看第 <strong>{{ selectedWeek }}</strong> 周（{{ selectedWeekRange }}）。
+          这里切换的就是课程表页显示的周次；课程表页不再单独放周次选择卡片。
+        </p>
+
         <p class="weeks-head">
           共 {{ semester.weekCount }} 周：第 1 周从 {{ settings.startDate }} 起，每周 7 天。
         </p>
@@ -138,11 +218,20 @@ function commitEndDate(value: string): void {
           }}）不一致——这里只作提示，不会自动改动任何配置。
         </p>
         <ul class="week-list">
-          <li v-for="week in weeks" :key="week.index" class="week-row">
-            <span class="week-index">第{{ week.index }}周</span>
-            <span class="week-range">
-              {{ formatMonthDay(week.startDate) }} — {{ formatMonthDay(week.endDate) }}
-            </span>
+          <li v-for="week in weeks" :key="week.index">
+            <button
+              type="button"
+              class="week-row"
+              :class="{ 'is-selected': week.index === selectedWeek }"
+              :aria-pressed="week.index === selectedWeek"
+              @click="selectWeek(week.index)"
+            >
+              <span class="week-index">第{{ week.index }}周</span>
+              <span class="week-range">
+                {{ formatMonthDay(week.startDate) }} — {{ formatMonthDay(week.endDate) }}
+              </span>
+              <span v-if="week.index === selectedWeek" class="week-flag">正在查看</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -156,6 +245,31 @@ function commitEndDate(value: string): void {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
+}
+
+.week-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.week-select {
+  flex: 1 1 220px;
+  min-width: 220px;
+}
+
+.week-switch-note {
+  font-size: var(--font-secondary);
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
+.week-switch-note strong {
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .weeks-head {
@@ -180,11 +294,32 @@ function commitEndDate(value: string): void {
 }
 
 .week-row {
+  width: 100%;
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  padding: 2px 0;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
   font-size: var(--font-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.week-row:hover {
+  background: var(--bg-hover);
+}
+
+.week-row:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
+.week-row.is-selected {
+  background: var(--color-primary-soft);
 }
 
 .week-index {
@@ -193,8 +328,19 @@ function commitEndDate(value: string): void {
   font-variant-numeric: tabular-nums;
 }
 
+.week-row.is-selected .week-index {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
 .week-range {
   color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+.week-flag {
+  margin-left: auto;
+  color: var(--color-primary-strong);
+  font-size: var(--font-caption);
 }
 </style>

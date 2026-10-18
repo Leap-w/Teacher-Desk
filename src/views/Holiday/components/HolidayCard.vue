@@ -16,6 +16,10 @@ import type { HolidayEntry, HolidayStatus } from '@/types/holiday'
  * 具体数字就在下面写着，不给人「读图」的负担（§2.3 不做图表）。
  *
  * v3.6.2：「未登记」这一段已删——两段之和恒等于全班，条上不再有留白那一段。
+ *
+ * v3.7.6：自动周末的名称本身就是日期范围（如「10月24日—10月25日」），所以那种卡不再
+ * 重复显示日期行；自定义假期（或改过名的周末）则把日期范围单独排成一行稍重的文字，
+ * 让「这是哪一段」比「还有几天」先被看到。
  */
 const props = defineProps<{
   entry: HolidayEntry
@@ -25,6 +29,15 @@ const props = defineProps<{
 
 const holiday = computed(() => props.entry.holiday)
 const total = computed(() => props.counts.home + props.counts.stay)
+
+/** 名称已经就是日期范围时不再重复一行（自动生成、或教师原样保留名称的周末） */
+const showDateLine = computed(() => holiday.value.name !== formatHolidayRange(holiday.value))
+
+/** 正在进行中的假期在状态行上稍作强调；已结束的退到最淡，避免和未来项抢注意力 */
+const isCurrent = computed(
+  () => props.todayKey >= holiday.value.startDate && props.todayKey <= holiday.value.endDate,
+)
+const isPast = computed(() => props.todayKey > holiday.value.endDate)
 
 /** 比例条的段宽（百分比）。总数为 0 时不画（全班都退档了这种边角，别画一根空条） */
 function widthOf(count: number): string {
@@ -43,9 +56,10 @@ function widthOf(count: number): string {
       <ChevronRight :size="16" :stroke-width="2" class="card-arrow" aria-hidden="true" />
     </div>
 
-    <p class="card-meta">
-      {{ formatHolidayRange(holiday) }}
-      <span class="card-dot" aria-hidden="true">·</span>
+    <p v-if="showDateLine" class="card-date">{{ formatHolidayRange(holiday) }}</p>
+
+    <p class="card-meta" :class="{ 'is-current': isCurrent, 'is-past': isPast }">
+      <span class="status-dot" aria-hidden="true" />
       {{ describeHoliday(holiday, todayKey) }}
     </p>
 
@@ -113,14 +127,43 @@ function widthOf(count: number): string {
   color: var(--color-text-faint);
 }
 
+/* 日期范围单独一行、稍重：自定义假期的名称（如「国庆」）本身不含日期，
+   让「这是哪一段」先于「还有几天」被看到 */
+.card-date {
+  margin-top: var(--space-1);
+  font-size: var(--text-md);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
 .card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-top: var(--space-1);
   font-size: var(--font-secondary);
   color: var(--color-text-tertiary);
 }
 
-.card-dot {
-  margin: 0 var(--space-1);
+.status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+
+.card-meta.is-current {
+  color: var(--color-primary-dark);
+  font-weight: var(--font-weight-medium);
+}
+
+.card-meta.is-current .status-dot {
+  background: var(--color-primary);
+}
+
+.card-meta.is-past {
+  color: var(--color-text-faint);
 }
 
 .card-bar {

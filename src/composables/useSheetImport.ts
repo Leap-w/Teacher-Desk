@@ -16,7 +16,8 @@
 import { ref } from 'vue'
 import type { Ref } from 'vue'
 
-import { readSheetRows } from '@/services/studentImport'
+import { readSheetRows, readWorkbookSheets } from '@/services/studentImport'
+import type { ReadWorkbookResult } from '@/services/studentImport'
 
 /** 一份名单 / 座位表撑死几百行，超过这个体积的多半是选错了文件 */
 const MAX_FILE_BYTES = 5 * 1024 * 1024
@@ -28,6 +29,13 @@ export interface SheetParseOutcome {
   error?: string
   /** 表头识别到的列，预览上方显示「识别到 N 列」 */
   columns?: readonly string[]
+  /**
+   * 覆盖默认的「已读取第一个工作表「X」」说明。
+   *
+   * v3.7.6：座位图导出文件的结构化数据在**隐藏工作表**里，读的不是第一个工作表，
+   * 默认说明会误导教师。解析器可以在这里说明「读到的是哪种数据」。
+   */
+  sheetNote?: string
 }
 
 export interface UseSheetImportOptions {
@@ -42,6 +50,16 @@ export interface UseSheetImportOptions {
   noun: string
   /** 解析 + 计算计划；**自己把结果写进弹窗的 ref**，本层不关心计划长什么样 */
   parse: (rows: unknown[][]) => SheetParseOutcome
+  /**
+   * 先按整个工作簿识别（v3.7.6，座位图导出文件用）。
+   *
+   * 返回 `undefined` = 「这不是我这层要的特殊格式」，本层继续拿第一个工作表交给 `parse`，
+   * 老的行列列表导入行为不变。返回 outcome = 已识别（成功或失败），不再走 `parse`。
+   *
+   * 设置为回调后本层会读整个工作簿（含隐藏表）；没设置的四个导入弹窗仍然只读第一个
+   * 工作表——不为用不到的能力多付一次全表解析。
+   */
+  parseWorkbook?: (workbook: ReadWorkbookResult) => SheetParseOutcome | undefined
   /** 每次读文件前与关弹窗时清场（各弹窗清掉自己的计划与预览状态） */
   reset?: () => void
 }
@@ -71,6 +89,13 @@ export function useSheetImport(options: UseSheetImportOptions) {
     await readFile(file)
   }
 
+  /** 默认的工作表说明：文件里有多个表时要说清「读了哪一个」 */
+  function noteOfFirstSheetCount(sheetCount: number, sheetName: string): string {
+    return sheetCount > 1
+      ? `已读取第一个工作表「${sheetName}」，文件共 ${sheetCount} 个工作表`
+      : `工作表「${sheetName}」`
+  }
+
   /** UI-4B：拖入上传卡的文件与 input 选出的文件走同一条解析路径 */
   async function readFile(file: File): Promise<void> {
     clear()
@@ -82,16 +107,52 @@ export function useSheetImport(options: UseSheetImportOptions) {
     busy.value = true
     try {
       const buffer = await file.arrayBuffer()
+
+      /*
+       * v3.7.6：座位导入要先看整个工作簿（结构化数据在隐藏表里）。
+       * 只有显式提供 `parseWorkbook` 的弹窗走这条；其余四个仍走 `readSheetRows`，
+       * 行为与开销都没有变化。
+       */
+      if (options.parseWorkbook) {
+        const read = await readWorkbookSheets(buffer)
+        if (!read.ok) {
+          error.value = read.error
+          return
+        }
+        const { sheetNames, sheets } = read.workbook
+        const firstSheet = sheetNames[0] ?? ''
+        const defaultNote = noteOfFirstSheetCount(sheetNames.length, firstSheet)
+        filename.value = file.name
+
+        const workbookOutcome = options.parseWorkbook(read.workbook)
+        if (workbookOutcome) {
+          sheetNote.value = workbookOutcome.sheetNote ?? defaultNote
+          if (!workbookOutcome.ok) {
+            error.value = workbookOutcome.error ?? '表格内容无法识别'
+            return
+          }
+          columns.value = [...(workbookOutcome.columns ?? [])]
+          return
+        }
+
+        // 不是导出文件 → 按原来的行列列表口径读第一个工作表
+        sheetNote.value = defaultNote
+        const outcome = options.parse(sheets.get(firstSheet) ?? [])
+        if (!outcome.ok) {
+          error.value = outcome.error ?? '表格内容无法识别'
+          return
+        }
+        columns.value = [...(outcome.columns ?? [])]
+        return
+      }
+
       const sheet = await readSheetRows(buffer)
       if (!sheet.ok) {
         error.value = sheet.error
         return
       }
       filename.value = file.name
-      sheetNote.value =
-        sheet.sheetCount > 1
-          ? `已读取第一个工作表「${sheet.sheetName}」，文件共 ${sheet.sheetCount} 个工作表`
-          : `工作表「${sheet.sheetName}」`
+      sheetNote.value = noteOfFirstSheetCount(sheet.sheetCount, sheet.sheetName)
 
       const outcome = options.parse(sheet.rows)
       if (!outcome.ok) {

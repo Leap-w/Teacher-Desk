@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { useNow } from '@/composables/useToday'
@@ -122,6 +122,57 @@ export const useTimetableStore = defineStore('timetable', () => {
    * 此时按基础课表看，**不硬算一个「最近的周次」**（那会让换课在放假期间突然生效）。
    */
   const currentWeek = computed(() => semester.weekOf(formatDateKey(now.value)))
+
+  /**
+   * 正在查看的教学周（v3.7.6）。
+   *
+   * 周次选择从课程表页移进「设置 → 教学设置 → 学期设置」后，两个页面必须共用同一份
+   * 视图状态——否则在设置页切到第 8 周、回到课程表却还停在第 3 周，等于把选择丢了。
+   * `viewWeek === undefined` 表示**跟随今天所在的教学周**；教师手动切到别的周后才固定。
+   * 它是纯视图状态，**不落盘**：刷新页面后回到本周，与旧版课程表页的行为一致。
+   */
+  const viewWeek = ref<number | undefined>(undefined)
+
+  /** 真正用于渲染的周次：手动选择优先，否则跟随今天；始终夹在 1..weekCount 内 */
+  const selectedWeek = computed(() => {
+    const max = Math.max(1, semester.weekCount)
+    const desired = viewWeek.value ?? currentWeek.value ?? 1
+    return Math.min(Math.max(1, desired), max)
+  })
+
+  /** 正在看的周是不是今天所在的教学周（今天不在学期范围内时为 false） */
+  const viewingCurrentWeek = computed(
+    () => currentWeek.value !== undefined && currentWeek.value === selectedWeek.value,
+  )
+
+  /** 切到某一教学周（越界值夹回范围内；非法数字忽略） */
+  function setSelectedWeek(week: number): void {
+    if (!Number.isFinite(week)) return
+    const max = Math.max(1, semester.weekCount)
+    viewWeek.value = Math.min(Math.max(1, Math.trunc(week)), max)
+  }
+
+  /** 上一周（-1）/ 下一周（+1），供课程表与设置页的按钮共用 */
+  function stepSelectedWeek(delta: number): void {
+    setSelectedWeek(selectedWeek.value + delta)
+  }
+
+  /** 回到本周：恢复「跟随今天所在的教学周」，不硬记一个会过期的周次 */
+  function goToCurrentWeek(): void {
+    if (currentWeek.value === undefined) return
+    viewWeek.value = undefined
+  }
+
+  // 学期总周数改小时，手动选中的周次也夹回范围内（**不删任何换课记录**，
+  // 超范围记录由课程的 weekRangeIssues 如实提示）
+  watch(
+    () => semester.weekCount,
+    (total) => {
+      if (viewWeek.value !== undefined && viewWeek.value > total) {
+        viewWeek.value = Math.max(1, total)
+      }
+    },
+  )
 
   /* ========== v3.7.5：按教学周看课表（基础课表 + 该周生效的换课） ========== */
 
@@ -597,6 +648,11 @@ export const useTimetableStore = defineStore('timetable', () => {
     todayLabel,
     todayLessons,
     currentWeek,
+    selectedWeek,
+    viewingCurrentWeek,
+    setSelectedWeek,
+    stepSelectedWeek,
+    goToCurrentWeek,
     weekLessonCount,
     classNames,
     weekView,

@@ -341,6 +341,67 @@ export async function readSheetRows(data: ArrayBuffer): Promise<ReadSheetResult>
   }
 }
 
+/**
+ * 整个工作簿 → 每个工作表的二维数组（v3.7.6）。
+ *
+ * 与 `readSheetRows` 的区别只有一个：**保留隐藏工作表**。座位图导出文件把完整的
+ * 结构化座位数据放在隐藏表里，而 `readSheetRows` 只读第一个工作表，导回来时
+ * 恰好错过它。其余规则（文件头校验、动态 import、空行保留、`raw: false`）完全一致。
+ *
+ * 仍然由本模块持有——「唯一碰 xlsx 与字节的一层」这条边界不因为多一个入口而破。
+ */
+export interface ReadWorkbookResult {
+  /** 工作簿里全部工作表名（含隐藏表），顺序与文件一致 */
+  sheetNames: string[]
+  /** 工作表名 → 二维数组 */
+  sheets: Map<string, unknown[][]>
+}
+
+export type ReadWorkbookOutcome =
+  { ok: true; workbook: ReadWorkbookResult } | { ok: false; error: string }
+
+export async function readWorkbookSheets(data: ArrayBuffer): Promise<ReadWorkbookOutcome> {
+  const signatureError = checkFileSignature(data)
+  if (signatureError) return { ok: false, error: signatureError }
+
+  let XLSX: typeof import('xlsx')
+  try {
+    XLSX = await import('xlsx')
+  } catch {
+    return { ok: false, error: '导入功能加载失败，请检查网络后刷新页面重试' }
+  }
+
+  try {
+    const workbook = XLSX.read(data, { type: 'array' })
+    const sheetNames = [...workbook.SheetNames]
+    if (sheetNames.length === 0) return { ok: false, error: '这个文件里没有工作表' }
+
+    const sheets = new Map<string, unknown[][]>()
+    for (const name of sheetNames) {
+      const sheet = workbook.Sheets[name]
+      if (!sheet) {
+        sheets.set(name, [])
+        continue
+      }
+      sheets.set(
+        name,
+        XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+          header: 1,
+          raw: false,
+          defval: '',
+          blankrows: true,
+        }),
+      )
+    }
+    return { ok: true, workbook: { sheetNames, sheets } }
+  } catch {
+    return {
+      ok: false,
+      error: '读取失败：文件可能已损坏，或者不是 Excel 的 .xlsx / .xls 格式',
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ 第 2 层 */
 
 function mapColumns(headerRow: unknown[]): ColumnMap {

@@ -8,7 +8,7 @@ import type { SelectAllState } from '@/utils/holidayQuery'
  *
  * 三条口径：
  *
- * 1. **全选针对当前筛选结果**，不是永远针对全班。当前筛的是「昌都市外离校 12 人」，
+ * 1. **全选针对当前筛选结果**，不是永远针对全班。当前筛的是「市区外离校 12 人」，
  *    点全选就只选这 12 人（`visibleTotal` 与 `visibleSelected` 都由页面按**当前名单**给）。
  * 2. **标准三态**：未选 / 部分选中（indeterminate）/ 全部选中。部分选中用原生
  *    `input.indeterminate`——它正是浏览器与读屏软件对「部分选中」的标准表达。

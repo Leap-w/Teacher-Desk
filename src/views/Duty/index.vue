@@ -14,7 +14,7 @@ import {
   weekdayOfDateKey,
 } from '@/utils/date'
 import { WEEKDAY_LABELS } from '@/utils/timetable'
-import { findDayAssignment, dutyGroupFor } from '@/utils/duty'
+import { dutyAutoGroupForDay, findDayAssignment } from '@/utils/duty'
 import DutyDayAssignModal from './components/DutyDayAssignModal.vue'
 import DutyGroupCard from './components/DutyGroupCard.vue'
 import DutyGroupEditModal from './components/DutyGroupEditModal.vue'
@@ -94,7 +94,7 @@ const timelineEntries = computed<DutyTimelineEntry[]>(() =>
   })),
 )
 
-/* ---------- 按天指定值日组（v3.7.5） ---------- */
+/* ---------- 按天指定值日组（v3.7.5；v3.7.6 起指定会衔接后续轮换） ---------- */
 
 const assignOpen = ref(false)
 /** 正在指定的日期：时间轴那一行点进来就是那一天，页头入口默认今天 */
@@ -105,9 +105,26 @@ const assignAssignedId = computed(
   () => findDayAssignment(dutyStore.dayAssignments, assignDate.value)?.groupId,
 )
 
-/** 这一天按轮换轮到哪一组（未指定时的预选与说明文案） */
+/**
+ * 这一天**不指定的话**自动轮到哪一组（弹窗的预选与说明文案）。
+ * 必须考虑之前其他日期的按天指定——取消这一天的指定后，落在的就是这一组。
+ */
 const assignRotationId = computed(
-  () => dutyGroupFor(assignDate.value, dutyStore.groups, dutyStore.settings)?.id,
+  () =>
+    dutyAutoGroupForDay(
+      assignDate.value,
+      dutyStore.groups,
+      dutyStore.settings,
+      dutyStore.dayAssignments,
+    )?.id,
+)
+
+/** 正在指定的这一天本来是不是「周末不排」——弹窗据此解释「不指定就不值日」 */
+const assignAutoSkippedWeekend = computed(
+  () =>
+    !dutyStore.settings.includeWeekend &&
+    isWeekendDateKey(assignDate.value) &&
+    dutyStore.groups.length > 0,
 )
 
 function openAssign(dateKey: string = dutyStore.todayKey): void {
@@ -126,7 +143,9 @@ function onAssignSave(payload: { dateKey: string; groupId: string }): void {
   }
   const name = dutyStore.groups.find((group) => group.id === payload.groupId)?.name ?? ''
   assignOpen.value = false
-  toast.success(`已把 ${formatMonthDay(payload.dateKey)} 的值日组指定为「${name}」`)
+  toast.success(
+    `已把 ${formatMonthDay(payload.dateKey)} 的值日组指定为「${name}」，之后的自动轮换从这组继续`,
+  )
 }
 
 function onAssignClear(dateKey: string): void {
@@ -135,7 +154,7 @@ function onAssignClear(dateKey: string): void {
     return
   }
   assignOpen.value = false
-  toast.success(`已取消 ${formatMonthDay(dateKey)} 的指定，这一天回到自动轮换`)
+  toast.success(`已取消 ${formatMonthDay(dateKey)} 的指定，这一天与之后的日期回到自动轮换`)
 }
 
 /**
@@ -314,7 +333,8 @@ function openImport(mode: 'groups' | 'arrange'): void {
           />
           <p v-else class="panel-empty">建好值日组后，这里会显示按天轮换的安排。</p>
           <p v-if="dutyStore.groups.length > 0" class="timeline-hint">
-            某一天想换人，点那一行的「指定」——只改这一天，轮换起点与其他日期都不动。
+            某一天想换人，点那一行的「指定」——这一天固定为指定组，之后的自动轮换从这一组
+            继续衔接；这一天的指定不会改动之前的日期、轮换起点和组序。
           </p>
         </div>
       </section>
@@ -364,6 +384,7 @@ function openImport(mode: 'groups' | 'arrange'): void {
       :groups="dutyStore.groups"
       :assigned-group-id="assignAssignedId"
       :rotation-group-id="assignRotationId"
+      :auto-skipped-weekend="assignAutoSkippedWeekend"
       @save="onAssignSave"
       @clear="onAssignClear"
     />

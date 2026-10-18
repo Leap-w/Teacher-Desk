@@ -12,14 +12,14 @@ import {
 } from '@/composables/useWidgetSnapshot'
 
 /**
- * WidgetBridgeCard — 课程页上的 **macOS 小组件快照**入口（v3.7.0）。
+ * WidgetBridgeCard — **设置 → 教学设置 → 桌面小组件** 页上的快照入口
+ * （v3.7.0；v3.7.6 从课程表页整体移入设置，连接机制原样保留）。
  *
  * 它只做一件事：把课程表变成桌面小组件能读的那份快照（`widget-snapshot.json`）。
- * **本版唯一的「非自动」动作是首次连接**——浏览器规定选目录必须由用户手势触发，
+ * **唯一的「非自动」动作是首次连接**——浏览器规定选目录必须由用户手势触发，
  * 所以这里有一颗按钮；连上之后，课程表一变就会自动重写（含应用启动时那一次）。
  *
- * 为什么放在课程页：快照就是这份课表的投影，教师在这里改课表，也在这里看「小组件跟上了没有」。
- * 它不新增页面、不新增路由（规格 §二十九：不要一上来就大规模铺文件）。
+ * 卡片只负责快照，不复制课表编辑能力：课程表仍在「工作 → 课程表」里改。
  */
 const toast = useToast()
 const widget = useWidgetSnapshot()
@@ -152,7 +152,6 @@ async function onDisconnect(): Promise<void> {
 
 <style scoped>
 .widget-card {
-  margin-top: var(--spacing-md);
   padding: var(--spacing-card);
   background: var(--color-bg-white);
   border: 1px solid var(--color-border-light);

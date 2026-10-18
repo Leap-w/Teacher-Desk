@@ -9,9 +9,10 @@ import type { DutyGroup } from '@/types/duty'
 import type { SelectOption } from '@/types'
 
 /**
- * 按天指定值日组（v3.7.5）：给**某一天**单独选一个值日组。
+ * 按天指定值日组（v3.7.5；v3.7.6 起指定会衔接后续轮换）：给**某一天**单独选一个值日组。
  *
- * 只影响这一天：轮换起点、组序、其他日期都不动；指定优先于轮换，取消指定即回到自动轮换。
+ * 这一天固定为指定组，并成为之后自动轮换的衔接基准；之前的日期、轮换起点与组序都不动。
+ * 取消指定后，这一天及其之后按原有轮换与其他仍然有效的指定重新衔接。
  * 组件本身不碰 store（与 DutyGroupEditModal 同款）：日期与组以 props 传入、
  * 选择结果用事件回传，落库与提示由页面负责。
  */
@@ -22,13 +23,19 @@ interface Props {
   groups: DutyGroup[]
   /** 这一天已指定的组 id（没有 = 还没指定过） */
   assignedGroupId?: string
-  /** 这一天按轮换轮到的组 id（未指定时预选它，并说明「不指定就是这个组」） */
+  /**
+   * 这一天**不指定的话**自动轮换到的组 id（已考虑之前其他日期的指定）。
+   * 未指定时预选它；已指定时用它说明「取消指定后会回到哪一组」。
+   */
   rotationGroupId?: string
+  /** 这一天本来因「周末不排」而不值日（指定后会照常排） */
+  autoSkippedWeekend?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   assignedGroupId: undefined,
   rotationGroupId: undefined,
+  autoSkippedWeekend: false,
 })
 
 const emit = defineEmits<{
@@ -105,19 +112,24 @@ const rotationGroupName = () =>
       <p v-if="dateKey" class="assign-note">
         {{ formatMonthDay(dateKey) }} {{ WEEKDAY_LABELS[weekdayOfDateKey(dateKey)] }}：
         <template v-if="assignedGroupName()">
-          已指定为 <strong>{{ assignedGroupName() }}</strong
-          >（按轮换轮到{{ rotationGroupName() || '——' }}）。
+          已指定为 <strong>{{ assignedGroupName() }}</strong>
+          <template v-if="autoSkippedWeekend">（这一天本来不值日，指定后照常值日）。</template>
+          <template v-else>（不指定的话，自动轮到{{ rotationGroupName() || '——' }}）。</template>
+        </template>
+        <template v-else-if="autoSkippedWeekend">
+          这一天本来不值日（当前设置为周末不排）；指定后会照常值日，并从指定组衔接之后的轮换。
         </template>
         <template v-else-if="rotationGroupName()">
-          按轮换轮到 <strong>{{ rotationGroupName() }}</strong
-          >，不指定就按它排。
+          不指定的话自动轮到 <strong>{{ rotationGroupName() }}</strong
+          >。
         </template>
         <template v-else>这一天还没有排班（多半是还没设置轮换起点）。</template>
       </p>
 
       <p class="assign-hint">
-        指定后这一天固定按指定的组值日，<strong>只影响这一天</strong>：轮换起点、组序和其他
-        日期都不动。点「取消指定」就回到自动轮换。
+        指定后这一天固定按指定的组值日，之后的自动轮换会从这一组继续向后衔接；这一天的
+        指定<strong>不会改动之前的日期、轮换起点和组序</strong>。点「取消指定」后，这一天
+        与之后的日期会按原有轮换和其他仍然有效的指定重新衔接。
       </p>
     </div>
 

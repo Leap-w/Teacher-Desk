@@ -10,7 +10,8 @@ import { formatDateKey, isDateKey } from '@/utils/date'
 import {
   buildHolidayEntries,
   buildStatusIndex,
-  countHomeInScope,
+  buildWeekendHoliday,
+  countHomeInScopes,
   countStatuses,
   isWeekendHolidayId,
   pickCurrentEntry,
@@ -21,7 +22,7 @@ import {
   weekendHolidayId,
   weekendKeyOfHolidayId,
 } from '@/utils/holiday'
-import { OUTSIDE_CHANGDU_SCOPE, isEmptyPlan, planStatusChange } from '@/utils/holidayQuery'
+import { OUT_OF_CITY_SCOPES, isEmptyPlan, planStatusChange } from '@/utils/holidayQuery'
 import { createId } from '@/utils/id'
 import { formatStudentShortName, refreshStudentNames } from '@/utils/student'
 import type { Holiday, HolidayInput, HolidayRecord, HolidayStatus } from '@/types/holiday'
@@ -39,7 +40,7 @@ function withStudentNames(records: HolidayRecord[], students: Student[]): Holida
  * 假期管理（v3.6.2）：**假期与假期登记的唯一读写入口**。
  *
  * 三份数据、三个键，合成一个 store：
- * - `teacherdesk:holidays`        自定义假期
+ * - `teacherdesk:holidays`        自定义假期 + **教师编辑过的周末覆盖记录**（v3.7.6）
  * - `teacherdesk:holidayRecords`  假期登记（含 v3.6.2 的学生级备注）
  * - `teacherdesk:weekendReturns`  **周末的离校记录（老键，本模块只读不写形状）**
  *
@@ -50,9 +51,11 @@ function withStudentNames(records: HolidayRecord[], students: Student[]): Holida
  *
  * ## 周末为什么是两个键
  *
- * 周末在家列表里是一个**虚拟假期**（`id = 'weekend:<周六键>'`，由日期派生，不落库）。
- * 但它的记录**分两处装**：离校进老键，留校 / 备注进新键。理由见 `types/holiday.ts` 顶部的说明——
- * 老键的形状一旦被新字段污染，混合版本期间可能整批丢数据。由此带来本模块的两条读法：
+ * 周末在家列表里是一个**虚拟假期**（`id = 'weekend:<周六键>'`，由日期派生）。
+ * **默认不落库**；教师编辑名称 / 日期后，才在 `teacherdesk:holidays` 里写下一条同 id 的
+ * 覆盖记录（v3.7.6，见 `updateHoliday`）。它的登记记录**分两处装**：离校进老键，
+ * 留校 / 备注进新键。理由见 `types/holiday.ts` 顶部的说明——老键的形状一旦被新字段污染，
+ * 混合版本期间可能整批丢数据。由此带来本模块的两条读法：
  *
  * - **离校优先**：周末的某一期，老键里有这个学生的记录就是「离校」，哪怕新键里还有一条
  *   留校 / 备注影子。影子记录只被**遮蔽**（派生层忽略），不会自动清掉——教师没点按钮，数据就不该动。
@@ -95,15 +98,23 @@ export const useHolidayStore = defineStore('holiday', () => {
   const activeIdSet = computed(() => new Set(activeStudents.value.map((item) => item.id)))
 
   /**
-   * 列表里要出现的周末：**老键有记录的 ∪ 新键有登记的 ∪ 本周末 ∪ 下周末**。
+   * 列表里要出现的周末：**老键有记录的 ∪ 新键有登记的 ∪ 本周末 ∪ 下周末
+   * ∪ 教师编辑过的周末（覆盖记录）**。
    *
    * 前两项缺一不可——只取老键那份（`weekendStore.weekendKeys`），一个「全员留校、
    * 无一人离校」的周末就会因为没有离校记录而从列表里消失，而它恰恰是教师刚登记过的那一期。
+   *
+   * 最后一项是 v3.7.6 的编辑能力：一个改过名字 / 日期的周末即使已经不在「本周末 / 下周末」、
+   * 也没有任何登记，也不能随时间流逝从列表里消失——那等于把教师改过的数据藏起来。
    */
   const weekendKeys = computed(() => {
     const keys = new Set<string>(weekendStore.weekendKeys)
     for (const record of records.value) {
       const weekendKey = weekendKeyOfHolidayId(record.holidayId)
+      if (weekendKey) keys.add(weekendKey)
+    }
+    for (const holiday of holidays.value) {
+      const weekendKey = weekendKeyOfHolidayId(holiday.id)
       if (weekendKey) keys.add(weekendKey)
     }
     return [...keys].sort((a, b) => b.localeCompare(a))
@@ -161,17 +172,18 @@ export const useHolidayStore = defineStore('holiday', () => {
   }
 
   /**
-   * 第三张统计卡片的人数：**离校 ∩ 昌都市外**（规格第 7 节）。
+   * 第三张统计卡片的人数：**离校 ∩ 市区外**（v3.7.6 Phase 5）。
    *
-   * 它不是第三种状态，只是「离校」里的一个筛选维度，所以这里复用同一个
-   * `statusOf` 出口（`countHomeInScope`），不另写一套判定。
+   * 「市区外」= 昌都市其他县 + 昌都市外，昌都市区不算。它不是第三种状态，
+   * 只是「离校」里的一个筛选维度，所以这里复用同一个 `statusOf` 出口
+   * （`countHomeInScopes`），不另写一套判定。
    */
-  function outsideHomeCountOf(holidayId: string): number {
-    return countHomeInScope(
+  function beyondCityHomeCountOf(holidayId: string): number {
+    return countHomeInScopes(
       holidayId,
       activeStudents.value,
       statusIndex.value,
-      OUTSIDE_CHANGDU_SCOPE,
+      OUT_OF_CITY_SCOPES,
       weekendRegisteredOf(holidayId),
     )
   }
@@ -281,12 +293,30 @@ export const useHolidayStore = defineStore('holiday', () => {
     return holiday
   }
 
+  /**
+   * 编辑一条假期（自定义假期与自动生成的周末共用这一条入口，v3.7.6）。
+   *
+   * 自动生成的周末原本没有落库记录：第一次编辑时，以 `buildWeekendHoliday` 的自动值
+   * （日期范围名称、周六 / 周日）为底，生成一条 **id 不变**（仍是 `weekend:<周六键>`）的
+   * 覆盖记录写进 `teacherdesk:holidays`。之后每次读取都优先用这条覆盖记录，
+   * 刷新 / 重新计算本周末与下周末 / 切换学期都不会把它覆盖回默认值。
+   *
+   * 覆盖记录的日期可以改，但 id 里的周六键仍是这一期的**身份**：学生的离校 / 留校 /
+   * 备注仍挂在同一个 id 上，不会因为改了个显示日期就变成另一个周末。
+   * `weekend:` 前缀但日期部分坏掉的 id 仍然拒绝——它说不出是哪一期，建不出覆盖记录。
+   */
   function updateHoliday(id: string, patch: Partial<HolidayInput>): Holiday | undefined {
-    // 虚拟周末不可编辑：它的日期由日历决定，改了就与「那一期」对不上了
-    if (isWeekendHolidayId(id)) return undefined
+    const weekendKey = weekendKeyOfHolidayId(id)
+    if (isWeekendHolidayId(id) && !weekendKey) return undefined
+
     const index = holidays.value.findIndex((item) => item.id === id)
-    if (index === -1) return undefined
-    const current = holidays.value[index]
+    // 没有落库的自动周末：用自动值当底；自定义假期找不到记录则照旧拒绝
+    const current =
+      index === -1
+        ? weekendKey
+          ? buildWeekendHoliday(weekendKey)
+          : undefined
+        : holidays.value[index]
     if (!current) return undefined
     const clean = cleanHolidayInput({
       name: patch.name ?? current.name,
@@ -301,7 +331,10 @@ export const useHolidayStore = defineStore('holiday', () => {
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     }
-    holidays.value = [...holidays.value.slice(0, index), next, ...holidays.value.slice(index + 1)]
+    holidays.value =
+      index === -1
+        ? [...holidays.value, next]
+        : [...holidays.value.slice(0, index), next, ...holidays.value.slice(index + 1)]
     return next
   }
 
@@ -332,6 +365,7 @@ export const useHolidayStore = defineStore('holiday', () => {
    * 所以不做「先删登记再删假期」这种把顺序变成正确性前提的设计。
    *
    * 虚拟周末不是可删对象：它的「日期」由日历决定，删掉它下次刷新还会回来。
+   * v3.7.6 起它可以**编辑**（改名 / 改日期，见 `updateHoliday`），但仍不提供删除；
    * 要清掉某一期的登记，请在那一期里改学生的去向。
    */
   function removeHoliday(id: string): boolean {
@@ -541,7 +575,7 @@ export const useHolidayStore = defineStore('holiday', () => {
     orphanRecords,
     statusIn,
     countsOf,
-    outsideHomeCountOf,
+    beyondCityHomeCountOf,
     noteIn,
     hasRegistrationsOf,
     staleCountOf,

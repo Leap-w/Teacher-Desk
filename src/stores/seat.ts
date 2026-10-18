@@ -37,6 +37,34 @@ export interface SeatImportOutcome {
 }
 
 /**
+ * 座位图导出文件 → **整表恢复**的落库参数（v3.7.6）。
+ *
+ * 与 `applySeatImport` 的逐条语义不同：这里描述的是**整张座位表**，
+ * 未出现在 `assignments` 里的座位恢复后一律为空。
+ */
+export interface SeatRestoreInput {
+  assignments: ReadonlyArray<SeatImportAssignment>
+  /**
+   * 有值 = 同时恢复这份导出文件里的排座约束（空约束 = 清空）；
+   * `undefined` = 旧版导出文件没有约束数据，保持当前约束不变。
+   */
+  constraints?: SeatPlanConstraints
+}
+
+/** 整表恢复结果：失败时**当前方案一个字节都不改** */
+export interface SeatRestoreOutcome {
+  ok: boolean
+  /** 实际安排的座位数 */
+  applied: number
+  /** 座位发生变动的学生数 */
+  relocated: number
+  /** 因本次恢复而空出来的座位数 */
+  cleared: number
+  /** 失败原因（页面直接 toast 出来） */
+  reason?: string
+}
+
+/**
  * 求解器结果 → 座位号映射（createPlanFromSeats / replacePlanSeats 共用）。
  * **不信任传入的座位数组**：按行列重算座位号（与传入的 id / 顺序无关），
  * 同一学生只保留序号最小的座位，固定空位（第 1 排第 9 列，v3.7.4 起）强制留空。
@@ -262,23 +290,52 @@ export const useSeatStore = defineStore('seat', () => {
    * 它归档的是换座记录，座位本身没有变化，教师按下撤销时想回到的仍是「这一轮开始之前」，
    * 所以撤销会连同本轮归档的记录一起收回（见 undoSession）。
    */
-  const sessionBaseline = ref<{ planId: string; seats: Seat[]; logCount: number } | undefined>(
-    undefined,
-  )
+  const sessionBaseline = ref<
+    | {
+        planId: string
+        seats: Seat[]
+        logCount: number
+        /**
+         * v3.7.6：只有「导出文件整表恢复」会改约束，此时记下恢复前的约束，
+         * 撤销本轮时一并恢复。普通换座不写这个字段——约束编辑本来就不在撤销范围内，
+         * 不能因为换过座就顺手把教师中途改的约束也撤掉。
+         */
+        constraints?: SeatPlanConstraints
+      }
+    | undefined
+  >(undefined)
 
   /**
    * 记下本轮起点：**只在第一次真正改动座位之前拍一次**，之后不再覆盖——
    * 每次换座都重拍的话，撤销就退化成「撤销最后一次拖拽」，正是 §4.1 明确不要的做法。
+   *
+   * @param options.includeConstraints 恢复导入会同时改约束 → 连约束一起拍；
+   *   本轮已经开始但快照里还没有约束时补记当前约束（座位仍回到本轮最初起点）。
    */
-  function captureSessionBaseline(): void {
+  function captureSessionBaseline(options?: { includeConstraints?: boolean }): void {
     const plan = currentPlan.value
     if (!plan) return
+    const includeConstraints = options?.includeConstraints === true
+    const baseline = sessionBaseline.value
+
     // 已有快照且指向同一方案：本轮已经在进行中，保持最初那一份
-    if (sessionBaseline.value?.planId === plan.id) return
+    if (baseline?.planId === plan.id) {
+      if (includeConstraints && !baseline.constraints) {
+        sessionBaseline.value = {
+          ...baseline,
+          constraints: normalizeSeatPlanConstraints(plan.constraints),
+        }
+      }
+      return
+    }
+
     sessionBaseline.value = {
       planId: plan.id,
       seats: plan.seats.map((seat) => ({ ...seat })),
       logCount: plan.changeLogs.length,
+      ...(includeConstraints
+        ? { constraints: normalizeSeatPlanConstraints(plan.constraints) }
+        : {}),
     }
   }
 
@@ -306,13 +363,29 @@ export const useSeatStore = defineStore('seat', () => {
     return compareSeatPlans({ ...plan, seats: baseline.seats }, plan, students).changedStudentIds
   })
 
+  /** 撤销快照里的约束 → 收敛到当前在读学生（快照拍下之后可能有学生被删除） */
+  function constraintsForActiveStudents(raw: SeatPlanConstraints): SeatPlanConstraints {
+    const validIds = new Set(studentStore.activeStudents.map((item) => item.id))
+    return normalizeSeatPlanConstraints({
+      sameDeskForbidden: raw.sameDeskForbidden.filter(
+        (rule) => validIds.has(rule.studentA) && validIds.has(rule.studentB),
+      ),
+      adjacentGroupForbidden: raw.adjacentGroupForbidden.filter((rule) =>
+        rule.students.every((id) => validIds.has(id)),
+      ),
+      frontRowStudents: raw.frontRowStudents.filter((id) => validIds.has(id)),
+      backRowStudents: raw.backRowStudents.filter((id) => validIds.has(id)),
+    })
+  }
+
   /**
    * 撤销本轮修改（§4.1）：把当前方案的座位整表恢复成**本轮第一次换座之前**的样子，
    * 而不是只撤销最近一次拖拽。
    *
    * - 座位经与整表替换同一条管道重建（`occupantsFromSeats` + `buildSeatGrid`：按行列重算座位号、
-   *   固定空位强制留空），**一次赋值写全**（座位 + updatedAt + 换座记录），因此只写一次盘、
-   *   只广播一次，**撤销后的布局立即持久化**，刷新 / 重开后仍是撤销后的样子；
+   *   固定空位强制留空），**一次赋值写全**（座位 + updatedAt + 换座记录；整表恢复拍过
+   *   约束快照时连约束一起），因此只写一次盘、只广播一次，**撤销后的布局立即持久化**，
+   *   刷新 / 重开后仍是撤销后的样子；
    * - 本轮归档的换座记录一并收回（座位回到原点、记录却还留着，两边就对不上了）；
    * - 学生档案一个字段都不动：这里只写 seats，不碰 students；
    * - 快照为空 / 方案已变（换了方案、方案被删）时返回 false，绝不错撤到另一份方案上。
@@ -322,6 +395,10 @@ export const useSeatStore = defineStore('seat', () => {
     const plan = currentPlan.value
     if (!baseline || !plan || plan.id !== baseline.planId) return false
     const seats = buildSeatGrid(occupantsFromSeats(baseline.seats, config), config)
+    const constraints =
+      baseline.constraints === undefined
+        ? undefined
+        : constraintsForActiveStudents(baseline.constraints)
     sessionBaseline.value = undefined
     // 「本次调整」待提交记录描述的是已经被撤掉的那些改动，一起清空
     pendingLogs.value = []
@@ -333,6 +410,8 @@ export const useSeatStore = defineStore('seat', () => {
             seats,
             // 换座记录回退到本轮开始时的条数（commitPendingLogs 追加式入档，截断即收回本轮）
             changeLogs: item.changeLogs.slice(0, baseline.logCount),
+            // 只有「导出文件整表恢复」拍过约束快照；普通换座的撤销仍不碰约束
+            ...(constraints ? { constraints } : {}),
           }
         : item,
     )
@@ -770,6 +849,148 @@ export const useSeatStore = defineStore('seat', () => {
     return { ok: true, applied: valid.length, relocated }
   }
 
+  /** 约束条目总数（恢复时用于发现 normalize 静默丢掉的非法条目） */
+  function constraintCountOf(constraints: SeatPlanConstraints): number {
+    return (
+      constraints.sameDeskForbidden.length +
+      constraints.adjacentGroupForbidden.length +
+      constraints.frontRowStudents.length +
+      constraints.backRowStudents.length
+    )
+  }
+
+  /**
+   * 应用一次「座位图导出文件 → 整表恢复」（v3.7.6，唯一落库入口）。
+   *
+   * 与 `applySeatImport` 的区别：**整表替换**。未出现在 assignments 里的座位恢复后为空，
+   * 因此导出时是空座、导入前有人的格子会被清空——这正是「恢复成导出时的样子」。
+   *
+   * 数据层兜底校验（弹窗已经用 `planSeatRestore` 校验过一遍，这里防其他入口绕过）：
+   * 坐标越界 / 固定空位有人 / 学生不在名单 / 坐标或学生重复 / 约束引用失效 →
+   * **整批拒绝，不改动任何数据**。恢复允许零名学生（整张空座位表也是合法状态）。
+   */
+  function applySeatRestore(input: SeatRestoreInput): SeatRestoreOutcome {
+    const plan = currentPlan.value
+    if (!plan)
+      return { ok: false, applied: 0, relocated: 0, cleared: 0, reason: '当前没有座位方案' }
+
+    const valid: SeatImportAssignment[] = []
+    const seatsTaken = new Set<string>()
+    const studentsTaken = new Set<string>()
+    for (const item of input.assignments) {
+      if (!isValidSeatPosition(item.row, item.col, config)) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: `恢复数据包含越界座位（第 ${item.row} 排第 ${item.col} 列），已取消本次恢复`,
+        }
+      }
+      if (isFixedEmptySeat(item.row, item.col, config)) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: `恢复数据把学生安排在固定空位（第 ${item.row} 排第 ${item.col} 列），已取消本次恢复`,
+        }
+      }
+      if (!item.studentId || !activeStudentIds.has(item.studentId)) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: '恢复数据包含不在学生名单中的学生，已取消本次恢复',
+        }
+      }
+      const seatKey = getSeatKey(item.row, item.col)
+      if (seatsTaken.has(seatKey) || studentsTaken.has(item.studentId)) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: '恢复数据自相冲突（座位或学生重复），已取消本次恢复',
+        }
+      }
+      seatsTaken.add(seatKey)
+      studentsTaken.add(item.studentId)
+      valid.push(item)
+    }
+
+    let constraints: SeatPlanConstraints | undefined
+    if (input.constraints !== undefined) {
+      constraints = normalizeSeatPlanConstraints(input.constraints)
+      if (constraintCountOf(constraints) !== constraintCountOf(input.constraints)) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: '恢复数据里的排座约束包含无效条目，已取消本次恢复',
+        }
+      }
+      const refsValid =
+        constraints.sameDeskForbidden.every(
+          (rule) => activeStudentIds.has(rule.studentA) && activeStudentIds.has(rule.studentB),
+        ) &&
+        constraints.adjacentGroupForbidden.every((rule) =>
+          rule.students.every((id) => activeStudentIds.has(id)),
+        ) &&
+        constraints.frontRowStudents.every((id) => activeStudentIds.has(id)) &&
+        constraints.backRowStudents.every((id) => activeStudentIds.has(id))
+      if (!refsValid) {
+        return {
+          ok: false,
+          applied: 0,
+          relocated: 0,
+          cleared: 0,
+          reason: '恢复数据里的排座约束引用了不在学生名单中的学生，已取消本次恢复',
+        }
+      }
+    }
+
+    /** 恢复前的「学生 → 座位」快照：用于统计真正换了座位的人数 */
+    const before = new Map<string, string>()
+    for (const seat of plan.seats) {
+      if (seat.studentId && !before.has(seat.studentId)) before.set(seat.studentId, seat.id)
+    }
+
+    const occupants = new Map<number, string>()
+    for (const item of valid) {
+      occupants.set(seatOrdinal(item.row, item.col, config), item.studentId)
+    }
+    const seats = buildSeatGrid(occupants, config)
+    const nextOccupiedSeatIds = new Set(
+      seats.filter((seat) => seat.studentId).map((seat) => seat.id),
+    )
+    const cleared = plan.seats.filter(
+      (seat) => seat.studentId && !nextOccupiedSeatIds.has(seat.id),
+    ).length
+    const relocated = valid.filter(
+      (item) => before.get(item.studentId) !== getSeatKey(item.row, item.col),
+    ).length
+
+    // 恢复会改座位（可能还改约束）→ 拍下本轮起点；失败路径在上面已经全部返回，不会留下空快照
+    captureSessionBaseline({ includeConstraints: constraints !== undefined })
+    const now = new Date().toISOString()
+    plans.value = plans.value.map((item) =>
+      item.id === plan.id
+        ? {
+            ...item,
+            updatedAt: now,
+            seats,
+            ...(constraints !== undefined ? { constraints } : {}),
+          }
+        : item,
+    )
+    // 整表恢复与「本次调整」（描述恢复前的排法）不再相关，清掉避免误存
+    clearCurrentLogs()
+    return { ok: true, applied: valid.length, relocated, cleared }
+  }
+
   /** 把「本次调整」归档进当前方案 changeLogs 并清空待提交；返回刚归档的记录（供摘要展示） */
   function commitPendingLogs(): SeatChangeLog[] {
     const plan = currentPlan.value
@@ -812,6 +1033,8 @@ export const useSeatStore = defineStore('seat', () => {
     removeAdjacentGroupForbidden,
     setRowPreference,
     applySeatImport,
+    // v3.7.6：座位图导出文件 → 整表恢复（未列出的座位清空，可撤销）
+    applySeatRestore,
     createPlan,
     createPlanFromSeats,
     nextRotateName,

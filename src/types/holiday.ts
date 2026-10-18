@@ -33,7 +33,12 @@
 import type { WeekendKey } from '@/types/weekend'
 
 /**
- * 一条自定义假期（教师在「假期管理」里自己建的）。
+ * 一条假期记录。
+ *
+ * 绝大多数是教师自己建的**自定义假期**；v3.7.6 起，教师编辑过的**自动周末**也用这个
+ * 形状存一条**覆盖记录**，靠 id 前缀 `weekend:<周六键>` 与自定义假期区分（见
+ * `utils/holiday.ts` 的 `weekendKeyOfHolidayId`）。两种记录同存 `teacherdesk:holidays`，
+ * 备份 / 同步 / 合并因此零改动复用现有的数组型数据块契约；未编辑的周末仍然不落库。
  *
  * 字段严格按 v3.6.1 规格，**不许多**：没有人人数上限、没有颜色、没有「每周重复」。
  * 起止日期都是日期键（`YYYY-MM-DD`），跨天的长假就是 `startDate < endDate`。
@@ -112,12 +117,17 @@ export interface HolidayInput {
 /**
  * 列表里的一项：自定义假期，或一个**虚拟周末假期**。
  *
- * `kind` 区分两者，是为了让页面知道该不该给「编辑 / 删除假期」入口——
- * 周末不是可删对象（它的日期由日历决定），周日的登记要清就清登记本身。
+ * `kind` 区分两者，是为了让页面知道该不该给「删除假期」入口——
+ * 周末不是可删对象（它的日期由日历决定），登记要清就清登记本身。
+ * v3.7.6 起两种项都可以**编辑**：周末第一次编辑时会落一条同 id 的覆盖记录
+ * （见 `types/holiday.ts` 顶部的 `Holiday` 说明），`kind` 仍是 `'weekend'`。
  */
 export interface HolidayEntry {
   kind: 'weekend' | 'custom'
-  /** 自定义假期是库里的那条；虚拟周末是内存对象（`id = 'weekend:<周六键>'`），刷新即重算 */
+  /**
+   * 自定义假期是库里的那条；周末通常是内存对象（`id = 'weekend:<周六键>'`，刷新即重算），
+   * 编辑过则是 `teacherdesk:holidays` 里的覆盖记录。
+   */
   holiday: Holiday
   /** 仅 `kind === 'weekend'`：该周末的周六日期键（= 虚拟 id 去掉前缀） */
   weekendKey?: WeekendKey

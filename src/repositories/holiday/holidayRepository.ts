@@ -11,7 +11,9 @@
  * 云同步据此走「本地无此键 → 采纳云端」（`decideKey`）。加载时先写一个 `[]` 进去，
  * 新设备就变成「有一份空假期表」，与云端那份真实数据撞成「首次同步冲突」。
  *
- * 周末**不在这里**：它是虚拟假期，由周六日期键派生，一条记录都不落库（见 `utils/holiday.ts`）。
+ * 周末默认**不在这里**：它是虚拟假期，由周六日期键派生。v3.7.6 起，教师编辑过的周末
+ * 会以同形状、id 为 `weekend:<周六键>` 的覆盖记录存进本键（见 `utils/holiday.ts` 的
+ * `buildHolidayEntries`）——仍走同一个数组型数据块，备份 / 同步不需要知道这个区别。
  */
 import { appConfig } from '@/config'
 import { reviveHolidays } from '@/utils/holiday'

@@ -191,6 +191,13 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '学期设置', hidden: true },
   },
   {
+    // v3.7.6：macOS 桌面小组件（从课程表页整体移入设置，连接机制不变）
+    path: '/my/settings/teaching/widget',
+    name: 'settings-teaching-widget',
+    component: () => import('@/views/My/settings/WidgetSettings.vue'),
+    meta: { title: '桌面小组件', hidden: true },
+  },
+  {
     path: '/my/settings/class',
     name: 'settings-class',
     component: () => import('@/views/My/settings/ClassSettings.vue'),

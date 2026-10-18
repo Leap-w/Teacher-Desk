@@ -15,9 +15,11 @@ import type { Holiday, HolidayInput } from '@/types/holiday'
  * 假期管理（v3.6.1）—— 由 v3.6.0 的「周末管理」升级而来。
  *
  * 三件事在这一个页面里：
- * 1. **假期列表**：自定义假期与虚拟周末并列（周末的 `id` 由周六日期键派生，不落库）；
+ * 1. **假期列表**：自定义假期与虚拟周末并列（周末的 `id` 由周六日期键派生；
+ *    默认不落库，v3.7.6 起编辑过的周末会落一条同 id 的覆盖记录）；
  * 2. **某个假期的详情**：离校 / 留校统计（三张卡片即三档筛选）+ 全选 + 批量登记 + 学生级备注 + 导出名单；
- * 3. **假期的增删改**（只有自定义假期可改可删）。
+ * 3. **假期的增删改**（自定义假期可改可删；自动生成的周末 v3.7.6 起可改，但仍不可删——
+ *    它的日期由日历决定，删除后下次刷新还会回来）。
  *
  * 详情**不占独立路由**，是同一页里换上去的一屏（`selectedId` 有值即进详情）：
  * 刷新会回到列表。这是为「不给 CloudBase 静态托管多出一堆动态占位」付的代价（方案 §六.5），
@@ -56,7 +58,9 @@ function askCreate(): void {
 
 function askEdit(): void {
   const entry = selectedEntry.value
-  if (!entry || entry.kind === 'weekend') return
+  if (!entry) return
+  // v3.7.6：自动生成的周末也可以编辑（名称 / 起止日期 / 备注）。
+  // 第一次保存时 store 会把它落成一条同 id 的覆盖记录，刷新后不会恢复原值。
   editing.value = entry.holiday
   formOpen.value = true
 }
@@ -101,6 +105,7 @@ const cascade = computed(() =>
 
 function askRemove(): void {
   const entry = selectedEntry.value
+  // 周末可以编辑，但不是可删对象：删了下次刷新还会按日历生成回来
   if (!entry || entry.kind === 'weekend') return
   removing.value = entry.holiday
   confirmOpen.value = true
@@ -276,10 +281,11 @@ function confirmClearOrphans(): void {
   gap: var(--space-2);
 }
 
+/* 相邻记录留出更大间距：周末名称现在就是日期范围，卡片一多也能一眼分开 */
 .entry-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .entry-empty {

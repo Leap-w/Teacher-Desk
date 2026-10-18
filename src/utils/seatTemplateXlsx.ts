@@ -42,13 +42,24 @@
  *   ② `loadSeatTemplate()` / `downloadXlsx()` —— 只做「取模板」与「触发下载」。
  * 合成一个函数就只能在浏览器里点着试，而「姓名写没写对格子」恰恰是点不出来的那种错。
  */
-import type { Cell, Worksheet } from 'exceljs'
+import type { Cell, Workbook, Worksheet } from 'exceljs'
 
 import templateUrl from '../../docs/座位图-9.3.xlsx?url'
 import { exportDateDotted } from '@/utils/seatExport'
+import {
+  blocksText,
+  SEAT_DATA_CONSTRAINT_HEADERS,
+  SEAT_DATA_CONSTRAINT_KINDS,
+  SEAT_DATA_SEAT_HEADERS,
+  SEAT_EXPORT_FORMAT,
+  SEAT_EXPORT_SHEET,
+  SEAT_EXPORT_VERSION,
+} from '@/utils/seatExportFormat'
 import { getSeatKey } from '@/utils/seat'
 import { buildNameCounts, formatStudentShortName } from '@/utils/student'
-import type { Seat } from '@/types/seat'
+import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
+import type { ClassroomConfig } from '@/types/classroom'
+import type { Seat, SeatPlanConstraints } from '@/types/seat'
 import type { Student } from '@/types'
 
 /**
@@ -76,6 +87,16 @@ export interface SeatTemplateSheetInput {
   students: ReadonlyMap<string, Student>
 }
 
+/** 隐藏数据表里记录方案来源（只作展示与核对，导入不会改名 / 改方案 id） */
+export interface SeatTemplatePlanInput {
+  /** 导出时当前方案的名称 */
+  name: string
+  /** 方案创建时间（ISO，可缺） */
+  createdAt?: string
+  /** 方案最近更新时间（ISO，可缺） */
+  updatedAt?: string
+}
+
 /** 一次导出要填的全部内容 */
 export interface SeatTemplateInput {
   /** 大标题，如「高一9班座位图」（模板 A1 是「高一9班座位图」，班级名动态） */
@@ -84,6 +105,17 @@ export interface SeatTemplateInput {
   date: Date
   /** 两张工作表各一份 */
   sheets: readonly SeatTemplateSheetInput[]
+  /**
+   * 教室布局。缺省 = `DEFAULT_CLASSROOM_CONFIG`。
+   * 导出端会把这份布局写进隐藏数据表，导入端据此判断「是不是同一间教室」。
+   */
+  config?: ClassroomConfig
+  /** 当前方案信息（v3.7.6 隐藏数据表；缺省则只写空值） */
+  plan?: SeatTemplatePlanInput
+  /** 应用版本（如 `v3.7.6`；仅记录，不参与格式判断） */
+  appVersion?: string
+  /** 当前方案的排座约束（v3.7.6 隐藏数据表；缺省 = 没有约束） */
+  constraints?: SeatPlanConstraints
 }
 
 /* ==================== 模板定位：表头 → 座位格 → 单元格地址 ==================== */
@@ -147,14 +179,132 @@ function mergeAnchorOf(sheet: Worksheet, row: number): string {
   throw new Error(`模板工作表「${sheet.name}」第 ${row} 行没有合并单元格，标题 / 日期无处可写`)
 }
 
+/* ==================== 隐藏数据表（v3.7.6，机器可读的完整座位数据） ==================== */
+
+/**
+ * 约束里的学生引用：只写学号与姓名。
+ *
+ * 学生已不在名册里时返回 undefined——这份约束行**不写**。约束在校验与清理时只允许
+ * 引用在读学生，正常走不到这里；宁可少写一条，也不把一条无法核对的空引用写进导出文件。
+ */
+function constraintStudentRef(
+  studentId: string,
+  students: ReadonlyMap<string, Student>,
+): [string, string] | undefined {
+  const student = students.get(studentId)
+  if (!student) return undefined
+  return [student.studentNo?.trim() ?? '', student.name]
+}
+
+/** 约束区一行：类型 + 最多三组（学号, 姓名），不足三组补空 */
+function constraintRow(kind: string, refs: readonly [string, string][]): unknown[] {
+  const cells: unknown[] = [kind]
+  for (let index = 0; index < 3; index += 1) {
+    const ref = refs[index]
+    cells.push(ref?.[0] ?? '', ref?.[1] ?? '')
+  }
+  return cells
+}
+
+/**
+ * 在模板工作簿末尾追加隐藏数据表。**不碰两张可视化工作表的任何东西**。
+ *
+ * 数据表结构分三段（见 `utils/seatExportFormat.ts` 的说明）：
+ *   ① 键值区：格式 / 版本 / 应用版本 / 导出时间 / 方案信息 / 布局；
+ *   ② 座位区：63 行「排 / 列 / 学号 / 姓名 / 显示名」，空座也保留一行；
+ *   ③ 约束区：不能同桌 / 三人不能相邻 / 前排 / 后排，引用学生只写学号与姓名。
+ *
+ * 座位区**必须写完 rows × cols 行**（包括空座）：导入端因此可以校验「文件是否完整」，
+ * 并以整表恢复的语义清掉当前方案里多出来的座位。只写有人的座位会让「空座」与
+ * 「文件缺行」变得无法区分。
+ */
+function appendSeatDataSheet(workbook: Workbook, input: SeatTemplateInput): void {
+  const config = input.config ?? DEFAULT_CLASSROOM_CONFIG
+  const sheetInput = input.sheets[0]
+  if (!sheetInput) throw new Error('座位图至少需要一个视角的工作表')
+
+  const students = sheetInput.students
+  const nameCounts = buildNameCounts([...students.values()])
+  const seatByKey = new Map(sheetInput.seats.map((seat) => [getSeatKey(seat.row, seat.col), seat]))
+
+  /** 与可视化工作表同一个口径：找不到学生档案的悬空 studentId 不算「已就座」 */
+  const studentOf = (studentId: string | undefined): Student | undefined =>
+    studentId ? students.get(studentId) : undefined
+  const occupiedCount = sheetInput.seats.filter((seat) => studentOf(seat.studentId)).length
+
+  const rows: unknown[][] = [
+    [`${SEAT_EXPORT_SHEET}（请勿手动修改；隐藏工作表，供重新导入使用）`],
+    ['格式', SEAT_EXPORT_FORMAT],
+    ['数据版本', SEAT_EXPORT_VERSION],
+    ['应用版本', input.appVersion ?? ''],
+    ['导出时间', input.date.toISOString()],
+    ['方案名称', input.plan?.name ?? ''],
+    ['方案创建时间', input.plan?.createdAt ?? ''],
+    ['方案更新时间', input.plan?.updatedAt ?? ''],
+    ['排数', config.rows],
+    ['列数', config.cols],
+    ['列块', blocksText(config.blocks)],
+    ['固定空位排', config.fixedEmptySeat.row],
+    ['固定空位列', config.fixedEmptySeat.col],
+    ['座位总数', config.totalSeats],
+    ['可坐座位数', config.occupiedSeats],
+    ['已就座数', occupiedCount],
+    [],
+    [...SEAT_DATA_SEAT_HEADERS],
+  ]
+
+  for (let row = 1; row <= config.rows; row += 1) {
+    for (let col = 1; col <= config.cols; col += 1) {
+      const seat = seatByKey.get(getSeatKey(row, col))
+      const student = studentOf(seat?.studentId)
+      rows.push([
+        row,
+        col,
+        student?.studentNo?.trim() ?? '',
+        student?.name ?? '',
+        student ? formatStudentShortName(student, nameCounts) : '',
+      ])
+    }
+  }
+
+  rows.push([], [...SEAT_DATA_CONSTRAINT_HEADERS])
+
+  const constraints = input.constraints
+  for (const rule of constraints?.sameDeskForbidden ?? []) {
+    const a = constraintStudentRef(rule.studentA, students)
+    const b = constraintStudentRef(rule.studentB, students)
+    if (a && b) rows.push(constraintRow(SEAT_DATA_CONSTRAINT_KINDS.sameDesk, [a, b]))
+  }
+  for (const rule of constraints?.adjacentGroupForbidden ?? []) {
+    const refs = rule.students
+      .map((studentId) => constraintStudentRef(studentId, students))
+      .filter((ref): ref is [string, string] => Boolean(ref))
+    if (refs.length === 3) rows.push(constraintRow(SEAT_DATA_CONSTRAINT_KINDS.adjacent, refs))
+  }
+  for (const studentId of constraints?.frontRowStudents ?? []) {
+    const ref = constraintStudentRef(studentId, students)
+    if (ref) rows.push(constraintRow(SEAT_DATA_CONSTRAINT_KINDS.front, [ref]))
+  }
+  for (const studentId of constraints?.backRowStudents ?? []) {
+    const ref = constraintStudentRef(studentId, students)
+    if (ref) rows.push(constraintRow(SEAT_DATA_CONSTRAINT_KINDS.back, [ref]))
+  }
+
+  const sheet = workbook.addWorksheet(SEAT_EXPORT_SHEET, { state: 'hidden' })
+  for (const row of rows) sheet.addRow(row)
+}
+
 /* ==================== ① 字节 → 字节（不碰 DOM，可在 node 自检里直接跑） ==================== */
 
 /**
  * 拿模板字节生成座位图 .xlsx。
  *
- * **只改 value，不碰任何样式 API**——`font` / `fill` / `border` / `alignment` /
- * `mergeCells` / `addWorksheet` 一个都不用。空座写成 `null`（只清文字，
+ * 两张可视化工作表**只改 value，不碰任何样式 API**——`font` / `fill` / `border` /
+ * `alignment` / `mergeCells` 一个都不用。空座写成 `null`（只清文字，
  * 那一格的边框与填充留在原处：模板里的空位本来就是「带样式的空格子」）。
+ *
+ * v3.7.6：在末尾**新增**一张隐藏数据表（`appendSeatDataSheet`）。`addWorksheet`
+ * 只在这一处出现，且只用于这张新表；两张可视化工作表的样式、合并、打印设置仍原样保留。
  *
  * @param templateBytes 模板文件字节（`docs/座位图-9.3.xlsx`）
  * @returns 可直接 `new Blob([buffer])` 的 ArrayBuffer
@@ -190,6 +340,9 @@ export async function buildSeatWorkbookFromTemplate(
       sheet.getCell(address).value = student ? formatStudentShortName(student, nameCounts) : null
     }
   }
+
+  // v3.7.6：完整座位数据写进隐藏表，供「导出文件直接导回」使用
+  appendSeatDataSheet(workbook, input)
 
   return (await workbook.xlsx.writeBuffer()) as ArrayBuffer
 }
