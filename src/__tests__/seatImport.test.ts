@@ -104,6 +104,33 @@ describe('解析：表头识别与行号', () => {
     expect(result.blankRows).toBe(1)
     expect(result.rows.map((row) => row.rowNumber)).toEqual([2, 4])
   })
+
+  it('只填行列、不填学生 → 空座行：跳过并计数，不报错', () => {
+    const result = parseSeatRows(sheet(['1', '1', '', ''], ['1', '2', '0102', '乙']), CFG)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.emptySeatRows).toBe(1)
+    expect(result.blankRows).toBe(0)
+    // 空座行不进逐行预览
+    expect(result.rows).toHaveLength(1)
+    expect(result.rows[0]!.rowNumber).toBe(3)
+  })
+
+  it('整份只有空座行 → 仍是合法输入（0 个可导入）', () => {
+    const result = parseSeatRows(sheet(['1', '1', '', ''], ['2', '2', '', '']), CFG)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.rows).toEqual([])
+    expect(result.emptySeatRows).toBe(2)
+  })
+
+  it('坐标非法且学生为空 → 不享受空座豁免，仍然报错', () => {
+    const result = parseSeatRows(sheet(['9', '1', '', '']), CFG)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.emptySeatRows).toBe(0)
+    expect(result.rows[0]!.errors.join()).toContain('超出范围')
+  })
 })
 
 describe('校验：错误数据绝不进 plan', () => {
@@ -230,6 +257,51 @@ describe('校验：错误数据绝不进 plan', () => {
 
     expect(result.blankRows).toBe(3)
     expect(result.blocked).toBe(0)
+  })
+
+  it('空座行计入总数与有效座位，但不产生任何指派', () => {
+    // 导出的 63 行列表：1 名学生在座，其余 62 行是空座
+    const parsed = parseSeatRows(
+      sheet(['1', '1', '0101', '甲'], ['1', '2', '', ''], ['1', '3', '', '']),
+      CFG,
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+
+    const result = planSeatImport(
+      parsed.rows,
+      students,
+      emptySeats(),
+      parsed.blankRows,
+      parsed.emptySeatRows,
+    )
+    expect(result.total).toBe(3)
+    expect(result.emptySeatRows).toBe(2)
+    expect(result.validSeats).toBe(3)
+    expect(result.assignable).toBe(1)
+    expect(result.blocked).toBe(0)
+    expect(result.errorCount).toBe(0)
+    expect(result.plan.assignments).toEqual([{ row: 1, col: 1, studentId: 's1' }])
+  })
+
+  it('整份都是空座行 → 0 可导入、0 错误（不清空现有座位）', () => {
+    const parsed = parseSeatRows(sheet(['1', '1', '', ''], ['2', '2', '', '']), CFG)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+
+    const seats = emptySeats()
+    seats.find((seat) => seat.id === 'r2c2')!.studentId = 's2'
+    const result = planSeatImport(
+      parsed.rows,
+      students,
+      seats,
+      parsed.blankRows,
+      parsed.emptySeatRows,
+    )
+    expect(result.assignable).toBe(0)
+    expect(result.blocked).toBe(0)
+    expect(result.errorCount).toBe(0)
+    expect(result.plan.assignments).toEqual([])
   })
 })
 

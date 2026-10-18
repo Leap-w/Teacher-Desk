@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ChevronDown, FileSpreadsheet, FileText } from 'lucide-vue-next'
+import { ChevronDown, FileSpreadsheet, FileText, List } from 'lucide-vue-next'
 
 import type { SeatExportKind } from '@/utils/seatExport'
 
@@ -12,9 +12,12 @@ import type { SeatExportKind } from '@/utils/seatExport'
  * v3.4.0：PDF 两项都改成**横向 A4**（双视角 = 一个视角一页，共 2 页），
  * 并新增 Excel 一项（照需求方模板出的 .xlsx，两个视角各一个工作表）。
  *
- * **v3.5.1：菜单只剩这两项**。撤掉的三项是 PNG 老师视角 / PNG 学生视角 /
+ * **v3.5.1：菜单精简到两项**。撤掉的三项是 PNG 老师视角 / PNG 学生视角 /
  * PDF 老师视角——同一个「双视角」文件里两个视角都在，单视角入口是重复的。
  * 文案里的「（2 页横向 A4）」也一并去掉：那两个数字是给实现看的，不是给老师看的。
+ *
+ * 本次新增第三项「Excel · 行列列表」：四列（行 / 列 / 学号 / 姓名）× 全部 63 个座位，
+ * 是纯数据表，导出后能直接经「导入座位」读回；与上面两项「给人看 / 打印」的座位图不同。
  *
  * v3.7.5（§4.4）：多张座位表并存后，「导出的是哪一份」必须在按下之前就说清，
  * 于是下拉顶部常驻一行「当前座位表 · 方案名」。**只是把既有事实说出来**——
@@ -24,6 +27,7 @@ import type { SeatExportKind } from '@/utils/seatExport'
 const ITEMS: { kind: SeatExportKind; label: string; icon: typeof FileText }[] = [
   { kind: 'pdf-dual', label: 'PDF · 双视角', icon: FileText },
   { kind: 'xlsx-dual', label: 'Excel · 两个视角', icon: FileSpreadsheet },
+  { kind: 'xlsx-list', label: 'Excel · 行列列表', icon: List },
 ]
 
 const props = defineProps<{

@@ -1,37 +1,42 @@
 /**
- * 座位图导出文件 → 整表恢复（v3.7.6）。
+ * Excel 座位图 → **新建一张座位表**（v3.7.6 起支持，本次改为新建语义）。
  *
- * ## 两条导入路径，一条现有入口
+ * ## 与行列列表导入的区别
  *
- * 现有的行列列表导入（`services/seatImport.ts`）是**逐条应用**：只动表格里列出的
- * 座位，表没提到的座位保持原样。导出文件不同——它描述的是**一整张座位表**，
- * 包括哪些座位空着；恢复时必须整表替换，否则「导出时是空座、现在有人」的座位
- * 会悄悄留下来，恢复结果与导出文件对不上。
+ * `services/seatImport.ts` 的行列列表是**逐条应用**：只动表格里列出的座位，
+ * 表没提到的座位保持原样。座位图描述的却是**一整张座位表**，包括哪些座位空着；
+ * 所以它不适合往现有方案上打补丁，而是按图**新建一张座位表并切换过去**——
+ * 现有所有座位表原样保留，导入结果与图对不上时也不会破坏任何已有安排。
  *
- * 所以本文件单独规划「整表恢复」，但入口仍是座位页现有的「导入」弹窗：
- *   ① 隐藏数据表存在 → 优先读结构化数据（版本 / 布局 / 63 个座位 / 约束）；
- *   ② 没有隐藏表、但有两张可视化工作表 → 按版面识别（兼容 v3.7.5 及更早导出的文件）；
- *   ③ 两者都不是 → 交回行列列表导入，旧文件行为不变。
+ * ## 两条数据来源，同一条入口
+ *
+ * 座位页的「导入」弹窗会先调用 `detectSeatMapWorkbook` 看整份工作簿：
+ *   ① 有隐藏数据表（`TeacherDesk座位数据`）→ 读结构化数据（版本 / 布局 / 63 个座位 / 约束）；
+ *   ② 没有隐藏表 → 按可视化版面识别：先试 `学生视角` / `老师视角`，再扫描任意工作表。
+ *      所以**外部手工座位图**只要版式符合模板几何（第 5 行列号 1~9、A6:A12 排号 1~7）
+ *      也能导入；旧版导出文件同样走这条路；
+ *   ③ 两者都不是 → `none`，交回行列列表导入，旧文件行为不变。
  *
  * ## 隐藏数据不是「唯一且不可校验的信任来源」
  *
- * 导入端不会照单全收隐藏表，至少做四道校验：
+ * 导入端不会照单全收隐藏表：
  *   - **版本与格式**：格式标识 / 数据版本不认识就明确报错，不猜着读；
  *   - **布局**：排数 / 列数 / 列块 / 固定空位 / 座位数必须与当前教室一致；
  *   - **身份**：每个座位都回到**当前学生名单**里重新匹配（学号优先，重名必须能唯一消歧），
  *     不信任导出文件里的学生 id；
- *   - **版面交叉校验**：隐藏表里每个座位的「显示名」必须与 `学生视角` / `老师视角`
- *     对应格子逐格一致；对不上就整份拦下，提示文件可能被修改过。
+ *   - **版面一致性**：隐藏表与可视化座位图逐格核对。一致时用隐藏数据（可恢复学号与
+ *     排座约束）；**不一致时以可见座位图为准**并提示；隐藏数据读不了时，只要可见图
+ *     认得出就回退可见图。教师改过图，导入结果就跟改过的图走。
  *
- * 旧版文件按版面识别时，显示名里的重名消歧后缀（如「张伟（3287）」）参与唯一匹配；
+ * 按版面识别时，显示名里的重名消歧后缀（如「张伟（3287）」）参与唯一匹配；
  * 没有后缀的重名仍然拦下——**不凭姓名猜身份**。
  *
  * 本文件前半段是纯解析 / 规划（不碰 xlsx、不碰 DOM、不碰 store），可在 node 自检里
- * 直接喂数组跑；落库只经 `seatStore.applySeatRestore()`。
+ * 直接喂数组跑；落库只经 `seatStore.createPlanFromSeatMap()`。
  */
 import { cellText, normalizeHeader } from '@/services/sheetCell'
 import { buildStudentIndex } from '@/services/seatImport'
-import type { SeatImportAssignment, SeatImportChange } from '@/services/seatImport'
+import type { SeatImportAssignment } from '@/services/seatImport'
 import type { ReadWorkbookResult } from '@/services/studentImport'
 import {
   createEmptySeatPlanConstraints,
@@ -58,7 +63,7 @@ import type { Student } from '@/types'
 /* ==================== 解析结果的数据形状 ==================== */
 
 /** 导出文件记录的教室布局（隐藏数据表里的布局元数据） */
-export interface SeatRestoreLayout {
+export interface SeatMapLayout {
   rows: number
   cols: number
   blocks: number[]
@@ -68,7 +73,7 @@ export interface SeatRestoreLayout {
 }
 
 /** 隐藏数据表 / 可视化版面里的一个座位 */
-export interface SeatRestoreSeatInput {
+export interface SeatMapSeatInput {
   /** Excel 里的实际行号（预览里「第几行」按它显示） */
   rowNumber: number
   row: number
@@ -82,22 +87,20 @@ export interface SeatRestoreSeatInput {
 }
 
 /** 约束里的学生引用：只认学号与姓名，不认本机学生 id */
-export interface RawSeatRestoreStudentRef {
+export interface RawSeatMapStudentRef {
   studentNo: string
   name: string
 }
 
-export interface RawSeatRestoreConstraints {
-  sameDeskForbidden: Array<[RawSeatRestoreStudentRef, RawSeatRestoreStudentRef]>
-  adjacentGroupForbidden: Array<
-    [RawSeatRestoreStudentRef, RawSeatRestoreStudentRef, RawSeatRestoreStudentRef]
-  >
-  frontRowStudents: RawSeatRestoreStudentRef[]
-  backRowStudents: RawSeatRestoreStudentRef[]
+export interface RawSeatMapConstraints {
+  sameDeskForbidden: Array<[RawSeatMapStudentRef, RawSeatMapStudentRef]>
+  adjacentGroupForbidden: Array<[RawSeatMapStudentRef, RawSeatMapStudentRef, RawSeatMapStudentRef]>
+  frontRowStudents: RawSeatMapStudentRef[]
+  backRowStudents: RawSeatMapStudentRef[]
 }
 
-/** 一份已识别为「座位图导出文件」的解析结果 */
-export interface ParsedSeatRestore {
+/** 一份已识别为「座位图」的解析结果 */
+export interface ParsedSeatMap {
   source: 'metadata' | 'visual'
   sourceSheet: string
   formatVersion?: number
@@ -106,12 +109,19 @@ export interface ParsedSeatRestore {
   planName?: string
   planCreatedAt?: string
   planUpdatedAt?: string
-  layout: SeatRestoreLayout
-  seats: SeatRestoreSeatInput[]
-  /** 可视化版面文件（旧版导出）没有约束数据 → undefined = 保持当前约束不变 */
-  constraints?: RawSeatRestoreConstraints
+  layout: SeatMapLayout
+  seats: SeatMapSeatInput[]
+  /** 按版面识别时没有约束数据 → undefined = 新座位表用空约束 */
+  constraints?: RawSeatMapConstraints
   /** 是否真的与可视化工作表做过逐格核对 */
   visualChecked: boolean
+  /**
+   * 按可见图导入时，为什么没用隐藏数据：
+   * `missing` = 文件本来就没有隐藏表（含外部手工图 / 旧版导出）；
+   * `unreadable` = 有隐藏表但读不出来；
+   * `mismatch` = 隐藏数据与可见图不一致。
+   */
+  visualFallback?: 'missing' | 'unreadable' | 'mismatch'
   warnings: string[]
 }
 
@@ -156,7 +166,7 @@ function findConstraintHeader(rows: readonly unknown[][], from: number): number 
   return -1
 }
 
-function layoutErrorOf(layout: SeatRestoreLayout, config: ClassroomConfig): string | undefined {
+function layoutErrorOf(layout: SeatMapLayout, config: ClassroomConfig): string | undefined {
   const describe = (value: {
     rows: number
     cols: number
@@ -182,7 +192,7 @@ function layoutErrorOf(layout: SeatRestoreLayout, config: ClassroomConfig): stri
   if (layout.occupiedSeats !== config.occupiedSeats) problems.push('可坐座位数')
   if (problems.length === 0) return undefined
 
-  return `这份座位图按 ${describe(layout)} 导出，与当前教室（${describe(config)}）的${problems.join('、')}不一致，无法恢复。`
+  return `这份座位图按 ${describe(layout)} 导出，与当前教室（${describe(config)}）的${problems.join('、')}不一致，无法导入。`
 }
 
 /**
@@ -193,7 +203,7 @@ function layoutErrorOf(layout: SeatRestoreLayout, config: ClassroomConfig): stri
  */
 export function parseSeatDataSheet(
   rows: readonly unknown[][],
-): { ok: true; parsed: ParsedSeatRestore } | { ok: false; error: string } {
+): { ok: true; parsed: ParsedSeatMap } | { ok: false; error: string } {
   const seatHeader = findSeatHeader(rows)
   if (seatHeader < 0) {
     return {
@@ -298,7 +308,7 @@ export function parseSeatDataSheet(
     return { ok: false, error: '座位数据里的布局数值自相矛盾，文件可能已损坏。' }
   }
 
-  const layout: SeatRestoreLayout = {
+  const layout: SeatMapLayout = {
     rows: rowsCount,
     cols: colsCount,
     blocks,
@@ -307,7 +317,7 @@ export function parseSeatDataSheet(
     fixedEmptySeat: { row: fixedRow, col: fixedCol },
   }
 
-  const seatRows: SeatRestoreSeatInput[] = []
+  const seatRows: SeatMapSeatInput[] = []
   const seenSeats = new Map<string, number>()
   let occupiedCount = 0
 
@@ -433,15 +443,15 @@ function parseConstraintRows(
   rows: readonly unknown[][],
   headerIndex: number,
   columns: Map<string, number>,
-): { ok: true; constraints: RawSeatRestoreConstraints } | { ok: false; error: string } {
-  const constraints: RawSeatRestoreConstraints = {
+): { ok: true; constraints: RawSeatMapConstraints } | { ok: false; error: string } {
+  const constraints: RawSeatMapConstraints = {
     sameDeskForbidden: [],
     adjacentGroupForbidden: [],
     frontRowStudents: [],
     backRowStudents: [],
   }
 
-  const readRef = (row: unknown[], slot: number): RawSeatRestoreStudentRef => ({
+  const readRef = (row: unknown[], slot: number): RawSeatMapStudentRef => ({
     studentNo: cellText(row[columns.get(`学生${slot}学号`) ?? -1]),
     name: cellText(row[columns.get(`学生${slot}姓名`) ?? -1]),
   })
@@ -549,11 +559,11 @@ export function parseVisualSeatSheet(
   rows: readonly unknown[][],
   sheetName: string,
   config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
-): ParsedSeatRestore | undefined {
+): ParsedSeatMap | undefined {
   const cells = deriveVisualSeatMap(rows)
   if (!cells) return undefined
 
-  const seats: SeatRestoreSeatInput[] = []
+  const seats: SeatMapSeatInput[] = []
   for (let row = 1; row <= config.rows; row += 1) {
     for (let col = 1; col <= config.cols; col += 1) {
       const cell = cells.get(`${row}-${col}`)
@@ -590,102 +600,175 @@ export function parseVisualSeatSheet(
 
 /* ==================== 工作簿识别 ==================== */
 
-export type SeatRestoreDetection =
-  | { kind: 'none' }
-  | { kind: 'error'; error: string }
-  | { kind: 'restore'; parsed: ParsedSeatRestore }
+export type SeatMapWorkbookDetection =
+  { kind: 'none' } | { kind: 'error'; error: string } | { kind: 'map'; parsed: ParsedSeatMap }
+
+interface VisualMismatch {
+  sheetName: string
+  /** 第一处对不上的格子（给提示条用） */
+  detail: string
+}
+
+interface VisualCheckResult {
+  mismatched: VisualMismatch[]
+  checked: boolean
+  warnings: string[]
+}
 
 /**
  * 隐藏数据表与可视化工作表逐格核对。
  *
- * 只核对两边都存在的座位；任何一格「数据表有 / 座位图空」或反过来都算不一致。
- * 这是「隐藏数据不能是唯一信任来源」的落地：教师如果手改了可视化座位图
- * （或文件在传输中损坏），导入端不会闭眼按隐藏表恢复。
+ * 只核对版面认得出的已知工作表（学生视角 / 老师视角）；任何一格「数据表有 / 座位图空」
+ * 或反过来都算不一致。**不一致不再整份拦下**：调用方改按可见图导入并提示。
  */
-function crossCheckVisual(
-  workbook: ReadWorkbookResult,
-  parsed: ParsedSeatRestore,
-): { error?: string; checked: boolean; warnings: string[] } {
+function checkVisualSheets(workbook: ReadWorkbookResult, parsed: ParsedSeatMap): VisualCheckResult {
   const warnings: string[] = []
+  const mismatched: VisualMismatch[] = []
   let checked = false
 
   for (const sheetName of SEAT_VISUAL_SHEETS) {
     if (!workbook.sheetNames.includes(sheetName)) continue
-    const rows = workbook.sheets.get(sheetName) ?? []
-    const cells = deriveVisualSeatMap(rows)
+    const cells = deriveVisualSeatMap(workbook.sheets.get(sheetName) ?? [])
     if (!cells) {
       warnings.push(`工作表「${sheetName}」的座位版面无法识别，未参与交叉校验。`)
       continue
     }
     checked = true
 
+    let detail = ''
     for (const seat of parsed.seats) {
       const cell = cells.get(`${seat.row}-${seat.col}`)
       if (!cell) {
-        return {
-          error: `工作表「${sheetName}」缺少第 ${seat.row} 排第 ${seat.col} 列，无法与结构化数据核对。`,
-          checked,
-          warnings,
-        }
+        detail = `缺少第 ${seat.row} 排第 ${seat.col} 列`
+        break
       }
       const expected = seat.occupied ? seat.displayName : ''
       if (cell.text !== expected) {
-        return {
-          error: `结构化数据与可视化座位图「${sheetName}」不一致（第 ${seat.row} 排第 ${seat.col} 列：数据为「${expected || '空'}」，座位图为「${cell.text || '空'}」）。文件可能被修改过，请重新导出。`,
-          checked,
-          warnings,
-        }
+        detail = `第 ${seat.row} 排第 ${seat.col} 列：隐藏数据为「${expected || '空'}」，座位图为「${cell.text || '空'}」`
+        break
       }
     }
+    if (detail) mismatched.push({ sheetName, detail })
   }
 
-  if (!checked) warnings.push('没有可核对的可视化座位图工作表，已仅按结构化数据恢复。')
-  return { checked, warnings }
+  if (!checked) warnings.push('没有可核对的可视化座位图工作表，已仅按隐藏数据导入。')
+  return { mismatched, checked, warnings }
+}
+
+/**
+ * 候选工作表：已知表名（学生视角 / 老师视角）优先，其余按工作簿顺序；
+ * 隐藏数据表不参与版面识别。外部手工座位图通常只有一张任意名字的表，就在第二步里命中。
+ */
+function visualSheetCandidates(workbook: ReadWorkbookResult): string[] {
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const name of SEAT_VISUAL_SHEETS) {
+    if (!workbook.sheetNames.includes(name) || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
+  }
+  for (const name of workbook.sheetNames) {
+    if (name === SEAT_EXPORT_SHEET || seen.has(name)) continue
+    seen.add(name)
+    names.push(name)
+  }
+  return names
+}
+
+/** 按候选顺序找第一张版面认得出的工作表（返回的 Parse 结果带 `sourceSheet`） */
+function parseAnyVisualSheet(
+  workbook: ReadWorkbookResult,
+  config: ClassroomConfig,
+): ParsedSeatMap | undefined {
+  for (const sheetName of visualSheetCandidates(workbook)) {
+    const parsed = parseVisualSeatSheet(workbook.sheets.get(sheetName) ?? [], sheetName, config)
+    if (parsed) return parsed
+  }
+  return undefined
+}
+
+/** 隐藏数据读不了 → 回退可见图；可见图也认不出就把原始错误交回去 */
+function fallbackToVisual(
+  workbook: ReadWorkbookResult,
+  config: ClassroomConfig,
+  reason: string,
+): SeatMapWorkbookDetection {
+  const visual = parseAnyVisualSheet(workbook, config)
+  if (!visual) return { kind: 'error', error: reason }
+  visual.visualFallback = 'unreadable'
+  visual.warnings.push(
+    `隐藏数据无法读取（${reason}），已按「${visual.sourceSheet}」版面导入：学号与排座约束无法恢复，按姓名匹配，重名会被拦下。`,
+  )
+  return { kind: 'map', parsed: visual }
 }
 
 /**
  * 判断一份工作簿属于哪种导入：
- *   - 有隐藏数据表 → 结构化恢复（格式 / 版本 / 版面交叉校验不通过则报错）；
- *   - 有可视化座位图 → 旧版导出的版面识别；
- *   - 都没有 → `none`，弹窗继续走行列列表导入。
+ *   - 有隐藏数据表 → 隐藏数据可用就用它；与可见图不一致 / 读不了时改按可见图；
+ *   - 没有隐藏表 → 先试已知表名，再扫描任意工作表，版面认得出就是座位图；
+ *   - 都认不出 → `none`，弹窗继续走行列列表导入。
+ *
+ * **隐藏数据与可见图一致**：用隐藏数据（能还原学号与排座约束）；
+ * **不一致**：按第一张对不上的可见图导入（教师改过图，就以图为准），并写一条警告；
+ * **隐藏数据坏**：可见图认得出就回退可见图，认不出才报原始错误。
  */
-export function detectSeatRestoreWorkbook(
+export function detectSeatMapWorkbook(
   workbook: ReadWorkbookResult,
   config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
-): SeatRestoreDetection {
+): SeatMapWorkbookDetection {
   if (workbook.sheetNames.includes(SEAT_EXPORT_SHEET)) {
-    const parsed = parseSeatDataSheet(workbook.sheets.get(SEAT_EXPORT_SHEET) ?? [])
-    if (!parsed.ok) return { kind: 'error', error: parsed.error }
+    const metadata = parseSeatDataSheet(workbook.sheets.get(SEAT_EXPORT_SHEET) ?? [])
+    if (!metadata.ok) return fallbackToVisual(workbook, config, metadata.error)
 
-    const layoutError = layoutErrorOf(parsed.parsed.layout, config)
-    if (layoutError) return { kind: 'error', error: layoutError }
+    const layoutError = layoutErrorOf(metadata.parsed.layout, config)
+    if (layoutError) return fallbackToVisual(workbook, config, layoutError)
 
-    const checked = crossCheckVisual(workbook, parsed.parsed)
-    if (checked.error) return { kind: 'error', error: checked.error }
-    parsed.parsed.visualChecked = checked.checked
-    parsed.parsed.warnings.push(...checked.warnings)
-    return { kind: 'restore', parsed: parsed.parsed }
+    const parsed = metadata.parsed
+    const check = checkVisualSheets(workbook, parsed)
+    parsed.visualChecked = check.checked
+    parsed.warnings.push(...check.warnings)
+
+    const firstMismatch = check.mismatched[0]
+    if (firstMismatch) {
+      const visual = parseVisualSeatSheet(
+        workbook.sheets.get(firstMismatch.sheetName) ?? [],
+        firstMismatch.sheetName,
+        config,
+      )
+      if (visual) {
+        visual.visualFallback = 'mismatch'
+        visual.warnings.push(
+          `隐藏数据与可视化座位图「${firstMismatch.sheetName}」不一致（${firstMismatch.detail}），已按可见座位图导入：学号与排座约束无法恢复，按姓名匹配，重名会被拦下。`,
+        )
+        return { kind: 'map', parsed: visual }
+      }
+    }
+
+    return { kind: 'map', parsed }
   }
 
-  const hasVisualSheet = SEAT_VISUAL_SHEETS.some((name) => workbook.sheetNames.includes(name))
-  if (!hasVisualSheet) return { kind: 'none' }
-
-  for (const sheetName of SEAT_VISUAL_SHEETS) {
-    if (!workbook.sheetNames.includes(sheetName)) continue
-    const parsed = parseVisualSeatSheet(workbook.sheets.get(sheetName) ?? [], sheetName, config)
-    if (parsed) return { kind: 'restore', parsed }
+  const knownSheetSeen = SEAT_VISUAL_SHEETS.some((name) => workbook.sheetNames.includes(name))
+  const visual = parseAnyVisualSheet(workbook, config)
+  if (visual) {
+    visual.visualFallback = 'missing'
+    return { kind: 'map', parsed: visual }
   }
 
-  return {
-    kind: 'error',
-    error:
-      '看起来是座位图导出文件，但「学生视角 / 老师视角」的版面无法识别，文件可能已损坏或不是这个模板导出的。',
+  // 有「学生视角 / 老师视角」却认不出、也没有其它表匹配 → 仍按损坏的座位图报错
+  if (knownSheetSeen) {
+    return {
+      kind: 'error',
+      error:
+        '看起来是座位图导出文件，但「学生视角 / 老师视角」的版面无法识别，文件可能已损坏或不是这个模板导出的。',
+    }
   }
+
+  return { kind: 'none' }
 }
 
-/* ==================== 整表恢复规划（纯函数） ==================== */
+/* ==================== 座位图导入规划（纯函数） ==================== */
 
-export interface SeatRestorePreviewRow {
+export interface SeatMapImportPreviewRow {
   rowNumber: number
   row: number
   col: number
@@ -695,47 +778,42 @@ export interface SeatRestorePreviewRow {
   name: string
   studentLabel?: string
   studentId?: string
-  action: 'restore' | 'blocked'
-  change?: SeatImportChange
+  action: 'import' | 'blocked'
   errors: string[]
   warnings: string[]
 }
 
-export interface SeatRestorePlan {
+export interface SeatMapImportPlan {
   ok: boolean
   source: 'metadata' | 'visual'
   sourceSheet: string
   planName?: string
   appVersion?: string
   exportedAt?: string
-  layout: SeatRestoreLayout
+  layout: SeatMapLayout
   layoutLabel: string
   totalSeats: number
   occupiedSeats: number
   emptySeats: number
   assignable: number
-  changed: number
-  unchanged: number
-  /** 当前方案里会因这次整表恢复而腾空的座位数（含换座学生让出的原座位） */
-  clearedSeats: number
   blocked: number
   errorCount: number
-  rows: SeatRestorePreviewRow[]
+  rows: SeatMapImportPreviewRow[]
   assignments: SeatImportAssignment[]
-  /** 有值 = 恢复这份导出里的约束（空对象 = 清空约束）；undefined = 保持当前约束不变 */
+  /** 隐藏数据里的约束；可见图来源为 undefined（新座位表用空约束） */
   constraints?: SeatPlanConstraints
   errors: string[]
   warnings: string[]
 }
 
 /** 学生索引：现有学号 / 姓名索引 + 显示名索引（重名消歧用） */
-interface RestoreIndex {
+interface SeatMapIndex {
   byStudentNo: Map<string, Student>
   byName: Map<string, Student[]>
   byDisplay: Map<string, Student[]>
 }
 
-function buildRestoreIndex(students: readonly Student[]): RestoreIndex {
+function buildSeatMapIndex(students: readonly Student[]): SeatMapIndex {
   const active = students.filter((student) => !student.deletedAt)
   const base = buildStudentIndex(active)
   const nameCounts = buildNameCounts(active)
@@ -751,7 +829,7 @@ function buildRestoreIndex(students: readonly Student[]): RestoreIndex {
 
 /** 显示名唯一命中；`ambiguous` 表示同名同后缀（无法确认） */
 function resolveByDisplay(
-  index: RestoreIndex,
+  index: SeatMapIndex,
   displayName: string,
 ): { student?: Student; ambiguous?: boolean } {
   const text = displayName.trim()
@@ -785,7 +863,7 @@ interface StudentResolution {
 }
 
 /** 座位上的学生 → 当前名单里的学生（学号优先；重名必须能唯一消歧） */
-function resolveSeatStudent(seat: SeatRestoreSeatInput, index: RestoreIndex): StudentResolution {
+function resolveSeatStudent(seat: SeatMapSeatInput, index: SeatMapIndex): StudentResolution {
   if (seat.studentNo) {
     const candidate = index.byStudentNo.get(seat.studentNo)
     if (!candidate) return { error: `学号 ${seat.studentNo} 不在学生名单中` }
@@ -823,8 +901,8 @@ function resolveSeatStudent(seat: SeatRestoreSeatInput, index: RestoreIndex): St
 
 /** 约束引用 → 当前学生 id（学号优先；重名且没学号 → 拦下） */
 function resolveConstraintStudent(
-  ref: RawSeatRestoreStudentRef,
-  index: RestoreIndex,
+  ref: RawSeatMapStudentRef,
+  index: SeatMapIndex,
 ): { studentId?: string; error?: string } {
   if (ref.studentNo) {
     const candidate = index.byStudentNo.get(ref.studentNo)
@@ -842,13 +920,13 @@ function resolveConstraintStudent(
 }
 
 function resolveConstraints(
-  raw: RawSeatRestoreConstraints,
-  index: RestoreIndex,
+  raw: RawSeatMapConstraints,
+  index: SeatMapIndex,
 ): { constraints?: SeatPlanConstraints; errors: string[] } {
   const errors: string[] = []
   const resolvePair = (
     label: string,
-    refs: [RawSeatRestoreStudentRef, RawSeatRestoreStudentRef],
+    refs: [RawSeatMapStudentRef, RawSeatMapStudentRef],
   ): [string, string] | undefined => {
     const a = resolveConstraintStudent(refs[0], index)
     const b = resolveConstraintStudent(refs[1], index)
@@ -893,7 +971,7 @@ function resolveConstraints(
     })
   }
 
-  const resolveList = (label: string, refs: readonly RawSeatRestoreStudentRef[]): string[] => {
+  const resolveList = (label: string, refs: readonly RawSeatMapStudentRef[]): string[] => {
     const ids: string[] = []
     for (const ref of refs) {
       const resolved = resolveConstraintStudent(ref, index)
@@ -912,11 +990,7 @@ function resolveConstraints(
   return { constraints: normalizeSeatPlanConstraints(constraints), errors }
 }
 
-function emptyPlan(
-  parsed: ParsedSeatRestore,
-  errors: string[],
-  warnings: string[],
-): SeatRestorePlan {
+function emptyPlan(parsed: ParsedSeatMap, errors: string[], warnings: string[]): SeatMapImportPlan {
   return {
     ok: false,
     source: parsed.source,
@@ -930,9 +1004,6 @@ function emptyPlan(
     occupiedSeats: 0,
     emptySeats: parsed.layout.totalSeats,
     assignable: 0,
-    changed: 0,
-    unchanged: 0,
-    clearedSeats: 0,
     blocked: 0,
     errorCount: errors.length,
     rows: [],
@@ -943,22 +1014,22 @@ function emptyPlan(
   }
 }
 
-function layoutLabelOf(layout: SeatRestoreLayout): string {
+function layoutLabelOf(layout: SeatMapLayout): string {
   return `${layout.rows} 排 × ${layout.cols} 列（${layout.blocks.join('-')}）· 固定空位第 ${layout.fixedEmptySeat.row} 排第 ${layout.fixedEmptySeat.col} 列`
 }
 
 /**
- * 解析结果 + 当前学生名单 / 当前座位 → 可确认的整表恢复计划（纯函数，无副作用）。
+ * 解析结果 + 当前学生名单 → 可确认的「新建座位表」计划（纯函数，无副作用）。
  *
  * `assignments` 只含**无错误**的已就座座位；只要有任何全局错误或被拦行，
- * `ok` 就是 false，页面禁用确认按钮、`applySeatRestore` 也不会被调用。
+ * `ok` 就是 false，页面禁用确认按钮、`createPlanFromSeatMap` 也不会被调用。
+ * 这里**不读取当前方案的座位**——新表与现有方案无关，只做身份匹配与校验。
  */
-export function planSeatRestore(
-  parsed: ParsedSeatRestore,
+export function planSeatMapImport(
+  parsed: ParsedSeatMap,
   students: readonly Student[],
-  currentSeats: ReadonlyArray<{ row: number; col: number; studentId?: string }>,
   config: ClassroomConfig = DEFAULT_CLASSROOM_CONFIG,
-): SeatRestorePlan {
+): SeatMapImportPlan {
   const globalErrors: string[] = []
   const globalWarnings = [...parsed.warnings]
 
@@ -972,9 +1043,9 @@ export function planSeatRestore(
     )
   }
 
-  const index = buildRestoreIndex(students)
+  const index = buildSeatMapIndex(students)
   const nameCounts = buildNameCounts(students.filter((student) => !student.deletedAt))
-  const seatByKey = new Map<string, SeatRestoreSeatInput>()
+  const seatByKey = new Map<string, SeatMapSeatInput>()
   for (const seat of parsed.seats) {
     const key = `${seat.row}-${seat.col}`
     if (seatByKey.has(key)) {
@@ -984,23 +1055,10 @@ export function planSeatRestore(
     seatByKey.set(key, seat)
   }
 
-  const currentStudentAtSeat = new Map<string, string>()
-  const currentSeatOfStudent = new Map<string, string>()
-  for (const seat of currentSeats) {
-    if (!seat.studentId) continue
-    const key = `${seat.row}-${seat.col}`
-    currentStudentAtSeat.set(key, seat.studentId)
-    if (!currentSeatOfStudent.has(seat.studentId)) {
-      currentSeatOfStudent.set(seat.studentId, key)
-    }
-  }
-
-  const rows: SeatRestorePreviewRow[] = []
+  const rows: SeatMapImportPreviewRow[] = []
   const assignments: SeatImportAssignment[] = []
   const assignedStudentRow = new Map<string, number>()
   let occupiedSeats = 0
-  let changed = 0
-  let unchanged = 0
   let blocked = 0
   let rowErrorCount = 0
 
@@ -1039,12 +1097,6 @@ export function planSeatRestore(
 
     if (studentId && resolved.student && errors.length === 0) {
       assignments.push({ row: seat.row, col: seat.col, studentId })
-      const key = `${seat.row}-${seat.col}`
-      const here = currentStudentAtSeat.get(key)
-      const elsewhere = currentSeatOfStudent.get(studentId)
-      const change: SeatImportChange = here === studentId ? 'same' : elsewhere ? 'move' : 'new'
-      if (change === 'same') unchanged += 1
-      else changed += 1
       rows.push({
         rowNumber: seat.rowNumber,
         row: seat.row,
@@ -1054,8 +1106,7 @@ export function planSeatRestore(
         name: resolved.student.name,
         studentLabel: formatStudentShortName(resolved.student, nameCounts),
         studentId,
-        action: 'restore',
-        change,
+        action: 'import',
         errors,
         warnings,
       })
@@ -1085,17 +1136,9 @@ export function planSeatRestore(
       constraints = resolvedConstraints.constraints
     }
   } else {
-    globalWarnings.push('旧版导出文件不含排座约束，导入后当前方案的排座约束保持不变。')
+    globalWarnings.push('这是按座位图版面识别的，文件里没有排座约束；新座位表的排座约束为空。')
   }
 
-  /*
-   * 「会腾空的座位」= 现在有人、恢复后同一格没人。换座学生让出的旧座位如果没有被
-   * 别人接手，也计入——这正是整表恢复与逐条导入的差别：文件里没写的座位会被清空。
-   */
-  const targetSeatKeys = new Set(assignments.map((item) => `${item.row}-${item.col}`))
-  const clearedSeats = currentSeats.filter(
-    (seat) => seat.studentId && !targetSeatKeys.has(`${seat.row}-${seat.col}`),
-  ).length
   const errorCount = globalErrors.length + rowErrorCount
 
   return {
@@ -1111,9 +1154,6 @@ export function planSeatRestore(
     occupiedSeats,
     emptySeats: parsed.layout.totalSeats - occupiedSeats,
     assignable: assignments.length,
-    changed,
-    unchanged,
-    clearedSeats,
     blocked,
     errorCount,
     rows,

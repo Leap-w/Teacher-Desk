@@ -1,34 +1,32 @@
 /**
- * v3.7.6 Phase 2 自检：**座位图导出文件 → 重新导入并恢复座位安排**。
+ * 座位图导入自检：**Excel 座位图 → 新建一张座位表**。
  *
- * 这一版盯的是「导出前后能不能对上」这一件事，分三层：
+ * 这一版盯的是「图能不能读进来、读进来会不会破坏已有数据」，分四层：
  *
  *  ① **我们导出的文件，我们自己的导入端能原样读回来**（结构化数据 + 可视化版面交叉校验）。
  *     这条必须让「写文件」与「读文件」都走真实实现——手写的假数据测不出字段名漂移。
- *  ② **旧版导出文件（只有两张可视化工作表）按版面也能恢复**，同时明确「约束恢复不了」；
- *     旧的行列列表文件仍然走原来的逐条导入，不被新逻辑抢走。
- *  ③ **坏文件一律整份拦下**：版本不认识 / 缺字段 / 坐标非法 / 固定空位有人 / 版面与数据对不上 /
- *     损坏的行列布局，都要有可照做的错误文案，且不产生半份恢复计划。
- *
- * 落库侧（`applySeatRestore`）另开一组：整表替换时未列出的座位必须清空、失败不写一个字节、
- * 撤销能同时还原座位与约束。
+ *  ② **没有隐藏数据的座位图按版面识别**：旧版导出文件、改名后的文件、外部手工座位图，
+ *     只要版式符合模板几何（第 5 行列号 1~9、A6:A12 排号 1~7）都能读；
+ *     隐藏数据与可见图不一致 / 隐藏数据坏掉时，以可见图为准并提示。
+ *  ③ **坏文件一律整份拦下**：版本不认识 / 缺字段 / 坐标非法 / 固定空位有人 / 损坏的行列布局，
+ *     都要有可照做的错误文案，且不产生半份计划。
+ *  ④ **落库是新建方案，不是覆盖当前方案**：现有座位表原样保留、新表名取自文件名并按序去重、
+ *     失败不写一个字节。
  */
 import { readFileSync } from 'node:fs'
 
-import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { installFakeBrowser, type FakeBrowser } from './helpers/env'
 import { appConfig } from '@/config'
-import { readRaw } from '@/services/storage'
 import { readWorkbookSheets } from '@/services/studentImport'
 import {
-  detectSeatRestoreWorkbook,
+  detectSeatMapWorkbook,
   parseSeatDataSheet,
-  planSeatRestore,
-} from '@/services/seatRestore'
-import type { ParsedSeatRestore, SeatRestoreSeatInput } from '@/services/seatRestore'
+  planSeatMapImport,
+} from '@/services/seatMapImport'
+import type { ParsedSeatMap, SeatMapSeatInput } from '@/services/seatMapImport'
 import { useSeatStore } from '@/stores/seat'
 import { useStudentStore } from '@/stores/student'
 import { SEAT_EXPORT_SHEET } from '@/utils/seatExportFormat'
@@ -117,12 +115,12 @@ function buildExport(
 
 async function readExport(
   bytes?: ArrayBuffer,
-): Promise<{ read: ReadWorkbookResult; parsed: ParsedSeatRestore }> {
+): Promise<{ read: ReadWorkbookResult; parsed: ParsedSeatMap }> {
   const result = await readWorkbookSheets(bytes ?? (await buildExport()))
   if (!result.ok) throw new Error(`读取导出文件失败：${result.error}`)
-  const detection = detectSeatRestoreWorkbook(result.workbook, CFG)
-  if (detection.kind !== 'restore') {
-    throw new Error(`没有识别成恢复文件：${detection.kind === 'error' ? detection.error : 'none'}`)
+  const detection = detectSeatMapWorkbook(result.workbook, CFG)
+  if (detection.kind !== 'map') {
+    throw new Error(`没有识别成座位图：${detection.kind === 'error' ? detection.error : 'none'}`)
   }
   return { read: result.workbook, parsed: detection.parsed }
 }
@@ -154,15 +152,15 @@ function seatRowIndex(rows: unknown[][], row: number, col: number): number {
 
 /** 手工构造解析结果：只改想测的那一个座位，其余照导出数据 */
 function parsedWith(
-  parsed: ParsedSeatRestore,
-  mutate: (seats: SeatRestoreSeatInput[]) => void,
-): ParsedSeatRestore {
+  parsed: ParsedSeatMap,
+  mutate: (seats: SeatMapSeatInput[]) => void,
+): ParsedSeatMap {
   const seats = parsed.seats.map((seat) => ({ ...seat }))
   mutate(seats)
   return { ...parsed, seats, warnings: [] }
 }
 
-function occupierAt(seats: SeatRestoreSeatInput[], row: number, col: number): SeatRestoreSeatInput {
+function occupierAt(seats: SeatMapSeatInput[], row: number, col: number): SeatMapSeatInput {
   const seat = seats.find((item) => item.row === row && item.col === col)
   if (!seat) throw new Error(`测试数据里没有第 ${row} 排第 ${col} 列`)
   return seat
@@ -211,15 +209,15 @@ describe('座位图导出文件：整份读回来', () => {
     expect(occupierAt(parsed.seats, 1, 9).occupied).toBe(false)
   })
 
-  it('计划：5 个座位全部可恢复，约束回到当前学生 id', async () => {
+  it('计划：5 个座位全部可导入，约束回到当前学生 id', async () => {
     const { parsed } = await readExport()
-    const plan = planSeatRestore(parsed, ROSTER, buildSeatGrid(), CFG)
+    const plan = planSeatMapImport(parsed, ROSTER, CFG)
 
     expect(plan.ok).toBe(true)
+    expect(plan.totalSeats).toBe(CFG.totalSeats)
+    expect(plan.occupiedSeats).toBe(PLACEMENT.length)
+    expect(plan.emptySeats).toBe(CFG.totalSeats - PLACEMENT.length)
     expect(plan.assignable).toBe(PLACEMENT.length)
-    expect(plan.changed).toBe(PLACEMENT.length)
-    expect(plan.unchanged).toBe(0)
-    expect(plan.clearedSeats).toBe(0)
     expect(plan.blocked).toBe(0)
     expect(plan.errors).toEqual([])
     expect(plan.warnings).toEqual([])
@@ -238,43 +236,27 @@ describe('座位图导出文件：整份读回来', () => {
     expect(plan.constraints?.frontRowStudents).toEqual(['s4'])
     expect(plan.constraints?.backRowStudents).toEqual(['s3'])
   })
-
-  it('当前表里的多余人 / 换座位：统计「会变动」与「将腾空」', async () => {
-    const { parsed } = await readExport()
-    // 当前：s1 原位不动；s6 坐第 4 排第 4 列（导出文件里没人 → 会腾空）
-    const current = buildSeatGrid(
-      new Map([
-        [seatOrdinal(1, 1, CFG), 's1'],
-        [seatOrdinal(4, 4, CFG), 's6'],
-      ]),
-      CFG,
-    )
-    const plan = planSeatRestore(parsed, ROSTER, current, CFG)
-    expect(plan.ok).toBe(true)
-    expect(plan.unchanged).toBe(1)
-    expect(plan.changed).toBe(PLACEMENT.length - 1)
-    expect(plan.clearedSeats).toBe(1)
-  })
 })
 
-/* ==================== ② 旧版导出文件：按可视化版面恢复 ==================== */
+/* ==================== ② 没有隐藏数据：按可见版面识别 ==================== */
 
-describe('旧版导出文件（没有隐藏数据表）', () => {
-  it('按两张可视化工作表的版面识别，仍能恢复 5 个座位', async () => {
+describe('没有隐藏数据表：按可视化版面识别', () => {
+  it('旧版导出文件（只有两张可视化工作表）按版面识别', async () => {
     const { read } = await readExport()
-    const detection = detectSeatRestoreWorkbook(visualOnly(read), CFG)
-    expect(detection.kind).toBe('restore')
-    if (detection.kind !== 'restore') return
+    const detection = detectSeatMapWorkbook(visualOnly(read), CFG)
+    expect(detection.kind).toBe('map')
+    if (detection.kind !== 'map') return
 
     const parsed = detection.parsed
     expect(parsed.source).toBe('visual')
+    expect(parsed.visualFallback).toBe('missing')
     expect(parsed.constraints).toBeUndefined()
     expect(parsed.seats).toHaveLength(CFG.totalSeats)
 
-    const plan = planSeatRestore(parsed, ROSTER, buildSeatGrid(), CFG)
+    const plan = planSeatMapImport(parsed, ROSTER, CFG)
     expect(plan.ok).toBe(true)
     expect(plan.assignable).toBe(PLACEMENT.length)
-    // 旧版文件恢复不了约束：明确提示，且保持当前约束（`constraints` 为 undefined）
+    // 旧版文件恢复不了约束：明确提示，且新表用空约束（`constraints` 为 undefined）
     expect(plan.constraints).toBeUndefined()
     expect(plan.warnings.some((text) => text.includes('约束'))).toBe(true)
     for (const [row, col, id] of PLACEMENT) {
@@ -285,16 +267,78 @@ describe('旧版导出文件（没有隐藏数据表）', () => {
 
   it('旧版文件里重名消歧后缀仍能唯一匹配（不靠姓名猜）', async () => {
     const { read } = await readExport()
-    const detection = detectSeatRestoreWorkbook(visualOnly(read), CFG)
-    if (detection.kind !== 'restore') throw new Error('应当识别为旧版导出文件')
-    const plan = planSeatRestore(detection.parsed, ROSTER, buildSeatGrid(), CFG)
+    const detection = detectSeatMapWorkbook(visualOnly(read), CFG)
+    if (detection.kind !== 'map') throw new Error('应当识别为座位图')
+    const plan = planSeatMapImport(detection.parsed, ROSTER, CFG)
     expect(plan.ok).toBe(true)
     expect(plan.rows.find((row) => row.row === 1 && row.col === 8)?.studentId).toBe('s2')
     expect(plan.rows.find((row) => row.row === 7 && row.col === 9)?.studentId).toBe('s3')
   })
 
-  it('行列列表文件不被当成导出文件（旧导入行为不变）', () => {
-    const detection = detectSeatRestoreWorkbook(
+  it('外部手工座位图：任意表名，只要版面符合模板几何就能识别', async () => {
+    const { read } = await readExport()
+    const rows = read.sheets.get('学生视角') ?? []
+    const workbook: ReadWorkbookResult = {
+      sheetNames: ['我的手工座位图'],
+      sheets: new Map([['我的手工座位图', rows]]),
+    }
+    const detection = detectSeatMapWorkbook(workbook, CFG)
+    expect(detection.kind).toBe('map')
+    if (detection.kind !== 'map') return
+
+    expect(detection.parsed.source).toBe('visual')
+    expect(detection.parsed.sourceSheet).toBe('我的手工座位图')
+    expect(detection.parsed.visualFallback).toBe('missing')
+
+    const plan = planSeatMapImport(detection.parsed, ROSTER, CFG)
+    expect(plan.ok).toBe(true)
+    expect(plan.assignable).toBe(PLACEMENT.length)
+  })
+
+  it('隐藏数据与可见图不一致 → 按可见图导入并提示，不整份拦下', async () => {
+    const { read } = await readExport()
+    const sheetNames = [...read.sheetNames]
+    const sheets = new Map(read.sheetNames.map((name) => [name, read.sheets.get(name) ?? []]))
+    const studentRows = (sheets.get('学生视角') ?? []).map((row) => [...row])
+    let changed = false
+    for (const row of studentRows) {
+      const index = row.findIndex((cell) => String(cell).trim() === '王小明')
+      if (index >= 0) {
+        row[index] = '李思远'
+        changed = true
+        break
+      }
+    }
+    expect(changed).toBe(true)
+    sheets.set('学生视角', studentRows)
+
+    const detection = detectSeatMapWorkbook({ sheetNames, sheets }, CFG)
+    expect(detection.kind).toBe('map')
+    if (detection.kind !== 'map') return
+    expect(detection.parsed.source).toBe('visual')
+    expect(detection.parsed.sourceSheet).toBe('学生视角')
+    expect(detection.parsed.visualFallback).toBe('mismatch')
+    expect(detection.parsed.warnings.some((text) => text.includes('不一致'))).toBe(true)
+  })
+
+  it('隐藏数据坏掉、可见图认得出 → 回退可见图并提示', async () => {
+    const { read } = await readExport()
+    const sheetNames = [...read.sheetNames]
+    const sheets = new Map(read.sheetNames.map((name) => [name, read.sheets.get(name) ?? []]))
+    const hidden = cloneHiddenRows(read)
+    hidden[metaRowIndex(hidden, '数据版本')]![1] = 99
+    sheets.set(SEAT_EXPORT_SHEET, hidden)
+
+    const detection = detectSeatMapWorkbook({ sheetNames, sheets }, CFG)
+    expect(detection.kind).toBe('map')
+    if (detection.kind !== 'map') return
+    expect(detection.parsed.source).toBe('visual')
+    expect(detection.parsed.visualFallback).toBe('unreadable')
+    expect(detection.parsed.warnings.some((text) => text.includes('隐藏数据无法读取'))).toBe(true)
+  })
+
+  it('行列列表文件不被当成座位图（旧导入行为不变）', () => {
+    const detection = detectSeatMapWorkbook(
       {
         sheetNames: ['座位表'],
         sheets: new Map([
@@ -357,33 +401,8 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
     if (!parsed.ok) expect(parsed.error).toContain('重复记录')
   })
 
-  it('版面被改过（隐藏数据与座位图对不上）→ 不照隐藏数据恢复', async () => {
-    const { read } = await readExport()
-    const sheetNames = [...read.sheetNames]
-    const sheets = new Map(read.sheetNames.map((name) => [name, read.sheets.get(name) ?? []]))
-    const studentRows = (sheets.get('学生视角') ?? []).map((row) => [...row])
-    let changed = false
-    for (const row of studentRows) {
-      const index = row.findIndex((cell) => String(cell).trim() === '王小明')
-      if (index >= 0) {
-        row[index] = '李思远'
-        changed = true
-        break
-      }
-    }
-    expect(changed).toBe(true)
-    sheets.set('学生视角', studentRows)
-
-    const detection = detectSeatRestoreWorkbook({ sheetNames, sheets }, CFG)
-    expect(detection.kind).toBe('error')
-    if (detection.kind === 'error') {
-      expect(detection.error).toContain('不一致')
-      expect(detection.error).toContain('重新导出')
-    }
-  })
-
   it('看起来是座位图、但版面认不出 → 明确报错（不落到行列导入去乱读）', () => {
-    const detection = detectSeatRestoreWorkbook(
+    const detection = detectSeatMapWorkbook(
       {
         sheetNames: ['学生视角'],
         sheets: new Map([['学生视角', [['随便什么']]]]),
@@ -403,7 +422,7 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
       seat.name = '白马'
       seat.displayName = '白马'
     })
-    const plan = planSeatRestore(bad, ROSTER, buildSeatGrid(), CFG)
+    const plan = planSeatMapImport(bad, ROSTER, CFG)
     expect(plan.ok).toBe(false)
     expect(plan.blocked).toBe(1)
     expect(plan.rows.find((row) => row.action === 'blocked')?.errors.join()).toContain('固定空位')
@@ -419,7 +438,7 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
       seat.name = '不存在的人'
       seat.displayName = '不存在的人'
     })
-    const unknownPlan = planSeatRestore(unknown, ROSTER, buildSeatGrid(), CFG)
+    const unknownPlan = planSeatMapImport(unknown, ROSTER, CFG)
     expect(unknownPlan.ok).toBe(false)
     expect(unknownPlan.rows.find((row) => row.row === 3)?.errors.join()).toContain('找不到')
 
@@ -429,7 +448,7 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
       seat.name = '张伟'
       seat.displayName = '张伟'
     })
-    const ambiguousPlan = planSeatRestore(ambiguous, ROSTER, buildSeatGrid(), CFG)
+    const ambiguousPlan = planSeatMapImport(ambiguous, ROSTER, CFG)
     expect(ambiguousPlan.ok).toBe(false)
     expect(ambiguousPlan.rows.find((row) => row.row === 3)?.errors.join()).toContain('重名')
   })
@@ -442,7 +461,7 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
       seat.name = '王小明'
       seat.displayName = '王小明'
     })
-    const plan = planSeatRestore(bad, ROSTER, buildSeatGrid(), CFG)
+    const plan = planSeatMapImport(bad, ROSTER, CFG)
     expect(plan.ok).toBe(false)
     expect(plan.errorCount).toBeGreaterThan(0)
   })
@@ -450,28 +469,29 @@ describe('坏文件 / 不兼容文件：明确报错，不产生半份计划', (
   it('布局与当前教室不一致 → 整份拒绝', async () => {
     const { parsed } = await readExport()
     const bad = { ...parsed, layout: { ...parsed.layout, rows: 6 } }
-    const plan = planSeatRestore(bad, ROSTER, buildSeatGrid(), CFG)
+    const plan = planSeatMapImport(bad, ROSTER, CFG)
     expect(plan.ok).toBe(false)
     expect(plan.errors[0]).toContain('不一致')
     expect(plan.assignments).toEqual([])
   })
 })
 
-/* ==================== ④ 落库：整表替换 / 失败不写 / 撤销 ==================== */
+/* ==================== ④ 落库：新建座位表，现有方案不动 ==================== */
 
-describe('applySeatRestore：整表替换与撤销', () => {
+describe('createPlanFromSeatMap：新建座位表', () => {
   let browser: FakeBrowser
 
   const prefix = appConfig.storageKeyPrefix
   const STUDENTS_KEY = `${prefix}:students`
   const SEAT_KEY = `${prefix}:seatPlans`
 
-  function currentPlacement(store: ReturnType<typeof useSeatStore>) {
+  function placementOf(store: ReturnType<typeof useSeatStore>) {
     return new Map(
       store.currentSeats.filter((seat) => seat.studentId).map((seat) => [seat.id, seat.studentId!]),
     )
   }
 
+  /** 现有两张方案：当前方案 s1(1,1)、s3(3,3) + 一条同桌约束；另一张 s4(2,2) */
   beforeEach(() => {
     browser = installFakeBrowser()
     setActivePinia(createPinia())
@@ -519,71 +539,101 @@ describe('applySeatRestore：整表替换与撤销', () => {
     )
   })
 
-  it('未列出的座位一律清空；其他座位表不受影响', async () => {
+  it('新建并切换过去；现有所有座位表原样保留', () => {
     const store = useSeatStore()
     useStudentStore()
-    const otherBefore = JSON.stringify(store.plans.find((plan) => plan.id === 'plan-other'))
+    const before = store.plans.map((plan) => ({
+      id: plan.id,
+      name: plan.name,
+      seats: JSON.stringify(plan.seats),
+      constraints: JSON.stringify(plan.constraints),
+    }))
 
-    const outcome = store.applySeatRestore({
+    const outcome = store.createPlanFromSeatMap({
+      baseName: '我的座位图',
       assignments: [
         { row: 1, col: 1, studentId: 's1' },
         { row: 2, col: 5, studentId: 's2' },
       ],
     })
-    expect(outcome).toEqual({ ok: true, applied: 2, relocated: 1, cleared: 1 })
+    expect(outcome.ok).toBe(true)
+    expect(outcome.planName).toBe('我的座位图')
+    expect(outcome.applied).toBe(2)
 
-    const placement = currentPlacement(store)
+    // 新表成为当前方案，原先的座位安排原样在新表里
+    expect(store.currentPlan?.name).toBe('我的座位图')
+    const placement = placementOf(store)
     expect(placement.get(getSeatKey(1, 1))).toBe('s1')
     expect(placement.get(getSeatKey(2, 5))).toBe('s2')
-    expect(placement.get(getSeatKey(3, 3))).toBeUndefined()
-    expect(JSON.stringify(store.plans.find((plan) => plan.id === 'plan-other'))).toBe(otherBefore)
+    expect(placement.size).toBe(2)
 
-    await nextTick()
-    const disk = readRaw(SEAT_KEY)
-    expect(disk).toContain('plan-current')
+    // 原有方案：只被取消 isCurrent，座位与约束一个字节都没变
+    expect(store.plans).toHaveLength(3)
+    const after = store.plans
+      .filter((plan) => plan.id !== outcome.planId)
+      .map((plan) => ({
+        id: plan.id,
+        name: plan.name,
+        seats: JSON.stringify(plan.seats),
+        constraints: JSON.stringify(plan.constraints),
+      }))
+    expect(after).toEqual(before)
+    expect(store.plans.find((plan) => plan.id === 'plan-current')?.isCurrent).toBe(false)
   })
 
-  it('约束一起恢复；撤销把座位与约束都还原', async () => {
+  it('文件名重名时自动加序号（同一个文件反复导入不互相覆盖）', () => {
     const store = useSeatStore()
     useStudentStore()
 
-    const restoreConstraints: SeatPlanConstraints = {
-      ...createEmptySeatPlanConstraints(),
-      adjacentGroupForbidden: [{ id: 'new', students: ['s1', 's2', 's4'] }],
-      frontRowStudents: ['s4'],
-    }
-    expect(
-      store.applySeatRestore({
-        assignments: [{ row: 4, col: 4, studentId: 's1' }],
-        constraints: restoreConstraints,
-      }).ok,
-    ).toBe(true)
-    expect(store.currentConstraints.sameDeskForbidden).toHaveLength(0)
+    const first = store.createPlanFromSeatMap({ baseName: '座位图', assignments: [] })
+    const second = store.createPlanFromSeatMap({ baseName: '座位图', assignments: [] })
+    const third = store.createPlanFromSeatMap({ baseName: '座位图', assignments: [] })
+
+    expect(first.planName).toBe('座位图')
+    expect(second.planName).toBe('座位图 2')
+    expect(third.planName).toBe('座位图 3')
+  })
+
+  it('隐藏数据里的约束一起带到新表；可见图来源用空约束', () => {
+    const store = useSeatStore()
+    useStudentStore()
+
+    const withConstraints = store.createPlanFromSeatMap({
+      baseName: '带约束',
+      assignments: [{ row: 4, col: 4, studentId: 's1' }],
+      constraints: {
+        ...createEmptySeatPlanConstraints(),
+        adjacentGroupForbidden: [{ id: 'new', students: ['s1', 's2', 's4'] }],
+        frontRowStudents: ['s4'],
+      },
+    })
+    expect(withConstraints.ok).toBe(true)
     expect(store.currentConstraints.adjacentGroupForbidden).toHaveLength(1)
     expect(store.currentConstraints.frontRowStudents).toEqual(['s4'])
 
-    expect(store.undoSession()).toBe(true)
-    expect(currentPlacement(store).get(getSeatKey(1, 1))).toBe('s1')
-    expect(currentPlacement(store).get(getSeatKey(3, 3))).toBe('s3')
-    expect(store.currentConstraints.sameDeskForbidden).toEqual([
-      { id: 'seed', studentA: 's1', studentB: 's2' },
-    ])
-    expect(store.currentConstraints.adjacentGroupForbidden).toHaveLength(0)
+    const visual = store.createPlanFromSeatMap({
+      baseName: '可见图',
+      assignments: [{ row: 4, col: 4, studentId: 's1' }],
+    })
+    expect(visual.ok).toBe(true)
+    // 不传 constraints = 新座位表的排座约束为空
+    expect(store.currentConstraints).toEqual(createEmptySeatPlanConstraints())
   })
 
-  it('固定空位有人 / 学生不存在 → 整批拒绝，一个字节都不写', async () => {
+  it('固定空位有人 / 学生不存在 → 整批拒绝，一个字节都不写', () => {
     const store = useSeatStore()
     useStudentStore()
-    await nextTick()
     const before = JSON.stringify(store.plans)
 
-    const fixed = store.applySeatRestore({
+    const fixed = store.createPlanFromSeatMap({
+      baseName: '坏图',
       assignments: [{ row: 1, col: 9, studentId: 's1' }],
     })
     expect(fixed.ok).toBe(false)
     expect(fixed.reason).toContain('固定空位')
 
-    const unknown = store.applySeatRestore({
+    const unknown = store.createPlanFromSeatMap({
+      baseName: '坏图',
       assignments: [{ row: 1, col: 1, studentId: 'not-a-student' }],
     })
     expect(unknown.ok).toBe(false)
@@ -591,48 +641,83 @@ describe('applySeatRestore：整表替换与撤销', () => {
     expect(JSON.stringify(store.plans)).toBe(before)
   })
 
-  it('约束引用不在名单中的学生 → 整批拒绝', async () => {
+  it('重复座位 / 重复学生 / 约束引用失效 → 整批拒绝', () => {
     const store = useSeatStore()
     useStudentStore()
     const before = JSON.stringify(store.plans)
 
-    const outcome = store.applySeatRestore({
+    const duplicateSeat = store.createPlanFromSeatMap({
+      assignments: [
+        { row: 2, col: 2, studentId: 's1' },
+        { row: 2, col: 2, studentId: 's2' },
+      ],
+    })
+    expect(duplicateSeat.ok).toBe(false)
+
+    const duplicateStudent = store.createPlanFromSeatMap({
+      assignments: [
+        { row: 2, col: 2, studentId: 's1' },
+        { row: 3, col: 3, studentId: 's1' },
+      ],
+    })
+    expect(duplicateStudent.ok).toBe(false)
+
+    const ghost = store.createPlanFromSeatMap({
       assignments: [],
       constraints: {
         ...createEmptySeatPlanConstraints(),
         frontRowStudents: ['ghost'],
       },
     })
-    expect(outcome.ok).toBe(false)
-    expect(outcome.reason).toContain('约束')
+    expect(ghost.ok).toBe(false)
+    expect(ghost.reason).toContain('约束')
     expect(JSON.stringify(store.plans)).toBe(before)
   })
 
-  it('整张空座位表也是合法恢复：清空当前方案，可撤销', () => {
+  it('整张空座位表也是合法导入：新建空表并切换，不影响原方案', () => {
+    const store = useSeatStore()
+    useStudentStore()
+    const original = store.currentPlan?.id
+
+    const outcome = store.createPlanFromSeatMap({ baseName: '空表', assignments: [] })
+    expect(outcome).toEqual({
+      ok: true,
+      planId: store.currentPlan?.id,
+      planName: '空表',
+      applied: 0,
+    })
+    expect(placementOf(store).size).toBe(0)
+
+    // 换回原方案，原安排仍在
+    store.switchPlan(original!)
+    expect(placementOf(store).size).toBe(2)
+  })
+
+  it('新建方案会结束「本轮修改」：撤销按钮不会把新表撤到旧方案上', () => {
     const store = useSeatStore()
     useStudentStore()
 
-    const outcome = store.applySeatRestore({ assignments: [] })
-    expect(outcome).toEqual({ ok: true, applied: 0, relocated: 0, cleared: 2 })
-    expect(currentPlacement(store).size).toBe(0)
-    expect(store.undoSession()).toBe(true)
-    expect(currentPlacement(store).size).toBe(2)
+    store.createPlanFromSeatMap({ baseName: '新表', assignments: [] })
+    expect(store.canUndoSession).toBe(false)
+    expect(store.undoSession()).toBe(false)
   })
 })
 
-/* ==================== ⑤ 接线：现有导入入口 + 导出端写全元数据 ==================== */
+/* ==================== ⑤ 接线：导入入口 + 导出端写全元数据 ==================== */
 
 describe('接线（源码级钉子）', () => {
   const read = (path: string) => readFileSync(path, 'utf8')
 
-  it('座位导入弹窗仍走现有入口，自动识别并二次确认覆盖', () => {
+  it('座位导入弹窗走座位图识别，并且是「新建座位表」而不是覆盖', () => {
     const source = read('src/views/Seats/components/SeatImportModal.vue')
     expect(source).toContain('parseWorkbook:')
-    expect(source).toContain('detectSeatRestoreWorkbook')
-    expect(source).toContain('planSeatRestore')
-    expect(source).toContain('applySeatRestore')
-    expect(source).toContain('确认覆盖当前座位表')
-    // 行列列表解析仍在：旧文件不走恢复分支
+    expect(source).toContain('detectSeatMapWorkbook')
+    expect(source).toContain('planSeatMapImport')
+    expect(source).toContain('createPlanFromSeatMap')
+    // 覆盖式恢复的二次确认已经撤掉，文案也不许留
+    expect(source).not.toContain('确认覆盖当前座位表')
+    expect(source).not.toContain('applySeatRestore')
+    // 行列列表解析仍在：旧文件不走座位图分支
     expect(source).toContain('parseSeatRows')
   })
 

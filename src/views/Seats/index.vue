@@ -28,6 +28,8 @@ import {
   downloadXlsx,
   loadSeatTemplate,
 } from '@/utils/seatTemplateXlsx'
+import { buildSeatListRows, SEAT_LIST_HEADERS } from '@/utils/seatList'
+import { buildXlsxBook, downloadXlsxBuffer } from '@/utils/xlsxBook'
 import { formatStudentShortName } from '@/utils/student'
 import StudentDetailModal from '@/views/Students/components/StudentDetailModal.vue'
 import type { Seat, SeatChangeLog, SeatPlan } from '@/types/seat'
@@ -1043,6 +1045,18 @@ async function runExport(kind: SeatExportKind) {
       const studentCanvas = await captureNode(exportStudentEl.value)
       embedPdfImage(pdf, studentCanvas, { y: 10 })
       pdf.save(`${base}-双视角.pdf`)
+    } else if (kind === 'xlsx-list') {
+      /*
+       * 行列列表：纯数据表（SheetJS 路线），不是给人看的座位图。
+       * 全部 63 个物理座位各占一行，空座只填行列；老师改完可直接经「导入座位」读回。
+       */
+      const rows = buildSeatListRows(seatStore.currentSeats, studentStore.activeStudents)
+      const buffer = await buildXlsxBook([
+        { sheetName: '座位表', headers: SEAT_LIST_HEADERS, rows },
+      ])
+      if (!buffer || !downloadXlsxBuffer(buffer, `${base}-行列列表.xlsx`)) {
+        throw new Error('浏览器未接受下载')
+      }
     } else {
       // Excel（v3.5.1）：**复制需求方模板 `docs/座位图-9.3.xlsx` → 只改文字 → 导出**，
       // 两个视角各一张工作表。样式一律来自模板本身，这里只给标题 / 日期 / 63 个姓名。
@@ -1072,7 +1086,7 @@ async function runExport(kind: SeatExportKind) {
         throw new Error('浏览器未接受下载')
       }
     }
-    toast.success('已导出座位图')
+    toast.success(kind === 'xlsx-list' ? '已导出行列列表' : '已导出座位图')
   } catch (error) {
     console.error('[seat export] 导出失败：', error)
     toast.danger('导出失败：请刷新后重试')

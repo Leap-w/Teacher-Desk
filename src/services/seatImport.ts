@@ -15,6 +15,7 @@
  */
 import type { ClassroomConfig } from '@/types/classroom'
 import { DEFAULT_CLASSROOM_CONFIG } from '@/types/classroom'
+import { SEAT_LIST_HEADERS } from '@/utils/seatList'
 import { isValidSeatPosition, seatPositionShort } from '@/utils/seat'
 import { buildNameCounts, formatStudentShortName } from '@/utils/student'
 import type { Student } from '@/types'
@@ -61,8 +62,11 @@ const COLUMN_ALIASES: Array<{ key: keyof ColumnMap; label: string; aliases: stri
   { key: 'name', label: '姓名', aliases: ['姓名', '名字', '学生姓名'] },
 ]
 
-/** 模板提示（弹窗首屏与错误文案共用一份说法） */
-export const SEAT_IMPORT_HEADERS = ['行', '列', '学号', '姓名'] as const
+/**
+ * 模板提示（弹窗首屏与错误文案共用一份说法）。
+ * 字面量在 `utils/seatList.ts`（导出端也用它写表头）；这里保留旧名字，现有引用不用改。
+ */
+export const SEAT_IMPORT_HEADERS = SEAT_LIST_HEADERS
 
 function mapColumns(headerRow: unknown[]): ColumnMap {
   const map: ColumnMap = { row: -1, col: -1, studentNo: -1, name: -1 }
@@ -87,7 +91,14 @@ function parseSeatIndex(text: string): number | null {
 }
 
 export type ParseSeatResult =
-  | { ok: true; rows: ParsedSeatRow[]; columns: string[]; blankRows: number }
+  | {
+      ok: true
+      rows: ParsedSeatRow[]
+      columns: string[]
+      blankRows: number
+      /** 坐标合法但没填学生的「空座行」（导出 63 行列表里的空座；跳过不报错） */
+      emptySeatRows: number
+    }
   | { ok: false; error: string }
 
 /**
@@ -123,6 +134,7 @@ export function parseSeatRows(
 
   const parsed: ParsedSeatRow[] = []
   let blankRows = 0
+  let emptySeatRows = 0
   for (let index = 1; index < rows.length; index += 1) {
     const row = rows[index]
     if (!Array.isArray(row) || isBlankRow(row, map)) {
@@ -152,7 +164,23 @@ export function parseSeatRows(
 
     const studentNo = at('studentNo')
     const name = at('name')
-    if (!studentNo && !name) errors.push('未填写学号与姓名，无法确定学生')
+    if (!studentNo && !name) {
+      /*
+       * 「只有坐标、没有学生」= 空座行：座位图导出的 63 行列表里，空座就是这种行。
+       * 跳过并计数——不报错、不进预览、更不会清空现有座位（列表导入本来就是逐条应用）。
+       * 坐标本身非法的行不享受这条豁免，仍按上面的坐标错误拦下。
+       */
+      const seatValid =
+        seatRow !== null &&
+        isValidSeatPosition(seatRow, 1, config) &&
+        seatCol !== null &&
+        isValidSeatPosition(1, seatCol, config)
+      if (seatValid) {
+        emptySeatRows += 1
+        continue
+      }
+      errors.push('未填写学号与姓名，无法确定学生')
+    }
 
     parsed.push({
       rowNumber: index + 1,
@@ -165,8 +193,11 @@ export function parseSeatRows(
     })
   }
 
-  if (parsed.length === 0) return { ok: false, error: '表头下面没有数据行（只找到表头）' }
-  return { ok: true, rows: parsed, columns, blankRows }
+  // 只有空座行也是合法输入（结果就是「没有可导入的座位」）；真的一行数据都没有才报错
+  if (parsed.length === 0 && emptySeatRows === 0) {
+    return { ok: false, error: '表头下面没有数据行（只找到表头）' }
+  }
+  return { ok: true, rows: parsed, columns, blankRows, emptySeatRows }
 }
 
 /** 该行相对当前方案的变化：same = 原位不动；new = 原本没就座；move = 换了个座位 */
@@ -183,11 +214,13 @@ export interface SeatImportPreviewRow extends ParsedSeatRow {
 }
 
 export interface SeatImportResult {
-  /** 数据行数（不含表头、不含全空行） */
+  /** 数据行数（不含表头、不含全空行；含只有坐标的空座行） */
   total: number
   /** 全空行条数（已跳过，只在提示里说一声） */
   blankRows: number
-  /** 坐标合法的行数 */
+  /** 坐标合法但没填学生的空座行条数（已跳过） */
+  emptySeatRows: number
+  /** 坐标合法的行数（含空座行） */
   validSeats: number
   /** 可导入座位数（= 无错误的行数） */
   assignable: number
@@ -249,6 +282,7 @@ export function planSeatImport(
   students: readonly Student[],
   currentSeats: ReadonlyArray<{ row: number; col: number; studentId?: string }>,
   blankRows = 0,
+  emptySeatRows = 0,
 ): SeatImportResult {
   const index = buildStudentIndex(students)
   // 重名消歧要看整份名册（v3.3.1）：只算一次，预览里每行共用
@@ -366,9 +400,11 @@ export function planSeatImport(
 
   const assignable = previewRows.filter((row) => row.action === 'assign').length
   return {
-    total: rows.length,
+    // 空座行也是文件里的数据行，计入总数；统计卡上「可导入 + 空座行」才对得上 63
+    total: rows.length + emptySeatRows,
     blankRows,
-    validSeats,
+    emptySeatRows,
+    validSeats: validSeats + emptySeatRows,
     assignable,
     blocked: previewRows.length - assignable,
     changed,

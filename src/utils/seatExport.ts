@@ -44,16 +44,17 @@ export function exportDateDotted(date = new Date()): string {
 }
 
 /**
- * 导出种类。**v3.5.1 起只剩两项**：
+ * 导出种类。v3.5.1 精简为两项，本次新增第三项：
  *
  * - `pdf-dual`：双视角 PDF（横向 A4、一个视角一整页，共 2 页）；
- * - `xlsx-dual`：两个视角的 .xlsx（模板驱动，见 `utils/seatTemplateXlsx.ts`）。
+ * - `xlsx-dual`：两个视角的 .xlsx（模板驱动，见 `utils/seatTemplateXlsx.ts`）；
+ * - `xlsx-list`：行列列表 .xlsx（四列纯数据，见 `utils/seatList.ts`）。
  *
  * 砍掉的三项是 `png-teacher` / `png-student` / `pdf-teacher`——PNG 两个入口与
  * PDF 老师视角入口都从菜单里撤了。**截画布的那套（`renderExportNode`）保留**：
  * 双视角 PDF 仍然靠它把两个视角的渲染节点拍成图。
  */
-export type SeatExportKind = 'pdf-dual' | 'xlsx-dual'
+export type SeatExportKind = 'pdf-dual' | 'xlsx-dual' | 'xlsx-list'
 
 /** 把（隐藏的）导出渲染节点快照为画布；等待字体就绪避免中文 / 图标缺失 */
 export async function renderExportNode(

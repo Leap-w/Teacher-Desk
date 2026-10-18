@@ -215,8 +215,7 @@ function constraintRow(kind: string, refs: readonly [string, string][]): unknown
  *   ③ 约束区：不能同桌 / 三人不能相邻 / 前排 / 后排，引用学生只写学号与姓名。
  *
  * 座位区**必须写完 rows × cols 行**（包括空座）：导入端因此可以校验「文件是否完整」，
- * 并以整表恢复的语义清掉当前方案里多出来的座位。只写有人的座位会让「空座」与
- * 「文件缺行」变得无法区分。
+ * 并把没写学生的座位识别为空座。只写有人的座位会让「空座」与「文件缺行」变得无法区分。
  */
 function appendSeatDataSheet(workbook: Workbook, input: SeatTemplateInput): void {
   const config = input.config ?? DEFAULT_CLASSROOM_CONFIG

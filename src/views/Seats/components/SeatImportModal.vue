@@ -30,26 +30,27 @@ import {
   SEAT_IMPORT_SAMPLE,
 } from '@/services/seatImport'
 import type { ParsedSeatRow, SeatImportResult } from '@/services/seatImport'
-import { detectSeatRestoreWorkbook, planSeatRestore } from '@/services/seatRestore'
-import type { ParsedSeatRestore, SeatRestorePlan } from '@/services/seatRestore'
+import { detectSeatMapWorkbook, planSeatMapImport } from '@/services/seatMapImport'
+import type { ParsedSeatMap, SeatMapImportPlan } from '@/services/seatMapImport'
 import { useSeatStore } from '@/stores/seat'
 import { useStudentStore } from '@/stores/student'
 
 /**
- * Excel 座位导入弹窗（V1.1.2 Phase 1；v3.7.6 支持座位图导出文件直接导回）。
+ * Excel 座位导入弹窗（V1.1.2 Phase 1；v3.7.6 起支持座位图，本次改为新建座位表）。
  *
  * **五个导入弹窗的样式基准**——首屏说明区 / 上传卡 / 已选文件行 / 统计卡 /
  * 提示条 / 逐行预览表全部走 `components/ui` 的共享实现，取文件的管道走
  * `useSheetImport`，其余四个弹窗照着这一份对齐。
  *
  * 两种导入模式由文件内容自动判断，入口只有一个：
- *   - **行列列表**（既有行为）：逐条应用，表格没提到的座位保持原样；
- *   - **座位图导出文件**（v3.7.6）：优先读隐藏数据表，没有则按可视化版面识别，
- *     **整表恢复**——导出时是空座的格子恢复后也为空，需二次确认。
+ *   - **行列列表**（既有行为）：逐条应用，表格没提到的座位保持原样；空座行跳过；
+ *   - **座位图**：隐藏数据与可见图一致时读隐藏数据，不一致时按可见图；
+ *     按图**新建一张座位表并切换过去**，现有所有座位表原样保留。外部手工座位图
+ *     只要版式符合模板几何也能识别。
  *
  * 流程严格按需求：选择文件 → 读取 → 解析 → 校验 → 预览 → 用户确认 → 一次性写入。
- * **关闭弹窗 / 取消一律不写入**；**存在错误时确认按钮禁用**（错误数据绝不进当前方案）。
- * 落库只经 `seatStore.applySeatImport()` / `seatStore.applySeatRestore()`——
+ * **关闭弹窗 / 取消一律不写入**；**存在错误时确认按钮禁用**（错误数据绝不落库）。
+ * 落库只经 `seatStore.applySeatImport()` / `seatStore.createPlanFromSeatMap()`——
  * 组件不碰 `seats` 数组、不碰 localStorage。
  */
 
@@ -77,14 +78,21 @@ const PREVIEW_COLUMNS: readonly ImportPreviewColumn[] = [
   { key: 'change', label: '变化' },
 ]
 
+/** 座位图模式没有「相对当前方案的变化」：新建一张表，只列座位与学生 */
+const MAP_PREVIEW_COLUMNS: readonly ImportPreviewColumn[] = [
+  { key: 'seat', label: '座位' },
+  { key: 'studentNo', label: '学号' },
+  { key: 'name', label: '姓名' },
+]
+
 const ACTIONS: Record<string, ImportActionMeta> = {
   assign: { label: '可导入', tone: 'ok' },
   blocked: { label: '已拦下', tone: 'bad' },
 }
 
-/** 整表恢复模式的徽标：与「导入」区分，教师一眼知道这次会覆盖整张表 */
-const RESTORE_ACTIONS: Record<string, ImportActionMeta> = {
-  restore: { label: '可恢复', tone: 'ok' },
+/** 座位图模式的徽标：这次导入会新建一张座位表，不是往当前表里塞 */
+const MAP_ACTIONS: Record<string, ImportActionMeta> = {
+  import: { label: '可导入', tone: 'ok' },
   blocked: { label: '已拦下', tone: 'bad' },
 }
 
@@ -92,10 +100,10 @@ const fileInput = ref<HTMLInputElement>()
 const parsed = ref<ParsedSeatRow[] | undefined>(undefined)
 /** 全空行条数（解析时统计，预览里说一句） */
 const blankRows = ref(0)
-/** 识别为座位图导出文件时的解析结果（与 `parsed` 互斥） */
-const restoreParsed = ref<ParsedSeatRestore | undefined>(undefined)
-/** 整表恢复的二次确认：第一次点按钮只进入这一步，再点才真正覆盖 */
-const restoreConfirming = ref(false)
+/** 空座行条数（只有坐标、没有学生；跳过并计数） */
+const emptySeatRows = ref(0)
+/** 识别为座位图时的解析结果（与 `parsed` 互斥） */
+const mapParsed = ref<ParsedSeatMap | undefined>(undefined)
 
 /** 导出时间（ISO）→ 本地「YYYY-MM-DD HH:mm」；坏值不显示，不编一个时间出来 */
 function formatExportedAt(value: string | undefined): string {
@@ -107,11 +115,19 @@ function formatExportedAt(value: string | undefined): string {
 }
 
 /** 已选文件行的工作表说明：说清读的是隐藏数据表还是可视化版面、来源方案是哪一份 */
-function restoreSourceNote(data: ParsedSeatRestore): string {
-  const parts =
-    data.source === 'metadata'
-      ? ['已读取导出数据（隐藏工作表）']
-      : [`已按「${data.sourceSheet}」版面识别（旧版导出文件）`]
+function mapSourceNote(data: ParsedSeatMap): string {
+  const parts: string[] = []
+  if (data.source === 'metadata') {
+    parts.push('已读取导出数据（隐藏工作表）')
+  } else {
+    const why =
+      data.visualFallback === 'unreadable'
+        ? '隐藏数据无法读取'
+        : data.visualFallback === 'mismatch'
+          ? '隐藏数据与座位图不一致'
+          : '文件没有隐藏数据'
+    parts.push(`已按「${data.sourceSheet}」版面识别（${why}）`)
+  }
   if (data.planName) parts.push(`来源方案「${data.planName}」`)
   const exportedAt = formatExportedAt(data.exportedAt)
   if (exportedAt) parts.push(`导出于 ${exportedAt}`)
@@ -127,31 +143,32 @@ const sheet = useSheetImport({
     if (!parsedRows.ok) return { ok: false, error: parsedRows.error }
     parsed.value = parsedRows.rows
     blankRows.value = parsedRows.blankRows
+    emptySeatRows.value = parsedRows.emptySeatRows
     return { ok: true, columns: parsedRows.columns }
   },
   /*
-   * v3.7.6：先按整个工作簿识别。`undefined` = 不是导出文件，继续走上面的行列列表解析，
+   * 先按整个工作簿识别。`undefined` = 不是座位图，继续走上面的行列列表解析，
    * 旧文件的导入行为一个字节都不变。
    */
   parseWorkbook: (workbook) => {
-    const detection = detectSeatRestoreWorkbook(workbook, seatStore.config)
+    const detection = detectSeatMapWorkbook(workbook, seatStore.config)
     if (detection.kind === 'none') return undefined
     if (detection.kind === 'error') return { ok: false, error: detection.error }
-    restoreParsed.value = detection.parsed
+    mapParsed.value = detection.parsed
     parsed.value = undefined
     blankRows.value = 0
-    restoreConfirming.value = false
+    emptySeatRows.value = 0
     return {
       ok: true,
       columns: [],
-      sheetNote: restoreSourceNote(detection.parsed),
+      sheetNote: mapSourceNote(detection.parsed),
     }
   },
   reset: () => {
     parsed.value = undefined
     blankRows.value = 0
-    restoreParsed.value = undefined
-    restoreConfirming.value = false
+    emptySeatRows.value = 0
+    mapParsed.value = undefined
   },
 })
 
@@ -166,6 +183,19 @@ const {
   error: parseError,
 } = sheet
 
+/** Excel 文件名 → 新座位表名（去掉扩展名；重名交给 store 加序号） */
+function planNameFromFile(value: string): string {
+  return value.replace(/\.(xlsx|xls)$/i, '').trim()
+}
+
+/**
+ * 预览里承诺的新表名必须与落库时一致：`nextUniquePlanName` 是同一份实现，
+ * 中途在别处新建了同名方案时这里会跟着重算。
+ */
+const mapPlanName = computed(() =>
+  mapParsed.value ? seatStore.nextUniquePlanName(planNameFromFile(filename.value)) : '',
+)
+
 /** 整体性错误也走提示条：五种弹窗的「坏消息」长同一副样子 */
 const errorHints = computed<ImportHint[]>(() =>
   parseError.value ? [{ tone: 'danger', text: parseError.value }] : [],
@@ -177,45 +207,39 @@ const errorHints = computed<ImportHint[]>(() =>
  * 预览上看到的「可导入 N 个座位」必须与落库的那一次完全一致。
  */
 const result = computed<SeatImportResult | undefined>(() =>
-  !restoreParsed.value && parsed.value
+  !mapParsed.value && parsed.value
     ? planSeatImport(
         parsed.value,
         studentStore.activeStudents,
         seatStore.currentSeats,
         blankRows.value,
+        emptySeatRows.value,
       )
     : undefined,
 )
 
 /**
- * 整表恢复计划同样是 computed：预览里的「会变动 / 将腾空」必须与落库那一次
- * 基于同一份当前座位与学生名单，中途别处改了数据也能立刻反映出来。
+ * 座位图计划同样是 computed：预览里的「可导入 / 被拦下」必须与落库那一次
+ * 基于同一份学生名单，中途别处改了数据也能立刻反映出来。
  */
-const restorePlan = computed<SeatRestorePlan | undefined>(() =>
-  restoreParsed.value
-    ? planSeatRestore(
-        restoreParsed.value,
-        studentStore.activeStudents,
-        seatStore.currentSeats,
-        seatStore.config,
-      )
+const mapPlan = computed<SeatMapImportPlan | undefined>(() =>
+  mapParsed.value
+    ? planSeatMapImport(mapParsed.value, studentStore.activeStudents, seatStore.config)
     : undefined,
 )
 
 const statItems = computed<ImportStat[]>(() => {
-  const restore = restorePlan.value
-  if (restore) {
+  const map = mapPlan.value
+  if (map) {
     return [
-      { value: restore.layout.totalSeats, label: '座位总数' },
-      { value: restore.occupiedSeats, label: '导出时就座' },
-      { value: restore.emptySeats, label: '导出时空座' },
-      { value: restore.assignable, label: '可恢复', tone: 'ok' },
-      { value: restore.changed, label: '会变动' },
-      { value: restore.clearedSeats, label: '将腾空' },
+      { value: map.layout.totalSeats, label: '座位总数' },
+      { value: map.occupiedSeats, label: '已就座' },
+      { value: map.emptySeats, label: '空座' },
+      { value: map.assignable, label: '可导入', tone: 'ok' },
       {
-        value: restore.errorCount,
+        value: map.errorCount,
         label: '错误',
-        tone: restore.errorCount > 0 ? 'bad' : undefined,
+        tone: map.errorCount > 0 ? 'bad' : undefined,
       },
     ]
   }
@@ -226,6 +250,7 @@ const statItems = computed<ImportStat[]>(() => {
     { value: current.total, label: '总行数' },
     { value: current.validSeats, label: '有效座位' },
     { value: current.assignable, label: '可导入', tone: 'ok' },
+    ...(current.emptySeatRows > 0 ? [{ value: current.emptySeatRows, label: '空座行' }] : []),
     { value: current.changed, label: '新安排' },
     {
       value: current.unknownStudents,
@@ -247,16 +272,15 @@ const statItems = computed<ImportStat[]>(() => {
 })
 
 const previewRows = computed<ImportPreviewRow[]>(() => {
-  const restore = restorePlan.value
-  if (restore) {
-    return restore.rows.map((row) => ({
+  const map = mapPlan.value
+  if (map) {
+    return map.rows.map((row) => ({
       rowNumber: row.rowNumber,
       action: row.action,
       cells: {
         seat: row.seatLabel,
         studentNo: row.studentNo,
         name: row.studentLabel ?? row.name,
-        change: row.change ? CHANGE_LABELS[row.change] : '',
       },
       errors: row.errors,
       warnings: row.warnings,
@@ -288,33 +312,34 @@ watch(
 
 /** 预览提示组：按教师「要做什么」分类，不按代码里的字段分 */
 const hints = computed<ImportHint[]>(() => {
-  const restore = restorePlan.value
-  if (restore) {
+  const map = mapPlan.value
+  if (map) {
     const list: ImportHint[] = []
-    const blocked = blockedHint(restore.rows)
+    const blocked = blockedHint(map.rows)
     if (blocked) list.push(blocked)
-    for (const text of restore.errors) list.push({ tone: 'danger', text })
+    for (const text of map.errors) list.push({ tone: 'danger', text })
 
-    const planName = seatStore.currentPlan?.name
-    if (planName) {
-      list.push({
-        tone: 'info',
-        text: `整表恢复到当前座位表「${planName}」，其他座位表不受影响`,
-      })
-    }
-    if (restore.source === 'visual') {
+    list.push({
+      tone: 'info',
+      text: `将新建座位表「${mapPlanName.value}」并切换过去；现有 ${seatStore.plans.length} 张座位表原样保留`,
+    })
+
+    // 没有隐藏数据时服务层不会额外写提示；这里把「按姓名匹配」的代价说清楚
+    if (map.source === 'visual' && mapParsed.value?.visualFallback === 'missing') {
       list.push({
         tone: 'warning',
-        text: '这是旧版导出文件（没有机器可读的座位数据）：只能按座位图上的姓名恢复，学号与排座约束无法恢复；重名学生会被拦下。',
+        text: '文件里没有隐藏数据，已按座位图版面识别：只能按格子里的姓名匹配学生，学号与排座约束无法恢复；重名会被拦下。',
       })
     }
-    for (const text of restore.warnings) {
-      // 上面那条已经把「旧版文件无约束」说全了，不再重复
-      if (restore.source === 'visual' && text.includes('约束')) continue
+
+    for (const text of map.warnings) {
+      // 视觉来源的「没有排座约束」已由上面的来源说明覆盖，不再重复
+      if (map.source === 'visual' && text.startsWith('这是按座位图版面识别的')) continue
       list.push({ tone: 'info', text })
     }
-    if (restore.constraints) {
-      const counts = restore.constraints
+
+    if (map.source === 'metadata' && map.constraints) {
+      const counts = map.constraints
       const total =
         counts.sameDeskForbidden.length +
         counts.adjacentGroupForbidden.length +
@@ -324,25 +349,8 @@ const hints = computed<ImportHint[]>(() => {
         tone: 'info',
         text:
           total === 0
-            ? '导出文件里没有排座约束，确认后会清空当前方案的排座约束'
-            : `将同时恢复排座约束：不能同桌 ${counts.sameDeskForbidden.length} 条、三人不能相邻 ${counts.adjacentGroupForbidden.length} 条、前排 ${counts.frontRowStudents.length} 人、后排 ${counts.backRowStudents.length} 人`,
-      })
-    }
-    if (restore.clearedSeats > 0) {
-      list.push({
-        tone: 'warning',
-        text: `恢复后有 ${restore.clearedSeats} 个当前有人的座位会空出来（导出文件里这些位置是空座）`,
-      })
-    }
-    if (restoreConfirming.value) {
-      list.push({
-        tone: 'danger',
-        text: `再次确认：将用这份导出文件整表替换当前座位表的现有安排。确认后可用座位页的「撤销修改」还原。`,
-      })
-    } else {
-      list.push({
-        tone: 'info',
-        text: '整表恢复：导出文件里没有安排学生的座位，恢复后一律为空——这与按行列列表逐条导入不同',
+            ? '将同时导入排座约束：导出文件里没有约束（新座位表的约束为空）'
+            : `将同时导入排座约束：不能同桌 ${counts.sameDeskForbidden.length} 条、三人不能相邻 ${counts.adjacentGroupForbidden.length} 条、前排 ${counts.frontRowStudents.length} 人、后排 ${counts.backRowStudents.length} 人`,
       })
     }
     return list
@@ -372,6 +380,15 @@ const hints = computed<ImportHint[]>(() => {
   if (current.blankRows > 0) {
     list.push({ tone: 'info', text: `${current.blankRows} 行是空行，已自动跳过` })
   }
+  if (current.emptySeatRows > 0) {
+    list.push({
+      tone: 'info',
+      text: `${current.emptySeatRows} 行是空座（未填学生），已跳过`,
+    })
+  }
+  if (current.emptySeatRows > 0 && current.assignable === 0) {
+    list.push({ tone: 'warning', text: '表格里没有安排学生，没有可导入的座位' })
+  }
   list.push({
     tone: 'info',
     text: '确认后只应用表格里列出的座位；表格没提到的座位保持原样（不会被清空）',
@@ -398,27 +415,24 @@ async function confirm(): Promise<void> {
   emit('update:modelValue', false)
 }
 
-/** 第二步确认才真正覆盖当前方案；失败时 store 不改动任何数据，弹窗保持打开 */
-async function confirmRestore(): Promise<void> {
-  const current = restorePlan.value
-  if (!current || !current.ok || !restoreConfirming.value) return
+/** 按座位图新建一张座位表；失败时 store 不改动任何数据，弹窗保持打开 */
+async function confirmMapImport(): Promise<void> {
+  const current = mapPlan.value
+  if (!current || !current.ok) return
   const hadPending = seatStore.pendingLogsCount > 0
-  const outcome = await runLockedOperation('seat-restore', () =>
-    seatStore.applySeatRestore({
+  const outcome = await runLockedOperation('seat-map-import', () =>
+    seatStore.createPlanFromSeatMap({
+      baseName: planNameFromFile(filename.value),
       assignments: current.assignments,
       constraints: current.constraints,
     }),
   )
   if (!outcome.ok) {
-    toast.danger(`恢复失败：${outcome.reason ?? '数据已变化，请刷新后重试'}`)
+    toast.danger(`创建座位表失败：${outcome.reason ?? '数据已变化，请刷新后重试'}`)
     return
   }
-  if (hadPending) toast.info('已恢复座位：未保存的「本次调整」记录已清空')
-  toast.success(
-    `恢复完成：${outcome.applied} 个座位${outcome.cleared > 0 ? `，${outcome.cleared} 个座位腾空` : ''}${
-      outcome.relocated > 0 ? `，${outcome.relocated} 名学生换位` : ''
-    }`,
-  )
+  if (hadPending) toast.info('已创建座位表：未保存的「本次调整」记录已清空')
+  toast.success(`已创建座位表「${outcome.planName}」：${outcome.applied} 个座位`)
   emit('update:modelValue', false)
 }
 
@@ -455,16 +469,18 @@ function close(): void {
         <li>
           优先按<strong>学号</strong>匹配学生；学号为空时才按姓名匹配，<strong>重名一律拦下</strong>
         </li>
+        <li>只填行列、不填学生表示<strong>空座</strong>：导入时会跳过，不会清空现有座位</li>
         <li>
-          也可以直接选择本系统「导出座位图」得到的 Excel
-          文件：会自动识别并<strong>整表恢复</strong>导出时的座位安排
+          也可以直接选择 Excel <strong>座位图</strong>（本系统「导出座位图」得到的文件，
+          或版式相同的<strong>手工座位图</strong>）：会按图<strong>新建一张座位表</strong>，
+          现有座位表原样保留
         </li>
       </ImportIntro>
     </div>
 
     <ImportHints v-if="parseError" :items="errorHints" />
 
-    <template v-if="result || restorePlan">
+    <template v-if="result || mapPlan">
       <ImportFileRow
         :filename="filename"
         :sheet-note="sheetNote"
@@ -475,30 +491,18 @@ function close(): void {
       <ImportStats :items="statItems" />
       <ImportHints :items="hints" />
       <ImportPreviewTable
-        :columns="PREVIEW_COLUMNS"
+        :columns="mapPlan ? MAP_PREVIEW_COLUMNS : PREVIEW_COLUMNS"
         :rows="previewRows"
-        :actions="restorePlan ? RESTORE_ACTIONS : ACTIONS"
+        :actions="mapPlan ? MAP_ACTIONS : ACTIONS"
       />
     </template>
 
     <template #footer>
       <AppButton variant="ghost" @click="close">取消</AppButton>
 
-      <template v-if="restorePlan">
-        <AppButton v-if="restoreConfirming" variant="ghost" @click="restoreConfirming = false">
-          返回修改
-        </AppButton>
-        <AppButton
-          v-if="!restoreConfirming"
-          :disabled="!restorePlan.ok"
-          @click="restoreConfirming = true"
-        >
-          恢复这份座位表
-        </AppButton>
-        <AppButton v-else variant="danger" :disabled="!restorePlan.ok" @click="confirmRestore">
-          确认覆盖当前座位表
-        </AppButton>
-      </template>
+      <AppButton v-if="mapPlan" :disabled="!mapPlan.ok" @click="confirmMapImport">
+        创建座位表（{{ mapPlan.assignable }} 个座位）
+      </AppButton>
 
       <AppButton
         v-else-if="result"

@@ -17,7 +17,7 @@
  *  ③ **两张表各按自己的几何填**。模板两张工作表互为镜像（讲台一头一尾、列号方向相反、
  *     排号走向相反、日期合并区不在同一列），姓名写进哪一格由**该表自己的表头**推出。
  *     写错位不会报错，只会出一张看着很正常、但第 3 排坐的是第 5 排的人的座位表。
- *  ④ **菜单只剩两项**（源码级钉子）。
+ *  ④ **菜单恰好三项**（源码级钉子）。
  *
  * 旧的 ①② 两节（手写 OOXML 的字节断言、`s="3"` 样式号）随生成器一起作废；
  * 「PDF 一律横向 A4」「导出图无性别彩条」那几条源码级钉子与本改动无关，**原样保留**。
@@ -364,9 +364,9 @@ describe('导出 .xlsx：与模板对比，只有文字变了', () => {
   })
 })
 
-/* ==================== ③ 源码级钉子：菜单只剩两项 ==================== */
+/* ==================== ③ 源码级钉子：菜单恰好三项 ==================== */
 
-describe('导出菜单精简：只剩 PDF 双视角与 Excel 两个视角', () => {
+describe('导出菜单：PDF 双视角、Excel 两个视角与行列列表', () => {
   const read = (path: string) => readFileSync(path, 'utf8')
 
   /**
@@ -382,30 +382,32 @@ describe('导出菜单精简：只剩 PDF 双视角与 Excel 两个视角', () =
     return source.slice(start, source.indexOf('\n]', start))
   }
 
-  it('菜单项恰好两项，且是被撤掉那三项一个不剩', () => {
+  it('菜单项恰好三项，且是被撤掉那三项一个不剩', () => {
     const source = read('src/views/Seats/components/SeatExportMenu.vue')
     expect(source).toContain("'pdf-dual'")
     expect(source).toContain("'xlsx-dual'")
+    expect(source).toContain("'xlsx-list'")
     // 撤掉的三个入口：kind 与文案都不许留下（留一个就是个点了没用的按钮）
     for (const gone of ['png-teacher', 'png-student', 'pdf-teacher', 'PNG ·', 'FileDown']) {
       expect(source, `${gone} 不该再出现在导出菜单里`).not.toContain(gone)
     }
   })
 
-  it('文案只有「PDF · 双视角」，不再挂「（2 页横向 A4）」这类实现细节', () => {
+  it('菜单文案不再挂「（2 页横向 A4）」这类实现细节', () => {
     const items = itemsBlock()
     expect(items).toContain("label: 'PDF · 双视角'")
     expect(items).toContain("label: 'Excel · 两个视角'")
+    expect(items).toContain("label: 'Excel · 行列列表'")
     // 两个数字是给实现看的，不是给老师看的——菜单项里不该再出现
     expect(items).not.toContain('横向 A4')
     expect(items).not.toContain('2 页')
     // `{ kind: '` 带引号——类型标注那行写的 `{ kind: SeatExportKind` 不算条目
-    expect(items.split('\n').filter((line) => line.includes("{ kind: '"))).toHaveLength(2)
+    expect(items.split('\n').filter((line) => line.includes("{ kind: '"))).toHaveLength(3)
   })
 
-  it('导出种类只剩两项，且下载 PNG 的入口已经撤掉', () => {
+  it('导出种类恰好三项，且下载 PNG 的入口已经撤掉', () => {
     const source = read('src/utils/seatExport.ts')
-    expect(source).toContain("export type SeatExportKind = 'pdf-dual' | 'xlsx-dual'")
+    expect(source).toContain("export type SeatExportKind = 'pdf-dual' | 'xlsx-dual' | 'xlsx-list'")
     expect(source).not.toContain('downloadPng')
   })
 
