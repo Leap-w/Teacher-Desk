@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { Github } from 'lucide-vue-next'
+import { ref } from 'vue'
+
+import VersionModal from './VersionModal.vue'
 
 /**
  * AboutCard — 关于（v3.0.3-rc · 对齐 Changdu-Memory `Profile.vue` 的 `profile__about-card`）。
  *
  * 位置：「我的」页最底部。**与昌都记忆同一排布**：品牌 Logo → 名称 + 一句话说明
- * → 底部一行（左：当前版本；右：GitHub）。
+ * → 底部一行（左：当前版本；右：检查更新）。
  * 版本号 = `import.meta.env.APP_VERSION`（vite define，package.json 单一来源，禁止硬编码）。
  *
- * **v3.3.0 删掉了「检查更新」按钮**。它此前只弹一句「当前已是最新版本 x.y.z」——
- * 没有任何版本比对，也没发过网络请求，那个结论是凭空断言的（审计 C 类第 2 条）。
- * 本应用不上架、没有更新服务端，**唯一存在新版本的地方就是 GitHub**，
- * 而那个链接就在旁边、点了真能到。留一个说假话的按钮，不如只留那条真路。
+ * **v3.3.0 曾删掉「检查更新」按钮**：那一版它只弹一句「已是最新版本」，既没有版本比对
+ * 也没有网络请求，结论是凭空断言的。**v3.7.7 按需求方要求恢复这个入口，但换了语义**——
+ * 它不再假装做过远端检查，而是一个正式的「版本信息窗口」：当前版本 + 本地维护的本次
+ * 更新内容；不调 GitHub API、不请求远程版本、不接 Releases、不下载更新。
+ * 右下角的 GitHub 仓库链接随之撤下，弹窗里的更新日志见 `config/releaseNotes.ts`。
  */
 const appVersion = import.meta.env.APP_VERSION
+const versionOpen = ref(false)
 </script>
 
 <template>
@@ -26,18 +30,18 @@ const appVersion = import.meta.env.APP_VERSION
 
     <div class="about-card__foot">
       <span class="about-card__version">当前版本 {{ appVersion }}</span>
-      <span class="about-card__links">
-        <a
-          class="about-link"
-          href="https://github.com/Leap-w/Teacher-Desk"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Github :size="14" :stroke-width="2" aria-hidden="true" />
-          GitHub
-        </a>
-      </span>
+      <button
+        type="button"
+        class="about-update"
+        aria-haspopup="dialog"
+        :aria-expanded="versionOpen ? 'true' : 'false'"
+        @click="versionOpen = true"
+      >
+        检查更新
+      </button>
     </div>
+
+    <VersionModal v-model="versionOpen" />
   </section>
 </template>
 
@@ -102,26 +106,6 @@ const appVersion = import.meta.env.APP_VERSION
   font-variant-numeric: tabular-nums;
 }
 
-.about-card__links {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.about-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: var(--font-caption);
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.about-link:hover {
-  color: var(--color-text-primary);
-}
-
 .about-update {
   border: none;
   background: transparent;
@@ -136,5 +120,11 @@ const appVersion = import.meta.env.APP_VERSION
 
 .about-update:hover {
   opacity: 0.8;
+}
+
+.about-update:focus-visible {
+  outline: none;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--ring-focus);
 }
 </style>

@@ -196,8 +196,8 @@ function openLogin(): void {
 
 /* ---------- 关于 ---------- */
 
-// v3.3.0：`checkUpdate`（只弹一句「已是最新版本」的假检查）已删除。
-// 本应用没有更新服务端，关于卡上只留真正能到新版本的 GitHub 链接。
+// v3.7.7：版本信息弹窗由 AboutCard 自己持有（按钮 + AppModal 都在那张卡里）。
+// 本页不参与版本检查——这里没有网络请求，也没有第二份版本号。
 </script>
 
 <template>
@@ -247,7 +247,7 @@ function openLogin(): void {
         @toggle="onMenuToggle"
       />
 
-      <!-- ④ 关于（页面最底部：当前版本 / GitHub / 检查更新） -->
+      <!-- ④ 关于（页面最底部：当前版本 / 检查更新 → 版本信息弹窗） -->
       <AboutCard class="about-area" />
     </div>
 

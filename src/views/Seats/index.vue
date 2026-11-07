@@ -17,10 +17,11 @@ import type { ConstraintIssue } from '@/utils/constraint'
 import { VIEW_NOTES } from '@/utils/seatView'
 import {
   exportDateLabel,
-  exportDateStamp,
   renderExportNode,
   createPdf,
   embedPdfImage,
+  seatCompareFilename,
+  seatExportBaseName,
 } from '@/utils/seatExport'
 import type { SeatExportKind } from '@/utils/seatExport'
 import {
@@ -987,7 +988,7 @@ function applyRotate(seats: Seat[]) {
 
 const exportBusy = ref<SeatExportKind | null>(null)
 const compareBusy = ref(false)
-/** 导出日期文案（每次导出开始固定，保证标题 / 副标题 / 文件名同一天） */
+/** 导出日期文案（每次导出开始固定，保证标题 / 副标题同一天；v3.7.7 起不再进文件名） */
 const exportedDateText = ref(exportDateLabel())
 
 /** 离屏导出节点（html-to-image 抓取目标；双视角实例常驻挂载） */
@@ -1022,9 +1023,15 @@ async function captureNode(node: HTMLElement | undefined): Promise<HTMLCanvasEle
   return renderExportNode(node)
 }
 
-function baseFilename(): string {
-  const planName = seatStore.currentPlan?.name ?? '座位'
-  return `${config.name}-座位表-${planName}-${exportDateStamp()}`
+/**
+ * 导出文件名主干（v3.7.7）：`高一9班座位图_11.7`。
+ *
+ * 取**当前实际选中的座位方案名**，切换方案后下一次导出立即跟着变；
+ * 不再拼导出日期。方案名里的非法字符由 `seatExportBaseName` 清洗，
+ * 空名回退「未命名方案」——只影响文件名，不改方案本身的数据与名称。
+ */
+function exportBaseName(): string {
+  return seatExportBaseName(config.name, seatStore.currentPlan?.name)
 }
 
 async function runExport(kind: SeatExportKind) {
@@ -1032,7 +1039,7 @@ async function runExport(kind: SeatExportKind) {
   exportBusy.value = kind
   exportedDateText.value = exportDateLabel()
   try {
-    const base = baseFilename()
+    const base = exportBaseName()
     if (kind === 'pdf-dual') {
       // 双视角 PDF（v3.4.0）：**一个视角一页**，每页都是横向 A4 整页铺满。
       // 此前是一页上、下半各塞一张——横向页比竖版矮 87mm，再对半分就真的看不清了。
@@ -1044,7 +1051,7 @@ async function runExport(kind: SeatExportKind) {
       pdf.addPage()
       const studentCanvas = await captureNode(exportStudentEl.value)
       embedPdfImage(pdf, studentCanvas, { y: 10 })
-      pdf.save(`${base}-双视角.pdf`)
+      pdf.save(`${base}.pdf`)
     } else if (kind === 'xlsx-list') {
       /*
        * 行列列表：纯数据表（SheetJS 路线），不是给人看的座位图。
@@ -1060,8 +1067,8 @@ async function runExport(kind: SeatExportKind) {
     } else {
       // Excel（v3.5.1）：**复制需求方模板 `docs/座位图-9.3.xlsx` → 只改文字 → 导出**，
       // 两个视角各一张工作表。样式一律来自模板本身，这里只给标题 / 日期 / 63 个姓名。
-      // 文件名照需求方口径走「{班级}座位图_{YYYY-MM-DD}.xlsx」（表内日期是点分格式，
-      // 两个格式都是需求方写死的，见 utils/seatExport.ts 的 exportDateDotted）
+      // v3.7.7：文件名改用「{班级}座位图_{方案名}.xlsx」；表内日期仍是模板口径的
+      // 点分格式（见 utils/seatExport.ts 的 exportDateDotted），两者互不影响。
       const currentPlan = seatStore.currentPlan
       const buffer = await buildSeatWorkbookFromTemplate(await loadSeatTemplate(), {
         title: `${config.name}座位图`,
@@ -1082,7 +1089,7 @@ async function runExport(kind: SeatExportKind) {
         appVersion: import.meta.env.APP_VERSION,
         constraints: seatStore.currentConstraints,
       })
-      if (!downloadXlsx(buffer, `${config.name}座位图_${exportDateStamp()}.xlsx`)) {
+      if (!downloadXlsx(buffer, `${base}.xlsx`)) {
         throw new Error('浏览器未接受下载')
       }
     }
@@ -1113,7 +1120,7 @@ async function runCompareExport() {
     const changed = await captureNode(compareChangedEl.value)
     pdf.addPage()
     embedPdfImage(pdf, changed, { y: 10 })
-    pdf.save(`${config.name}-座位对比-${planA.name}-${planB.name}-${exportDateStamp()}.pdf`)
+    pdf.save(seatCompareFilename(config.name, planA.name, planB.name))
     toast.success('已导出方案对比 PDF（3 页）')
   } catch (error) {
     console.error('[seat export] 对比导出失败：', error)

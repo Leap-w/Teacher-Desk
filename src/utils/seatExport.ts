@@ -23,7 +23,10 @@ export function exportDateLabel(date = new Date()): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
 }
 
-/** 文件名日期段：2026-09-10 */
+/**
+ * 日期戳（`2026-09-10`）。班费 / 假期导出仍用它拼文件名；
+ * **v3.7.7 起座位图导出改用「班级 + 方案名」**，不再带导出日期。
+ */
 export function exportDateStamp(date = new Date()): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   const day = `${date.getDate()}`.padStart(2, '0')
@@ -33,7 +36,7 @@ export function exportDateStamp(date = new Date()): string {
 /**
  * 表内日期文案：`2026.09.21`。
  *
- * **与 `exportDateStamp`（文件名用）刻意分开**：文件名走 `-`、表内走 `.`，
+ * **与 `exportDateStamp` 刻意分开**：日期戳走 `-`、表内走 `.`，
  * 两边都是需求方写死的口径——座位图 .xlsx 的日期格照模板就是点分格式，
  * 换成 `-` 或 `/` 与模板对不上。别为了「统一」把这两个合成一个。
  */
@@ -41,6 +44,62 @@ export function exportDateDotted(date = new Date()): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   const day = `${date.getDate()}`.padStart(2, '0')
   return `${date.getFullYear()}.${month}.${day}`
+}
+
+/* ==================== 导出文件名（v3.7.7） ==================== */
+
+/**
+ * 文件名里不能出现的字符：Windows 与 macOS 的并集（含控制字符）。
+ * 统一换成 `·`，与 `holidayExportFilename` 的既有口径一致。
+ */
+const FILENAME_ILLEGAL_CHARS = /[/\\:*?"<>|\p{Cc}]/gu
+
+/**
+ * 清洗文件名中的一个片段（班级名 / 方案名）。
+ *
+ * 座位方案名由教师自由填写，可能带 `/`、`:`、`?` 等字符；Windows 还禁止片段
+ * 以点或空格结尾。这里只处理文件名，**不改动方案本身的数据与名称**：
+ * 非法字符 → `·`、连续 `·` 合并、多余空白压成一个、去掉首尾空白。
+ * 最后统一清掉结尾的 `.`、`·` 和空格——非法字符被替换成 `·` 后，原本以
+ * `?` 之类结尾的名字会留下一个悬空的 `·`，同样不能带进文件名。
+ * 清洗后可能为空，由调用方决定兜底名。
+ */
+export function sanitizeFilenamePart(value: string): string {
+  return value
+    .replace(FILENAME_ILLEGAL_CHARS, '·')
+    .replace(/·{2,}/g, '·')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.· ]+$/g, '')
+}
+
+/**
+ * 座位图导出文件名主干（不含扩展名）：`高一9班座位图_11.7`。
+ *
+ * 方案名为空 / 清洗后为空 → `未命名方案`；班级名异常为空 → `班级`。
+ * 三种导出（双视角 PDF、双视角 Excel、行列列表 Excel）共用这一个主干，
+ * 行列列表另加 `-行列列表` 区分，避免与双视角 Excel 同名。
+ */
+export function seatExportBaseName(className: string, planName: string | undefined): string {
+  const klass = sanitizeFilenamePart(className) || '班级'
+  const plan = sanitizeFilenamePart(planName ?? '') || '未命名方案'
+  return `${klass}座位图_${plan}`
+}
+
+/**
+ * 方案对比 PDF 文件名：`高一9班座位对比_开学初-第一次月考后.pdf`。
+ *
+ * 对比天然涉及两份方案，名字里都要写清；v3.7.7 一并去掉导出日期后缀。
+ */
+export function seatCompareFilename(
+  className: string,
+  planAName: string,
+  planBName: string,
+): string {
+  const klass = sanitizeFilenamePart(className) || '班级'
+  const planA = sanitizeFilenamePart(planAName) || '未命名方案'
+  const planB = sanitizeFilenamePart(planBName) || '未命名方案'
+  return `${klass}座位对比_${planA}-${planB}.pdf`
 }
 
 /**

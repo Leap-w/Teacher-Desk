@@ -520,7 +520,8 @@ describe('双视角 PDF 的页序：老师视角在前', () => {
   const dualBlock = () => {
     const source = read('src/views/Seats/index.vue')
     const start = source.indexOf("kind === 'pdf-dual'")
-    const end = source.indexOf('-双视角.pdf')
+    // v3.7.7：双视角 PDF 的文件名不再带「-双视角」后缀（改为「班级座位图_方案名.pdf」）
+    const end = source.indexOf('pdf.save(`${base}.pdf`)', start)
     expect(start).toBeGreaterThan(-1)
     expect(end).toBeGreaterThan(start)
     return source.slice(start, end)

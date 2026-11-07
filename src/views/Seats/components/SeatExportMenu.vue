@@ -21,7 +21,7 @@ import type { SeatExportKind } from '@/utils/seatExport'
  *
  * v3.7.5（§4.4）：多张座位表并存后，「导出的是哪一份」必须在按下之前就说清，
  * 于是下拉顶部常驻一行「当前座位表 · 方案名」。**只是把既有事实说出来**——
- * 导出图里的副标题与文件名本来就带着方案名（见页面 `exportSubtitle` / `baseFilename`），
+ * 导出图里的副标题与文件名本来就带着方案名（见页面 `exportSubtitle` / `exportBaseName`），
  * 这里补的是「点之前就看得见」。
  */
 const ITEMS: { kind: SeatExportKind; label: string; icon: typeof FileText }[] = [

@@ -13,6 +13,11 @@ import {
 interface Props {
   modelValue: boolean
   title?: string
+  /**
+   * 无可见标题时给对话框一个可访问名称（v3.7.7，版本信息弹窗这类
+   * 「只有正文、不画标题栏」的弹窗用）。有 `title` 时仍以 `title` 为准。
+   */
+  ariaLabel?: string
   /** 面板宽度，数字按 px 处理 */
   width?: number | string
   closeOnOverlay?: boolean
@@ -21,6 +26,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   title: '',
+  ariaLabel: '',
   width: 480,
   closeOnOverlay: true,
   closeOnEsc: true,
@@ -109,7 +115,7 @@ onBeforeUnmount(() => {
           class="modal-panel"
           role="dialog"
           aria-modal="true"
-          :aria-label="title || undefined"
+          :aria-label="title || ariaLabel || undefined"
           tabindex="-1"
           :style="{ width: typeof width === 'number' ? `${width}px` : width }"
         >
