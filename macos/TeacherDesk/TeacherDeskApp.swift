@@ -203,6 +203,7 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 深链：`teacherdesk://open`（Widget 点击）/ `teacherdesk://refresh`（网页「同步并刷新」）
+    /// / `teacherdesk://verify?nonce=`（v3.7.8 P1：网页发起的目录身份验证）
     func application(_ application: NSApplication, open urls: [URL]) {
         handledDeepLink = true
         for url in urls {
@@ -212,6 +213,13 @@ final class HostAppDelegate: NSObject, NSApplicationDelegate {
             case .refresh:
                 WidgetRefresher.reload()
                 HostRuntime.shared.noteWidgetReload()
+            case let .verify(nonce):
+                // 只核对自己的 Widget 容器：不打开 PWA、不刷新小组件、不碰正式快照。
+                // 结果写进同一容器的 `td-verify-<nonce>.res`，由网页自己读（P2 才接）。
+                _ = ContainerVerifier.verify(
+                    nonce: nonce,
+                    directory: SnapshotStore.widgetContainerDirectory
+                )
             }
         }
         // 无论哪条深链，都不把自己的界面带到前台（规格 §4.1）

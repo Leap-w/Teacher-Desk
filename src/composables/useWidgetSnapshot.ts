@@ -34,11 +34,13 @@ import {
   widgetBridge,
   type WidgetBridge,
   type WidgetBridgeStatus,
+  type WidgetDisconnectOutcome,
   type WidgetWriteOutcome,
 } from '@/services/widgetBridge'
 import {
   describeConnectOutcome,
   syncThenNotify,
+  WIDGET_CANCELLED_MESSAGE,
   type WidgetFeedback,
 } from '@/services/widgetBridgeFeedback'
 import { resolvePeriods } from '@/utils/timetable'
@@ -46,7 +48,7 @@ import { buildWidgetSnapshot, serializeWidgetSnapshot } from '@/utils/widgetSnap
 import type { WidgetSnapshot } from '@/types/widget'
 
 /** 「已取消」这句不弹提示（取消不是错误）；卡片与 toast 共用一份文案 */
-export { WIDGET_CANCELLED_MESSAGE } from '@/services/widgetBridgeFeedback'
+export { WIDGET_CANCELLED_MESSAGE }
 
 /** 课程表变化后的防抖时长：换课 / 导入会连着写几次盘，没必要每次都落一遍快照 */
 const DEBOUNCE_MS = 1500
@@ -101,6 +103,10 @@ export const WIDGET_STATUS_LABELS: Record<WidgetBridgeStatus, string> = {
   unconnected: '未连接',
   'needs-permission': '需要重新授权',
   'wrong-folder': '需要重新选择文件夹',
+  'needs-verify': '需要验证目录',
+  verifying: '正在确认目录…',
+  'verify-failed': '目录验证未通过',
+  'verify-timeout': '暂时无法确认目录',
   failed: '写入失败',
   connected: '已连接',
 }
@@ -127,16 +133,30 @@ export function useWidgetSnapshot() {
    *
    * 状态与文案的对应关系全在 `describeConnectOutcome` 里（纯函数，可单测）——
    * v3.7.8 之前这里把「写失败」折成「没有拿到写入权限」，是本次故障的误报来源。
+   *
+   * P3 起 `connect()` 内部会先做**目录身份验证**，期间徽标显示「正在确认目录…」；
+   * 只有验证通过才会落 `connected`。
    */
   async function connect(): Promise<WidgetFeedback> {
     busy.value = true
+    const previous = status.value
+    status.value = 'verifying'
     try {
       const outcome = await bridge.connect(currentWidgetSnapshotText())
+      if (outcome.superseded) {
+        // 已被更新的一次连接取代：不写状态、不弹提示，**也不清 busy**
+        //（清了按钮就会在别人还在验证时重新可点；收尾交给新的那次）
+        return { ok: false, message: WIDGET_CANCELLED_MESSAGE }
+      }
       status.value = outcome.status
       if (outcome.wrote) lastWrittenAt.value = new Date().toISOString()
-      return describeConnectOutcome(outcome)
-    } finally {
       busy.value = false
+      return describeConnectOutcome(outcome)
+    } catch (error) {
+      // 连接流程本身不该抛（桥内部都兜住了），这里只保证徽标不卡在「正在确认」
+      status.value = previous
+      busy.value = false
+      throw error
     }
   }
 
@@ -188,11 +208,13 @@ export function useWidgetSnapshot() {
   }
 
   /** 断开：只清句柄，盘上那份快照留着（Widget 继续显示上一次的数据） */
-  async function disconnect(): Promise<void> {
+  /** 断开：返回结果让界面能如实说「清库失败」（v3.7.8 P3.8） */
+  async function disconnect(): Promise<WidgetDisconnectOutcome> {
     busy.value = true
     try {
-      await bridge.disconnect()
+      const outcome = await bridge.disconnect()
       status.value = await bridge.status()
+      return outcome
     } finally {
       busy.value = false
     }
@@ -201,6 +223,11 @@ export function useWidgetSnapshot() {
   /** 兜底：把快照下载成一个 JSON 文件（Safari 等不支持 FS API 的浏览器） */
   function download(): boolean {
     return bridge.download(currentWidgetSnapshotText())
+  }
+
+  /** 取消进行中的目录身份验证（页面卸载 / 用户关掉卡片时调用） */
+  function cancelVerification(): void {
+    bridge.cancelVerification()
   }
 
   return {
@@ -214,6 +241,7 @@ export function useWidgetSnapshot() {
     syncAndRefresh,
     disconnect,
     download,
+    cancelVerification,
   }
 }
 

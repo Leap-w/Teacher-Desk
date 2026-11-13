@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Check, Copy, Download, FolderOpen, RefreshCw } from 'lucide-vue-next'
 
 import { AppButton } from '@/components/ui'
@@ -11,7 +11,7 @@ import {
   WIDGET_STATUS_LABELS,
   useWidgetSnapshot,
 } from '@/composables/useWidgetSnapshot'
-import { describeWriteOutcome } from '@/services/widgetBridgeFeedback'
+import { describeDisconnectOutcome, describeWriteOutcome } from '@/services/widgetBridgeFeedback'
 
 /**
  * WidgetBridgeCard — **设置 → 教学设置 → 桌面小组件** 页上的快照入口
@@ -39,6 +39,11 @@ const connected = computed(() => widget.status.value === 'connected')
 const unsupported = computed(() => widget.status.value === 'unsupported')
 /** 存着的句柄指向了文件（v3.7.8 之前留下的坏句柄）→ 提示重选，但不用先断开 */
 const wrongFolder = computed(() => widget.status.value === 'wrong-folder')
+/** 有句柄但本次会话还没验过身份（P3）→ 按钮叫「验证连接」，原地验证、不弹选择框 */
+const needsVerify = computed(() => widget.status.value === 'needs-verify')
+const verifying = computed(() => widget.status.value === 'verifying')
+const verifyFailed = computed(() => widget.status.value === 'verify-failed')
+const verifyTimeout = computed(() => widget.status.value === 'verify-timeout')
 
 const lastSyncText = computed(() =>
   widget.lastWrittenAt.value
@@ -94,9 +99,33 @@ async function onCopyPath(): Promise<void> {
 }
 
 async function onDisconnect(): Promise<void> {
-  await widget.disconnect()
-  toast.info('已断开。盘上那份快照保留着，小组件继续显示上一次的数据')
+  const feedback = describeDisconnectOutcome(await widget.disconnect())
+  if (feedback.ok) toast.info(feedback.message)
+  else toast.danger(feedback.message)
 }
+
+/**
+ * 卡片卸载 / 页面隐藏时取消进行中的验证：不让一个已经离开页面的请求继续跑。
+ *
+ * 监听器必须**同一个引用**注册与解绑（v3.7.8 P3.3）：早先写成内联箭头函数，
+ * `removeEventListener` 拿不到同一个引用，反复进出设置页会累积闭包并把整份
+ * composable 实例一起留住。
+ */
+function onPageHide(): void {
+  widget.cancelVerification()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', onPageHide)
+}
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('pagehide', onPageHide)
+  }
+  // 解绑之后仍然要取消一次：卸载时可能正有一个验证在跑
+  widget.cancelVerification()
+})
 </script>
 
 <template>
@@ -112,10 +141,11 @@ async function onDisconnect(): Promise<void> {
           v-if="!connected && !unsupported"
           size="sm"
           :loading="widget.busy.value"
+          :disabled="widget.busy.value"
           @click="onConnect"
         >
           <FolderOpen :size="14" :stroke-width="2" aria-hidden="true" />
-          连接小组件
+          {{ needsVerify ? '验证连接' : '连接小组件' }}
         </AppButton>
         <template v-else-if="connected">
           <AppButton size="sm" :loading="widget.busy.value" @click="onSyncAndRefresh">
@@ -140,6 +170,19 @@ async function onDisconnect(): Promise<void> {
       <template v-if="unsupported">
         这个浏览器不支持自动写入文件（Safari 尚未开放该能力）。请点「下载快照」， 再在 Mac 上运行
         <code>macos/Tools/install-snapshot.sh</code> 把它放进小组件的容器目录。
+      </template>
+      <template v-else-if="verifying">
+        正在确认小组件目录……（最多等 12 秒；如果系统弹出「是否打开 TeacherDesk」请点允许）
+      </template>
+      <template v-else-if="needsVerify">
+        这个目录还没通过身份验证。点「验证连接」确认一次即可，<strong>不用重新选文件夹</strong>。
+      </template>
+      <template v-else-if="verifyTimeout">
+        暂时无法确认该目录是否为 TeacherDesk 小组件目录：请确认小组件 App 正常运行后重试。
+      </template>
+      <template v-else-if="verifyFailed">
+        没有通过小组件 App 的目录身份验证。请重试；若仍然失败，请重新选中
+        <strong>TeacherDesk 这个文件夹</strong>。
       </template>
       <template v-else-if="wrongFolder">
         上次保存的目录指向的是快照文件本身，所以一直写不进去。点「连接小组件」重新选中
@@ -227,6 +270,18 @@ async function onDisconnect(): Promise<void> {
 }
 
 .widget-state.is-failed {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+}
+
+/* v3.7.8 P3：目录身份验证的三种态（待验证 / 未通过 / 无法确认） */
+.widget-state.is-needs-verify,
+.widget-state.is-verify-timeout {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
+}
+
+.widget-state.is-verify-failed {
   background: var(--color-danger-soft);
   color: var(--color-danger-strong);
 }

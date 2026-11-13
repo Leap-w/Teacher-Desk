@@ -15,7 +15,12 @@
  *   failed           → 真写了但失败，把 `TypeMismatchError` 这类真实错误名说出来
  *   written          → 快照确实落盘了（**唯一可以报成功的情况**）
  */
-import type { WidgetBridge, WidgetConnectOutcome, WidgetWriteOutcome } from './widgetBridge'
+import type {
+  WidgetBridge,
+  WidgetConnectOutcome,
+  WidgetDisconnectOutcome,
+  WidgetWriteOutcome,
+} from './widgetBridge'
 
 /** 给 toast 用的一句话（`ok` 决定是成功色还是警告色） */
 export interface WidgetFeedback {
@@ -31,12 +36,32 @@ export function describeConnectOutcome(outcome: WidgetConnectOutcome): WidgetFee
   if (outcome.wrote) {
     return {
       ok: true,
-      message: outcome.reused ? '已恢复授权，课程表已写入快照' : '已连接，课程表已写入快照',
+      message: outcome.reused
+        ? '已恢复授权并确认目录，课程表已写入快照'
+        : '已连接，课程表已写入快照',
     }
   }
   if (outcome.cancelled) return { ok: false, message: WIDGET_CANCELLED_MESSAGE }
   if (outcome.status === 'unsupported') {
     return { ok: false, message: '这个浏览器不支持自动同步，请用「下载快照」' }
+  }
+  // v3.7.8 P3：验证没通过时**不许说成功**，也不许把超时说成「选错目录」
+  if (outcome.status === 'verify-timeout') {
+    return {
+      ok: false,
+      message: '暂时无法确认该目录是否为 TeacherDesk 小组件目录：请确认小组件 App 正常运行后重试。',
+    }
+  }
+  if (outcome.status === 'verify-failed') {
+    return {
+      ok: false,
+      message: `没有通过小组件 App 的目录身份验证${
+        outcome.verifyErrorCode ? `（${outcome.verifyErrorCode}）` : ''
+      }：请重试；若仍失败，请重新选择 TeacherDesk 文件夹。`,
+    }
+  }
+  if (outcome.status === 'needs-verify') {
+    return { ok: false, message: '这个目录还没通过身份验证：请点「验证连接」再试一次' }
   }
   if (outcome.wrongFolder) {
     const { kind, picked, expected } = outcome.wrongFolder
@@ -52,6 +77,13 @@ export function describeConnectOutcome(outcome: WidgetConnectOutcome): WidgetFee
     return {
       ok: false,
       message: '保存的目录指向的不是「TeacherDesk」文件夹：请重新点「连接小组件」选中它',
+    }
+  }
+  if (outcome.error?.name === 'HandleStoreError') {
+    // 句柄没落盘（v3.7.8 P3.7）：说清是「保存授权」失败，别让它听起来像「目录写不进去」
+    return {
+      ok: false,
+      message: `没能把目录授权保存下来（${outcome.error.message}）：浏览器存储可能不可用（隐私模式？），刷新后需要重新连接。`,
     }
   }
   if (outcome.error) {
@@ -75,6 +107,11 @@ export function describeWriteOutcome(outcome: WidgetWriteOutcome): WidgetFeedbac
       return { ok: false, message: '这个浏览器不支持自动同步，请用「下载快照」' }
     case 'unconnected':
       return { ok: false, message: '还没连接快照目录，先点「连接小组件」' }
+    case 'needs-verify':
+      return {
+        ok: false,
+        message: '这个目录还没通过身份验证：点「验证连接」确认一次（不用重选目录）',
+      }
     case 'needs-permission':
       return { ok: false, message: '授权已失效：点「连接小组件」重新授权一次（不用重选目录）' }
     case 'wrong-folder':
@@ -89,6 +126,22 @@ export function describeWriteOutcome(outcome: WidgetWriteOutcome): WidgetFeedbac
           outcome.error?.message ?? '未知错误'
         }`,
       }
+  }
+}
+
+/**
+ * 把一次「断开」的结果翻成人话（v3.7.8 P3.8）。
+ *
+ * 断开要清掉 IndexedDB 里的句柄，这一步可能失败。失败时必须说清楚「授权没清掉」，
+ * 不能让教师以为已经断开——否则下次开页面会莫名其妙又看到「需要验证目录」。
+ */
+export function describeDisconnectOutcome(outcome: WidgetDisconnectOutcome): WidgetFeedback {
+  if (outcome.ok) {
+    return { ok: true, message: '已断开。盘上那份快照保留着，小组件继续显示上一次的数据' }
+  }
+  return {
+    ok: false,
+    message: `断开没完成（${outcome.error?.name ?? 'Error'}）：目录授权可能还留着，请再点一次「断开」。`,
   }
 }
 

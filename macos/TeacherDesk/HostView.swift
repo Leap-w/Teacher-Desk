@@ -251,6 +251,12 @@ struct HostView: View {
                 model.notifyWidgets()
             case .open, .unknown:
                 model.openTeacherDesk()
+            case let .verify(nonce):
+                // 面板开着时收到验证请求：走同一个验证器（不打开 PWA、不改界面）
+                _ = ContainerVerifier.verify(
+                    nonce: nonce,
+                    directory: SnapshotStore.widgetContainerDirectory
+                )
             }
         }
     }

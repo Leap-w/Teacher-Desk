@@ -27,6 +27,19 @@
  * 3. **能复用就不重选**：已存句柄有效时，`granted` 直接写；`prompt` 在**用户手势**里补一次
  *    `requestPermission()`（浏览器重启后权限退回 prompt 是常态，不该逼教师每次重选目录）。
  *
+ * ## v3.7.8 P3 加的闸门（2026-11-13）
+ *
+ * **「目录身份验证通过」是 `connected` 的必要条件**，而且**每次会话都要重验**：
+ *
+ * · 名字对（`inspect`）、权限有、能写文件——三条加起来**都不再构成连接成功的理由**；
+ * · 只有 `verifier.verify(handle)` 返回 `verified`，才把句柄落盘、写快照、报 `connected`；
+ * · 验证记录只放在内存（`verifiedHandle`），**不落 IndexedDB**：页面一刷新就回到
+ *   `needs-verify`，用户点一次即在该句柄上原地重验（不弹选择框）；
+ * · `write()`（自动同步 / 仅同步）同样要过这道闸：没验过就返回 `needs-verify`、一个字节不写。
+ *
+ * 为什么不做成持久标记：目录身份是「这个句柄指向的目录 == 扩展真正读的容器」，
+ * 只有当场问宿主才算数；盘上一个 `verified: true` 下次启动就不再是证据。
+ *
  * ## 为什么不是「每次都弹一次选择框」
  *
  * `showDirectoryPicker()` 必须由用户手势触发，不能每次同步都弹。所以句柄要存下来复用
@@ -40,12 +53,17 @@
  * 已连接」这几种状态机**能在 node 里跑**，不必开浏览器点一遍。
  */
 import { appConfig } from '@/config'
+import {
+  createWidgetDirectoryVerifier,
+  type WidgetDirectoryVerificationResult,
+} from '@/services/widgetDirectoryVerifier'
 
 /**
  * 桥的状态（界面直接显示它，每种说法必须都能区分开）
  *
- * 注意：`failed` 只会由**一次具体的连接/写入**产生，`status()` 不返回它——
- * 因为「上次写失败了」不是一种可查询的持久状态（句柄与权限可能都是好的）。
+ * 注意：`failed` / `verifying` / `verify-failed` / `verify-timeout` 只会由**一次具体的
+ * 连接或写入**产生，`status()` 不返回它们——它们描述的是「刚才那次操作」，
+ * 不是可查询的持久状态。
  */
 export type WidgetBridgeStatus =
   /** 浏览器不支持 File System Access API（Safari 等）→ 只能走「下载快照」兜底 */
@@ -56,9 +74,23 @@ export type WidgetBridgeStatus =
   | 'needs-permission'
   /** 存着句柄，但它指向的不是目标目录（例如指向了快照文件本身）→ 需要重选 */
   | 'wrong-folder'
+  /**
+   * 存着句柄、权限也在，但**本次会话还没验证过身份**（v3.7.8 P3）。
+   *
+   * 为什么不做成持久标记：目录身份是「这个句柄指向的目录 == 扩展真正读的容器」，
+   * 这件事只有当场问宿主才能确认；一次性的 `verified: true` 存下来，
+   * 下次页面启动就不再是证据了。
+   */
+  | 'needs-verify'
+  /** 正在验证（只在 `connect()` 期间短暂出现，界面用来说「正在确认小组件目录…」） */
+  | 'verifying'
+  /** 宿主明确说「这个目录不是容器」，或响应不合协议 */
+  | 'verify-failed'
+  /** 12 秒内没拿到有效响应 —— **不等于选错目录** */
+  | 'verify-timeout'
   /** 句柄与权限都在，但**这一次**没写进去（磁盘满 / 目录被删 / 系统拒绝写） */
   | 'failed'
-  /** 已连接且权限在手 → 静默同步可用 */
+  /** 已验证 + 权限在手 → 静默同步可用 */
   | 'connected'
 
 /** 一次静默写入的结果 */
@@ -69,6 +101,8 @@ export type WidgetWriteResult =
   | 'unsupported'
   /** 存着的句柄指向的不是目标目录 */
   | 'wrong-folder'
+  /** 有句柄但本次会话还没验证过身份 → **不写盘** */
+  | 'needs-verify'
   /** 真的写了但失败了（磁盘 / 系统拒绝 / 句柄失效） */
   | 'failed'
 
@@ -96,7 +130,7 @@ export interface WidgetFolderProblem {
 
 /** 一次「连接」的结果 */
 export interface WidgetConnectOutcome {
-  /** 连接后的状态（可能是 `failed` / `wrong-folder`，见 `WidgetBridgeStatus` 的说明） */
+  /** 连接后的状态（见 `WidgetBridgeStatus` 的说明） */
   status: WidgetBridgeStatus
   /** 快照是否真的写进去了——**这是唯一可以报「成功」的依据** */
   wrote: boolean
@@ -106,7 +140,27 @@ export interface WidgetConnectOutcome {
   cancelled?: boolean
   /** 选错了目录（此时**没有**覆盖原有句柄） */
   wrongFolder?: WidgetFolderProblem
-  /** 写入失败的真实原因 */
+  /** 写入 / 验证失败的真实原因 */
+  error?: WidgetBridgeError
+  /** 宿主在验证响应里给的失败码（`request-missing` 等），只用于诊断与文案 */
+  verifyErrorCode?: string
+  /**
+   * 这次连接已被**更新的一次连接**取代（v3.7.8 P3.3）。
+   *
+   * 语义是「这次的结果已经过期」：调用方**不得**用它写状态、弹提示或清 `busy`——
+   * 收尾由新的那次负责。典型场景是双击按钮、或在验证途中又点了一次。
+   */
+  superseded?: boolean
+}
+
+/**
+ * 一次「断开」的结果（v3.7.8 P3.8）。
+ *
+ * 断开要清掉 IndexedDB 里的句柄，这一步**可能失败**（存储不可用 / 事务中止）。
+ * 失败时不能装作断开成功：句柄还在盘上，下次开页面会又冒出「需要验证目录」。
+ */
+export interface WidgetDisconnectOutcome {
+  ok: boolean
   error?: WidgetBridgeError
 }
 
@@ -147,6 +201,18 @@ export interface WidgetHandleStore {
   clear(): Promise<void>
 }
 
+/**
+ * 目录身份验证端口（v3.7.8 P3）。
+ *
+ * 生产环境接 `createWidgetDirectoryVerifier()`（P2 的挑战—应答）；
+ * 自检里接假体——于是「验证没通过就不能变成 connected」这条闸门能在 node 里跑。
+ */
+export interface WidgetDirectoryVerifierPort {
+  verify(handle: WidgetDirectoryHandleLike): Promise<WidgetDirectoryVerificationResult>
+  /** 取消进行中的验证（页面卸载 / 用户取消） */
+  cancel(): void
+}
+
 export interface WidgetBridge {
   /** 快照文件名（`appConfig.widget.snapshotFileName`） */
   readonly fileName: string
@@ -168,16 +234,23 @@ export interface WidgetBridge {
   status(): Promise<WidgetBridgeStatus>
   /**
    * 连接（**必须在用户手势里调用**）：
-   * ① 先复用已存句柄（granted 直接写 / prompt 在手势里补授权）；
-   * ② 复用不了才弹选择框 → 校验是不是目标目录 → 授权 → 存句柄 → 写第一份。
+   * ① 先复用已存句柄（已授权就直接验证；prompt 在手势里补授权再验证）；
+   * ② 复用不了才弹选择框 → 校验是不是目标目录 → 授权 → **验证目录身份** → 存句柄 → 写第一份。
    *
-   * `wrongFolder` 非空时**什么都没覆盖**（原句柄原样保留）。
+   * **v3.7.8 P3 起，「目录身份验证通过」是 `connected` 的必要条件**：
+   * 名字对、权限有、能写文件，都不再构成连接成功的理由。
+   * `wrongFolder` / 验证失败时**什么都没覆盖**（原句柄与原有连接原样保留）。
    */
   connect(text: string): Promise<WidgetConnectOutcome>
-  /** 静默写（已连接时）。未连接 / 需要授权都不抛异常，返回结果让界面决定说什么 */
+  /**
+   * 静默写（已验证时）。未连接 / 需要授权 / 需要验证都不抛异常，
+   * 返回结果让界面决定说什么；**未经本次会话验证的句柄一律不写盘**。
+   */
   write(text: string): Promise<WidgetWriteOutcome>
-  /** 断开（清掉句柄；不动盘上已有的快照文件） */
-  disconnect(): Promise<void>
+  /** 断开（清掉句柄与本次会话的验证记录；不动盘上已有的快照文件） */
+  disconnect(): Promise<WidgetDisconnectOutcome>
+  /** 取消进行中的目录身份验证（页面卸载 / 用户取消时调用） */
+  cancelVerification(): void
   /** 兜底：把快照存成下载文件（不支持 FS API 的浏览器用它 + macos/Tools/install-snapshot.sh） */
   download(text: string): boolean
 }
@@ -269,25 +342,26 @@ export const indexedDbHandleStore: WidgetHandleStore = {
   },
   async write(handle) {
     const db = await openDb()
-    if (!db) return
-    await new Promise<void>((resolve) => {
+    // **不吞**：句柄没落盘就是没落盘，由上层决定怎么报（v3.7.8 P3.7）
+    if (!db) throw new Error('打不开句柄库（浏览器存储不可用）')
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, 'readwrite')
       tx.objectStore(IDB_STORE).put(handle, IDB_KEY)
       tx.oncomplete = () => resolve()
-      tx.onerror = () => {
-        console.warn('[widget] 保存目录句柄失败：', tx.error)
-        resolve()
-      }
+      tx.onerror = () => reject(tx.error ?? new Error('保存目录句柄失败'))
+      tx.onabort = () => reject(tx.error ?? new Error('保存目录句柄的事务被中止'))
     })
   },
   async clear() {
     const db = await openDb()
-    if (!db) return
-    await new Promise<void>((resolve) => {
+    // 同 `write`：清不掉就说清不掉，别让上层以为断开成功了（v3.7.8 P3.8）
+    if (!db) throw new Error('打不开句柄库（浏览器存储不可用）')
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, 'readwrite')
       tx.objectStore(IDB_STORE).delete(IDB_KEY)
       tx.oncomplete = () => resolve()
-      tx.onerror = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('清除目录句柄失败'))
+      tx.onabort = () => reject(tx.error ?? new Error('清除目录句柄的事务被中止'))
     })
   },
 }
@@ -311,12 +385,83 @@ export function createWidgetBridge(options: {
   handleStore: WidgetHandleStore
   fileName?: string
   containerDir?: string
+  /** 目录身份验证端口（v3.7.8 P3）；不传就用 P2 的真实实现 */
+  verifier?: WidgetDirectoryVerifierPort
 }): WidgetBridge {
   const fileName = options.fileName ?? appConfig.widget.snapshotFileName
   const containerDir = options.containerDir ?? appConfig.widget.containerDir
   const filePathLabel = `${containerDir.replace(/\/+$/, '')}/${fileName}`
   // 目标目录名（`.../Application Support/TeacherDesk` 的最后一段）
   const expectedFolderName = containerDir.replace(/\/+$/, '').split('/').pop() ?? 'TeacherDesk'
+
+  const verifier: WidgetDirectoryVerifierPort = options.verifier ?? createWidgetDirectoryVerifier()
+
+  /**
+   * **本次会话**已验证通过的句柄（v3.7.8 P3）。
+   *
+   * 刻意只放在内存里、**不落 IndexedDB**：目录身份是「这个句柄 == 扩展真正读的容器」，
+   * 只有当场问宿主才算数；存一个 `verified: true` 到盘上，下次启动它就不再是证据。
+   * 于是页面一刷新就回到 `needs-verify`，用户点一次即可原地重新验证（不弹选择框）。
+   */
+  let verifiedHandle: WidgetDirectoryHandleLike | undefined
+
+  /**
+   * 连接请求序号（v3.7.8 P3.3）。
+   *
+   * 每次 `connect()` 进来先自增；**验证返回之后**再看一眼自己是不是最新那一次：
+   * 不是就直接返回 `superseded`，既不落句柄也不写快照。
+   *
+   * 为什么必须有：验证要等宿主 1–2 秒，这期间用户完全可能再点一次（或双击）。
+   * 只靠按钮 `disabled` 兜不住同一帧内的两次点击，而「旧的那次晚一步返回」
+   * 会把新连接刚写好的状态盖回去。序号是这里唯一可靠的判据。
+   */
+  let connectSeq = 0
+
+  /**
+   * 句柄写入的**串行队列**（v3.7.8 P3.6）。
+   *
+   * 为什么不能只靠「写完之后再判一次序号」：`handleStore.write()` 是异步的，
+   * 两次写入的完成顺序不保证等于调用顺序；旧请求晚到的 `put` 会把新句柄盖掉。
+   * P3.5 用「补偿写入」救过一次，但**补偿本身又是一次异步写**，会被第三次连接再超越
+   * （补偿永远追不上）。
+   *
+   * 改成「排队 + 轮到执行时再判序号」：写入按调用顺序串行落盘；执行那一刻如果已经不是
+   * 最新那次，就**一个字节都不写**。于是「最后落地的必然是最新那次」成为结构性事实，
+   * 不需要任何补偿。
+   */
+  let handleWriteChain: Promise<void> = Promise.resolve()
+
+  /**
+   * 把句柄排进队列落盘，并**如实回报结果**（v3.7.8 P3.7）。
+   *
+   * 返回 `written: false` 的两种情形必须分清：
+   *  · 轮到自己时已过期（被更新的连接取代）→ 不写，由调用方按 `superseded` 处理；
+   *  · 真的写失败（存储不可用 / 事务中止）→ 带 `error`，调用方**不能报成功**。
+   */
+  function persistHandle(
+    handle: WidgetDirectoryHandleLike,
+    seq: number,
+  ): Promise<{ written: boolean; error?: WidgetBridgeError }> {
+    let result: { written: boolean; error?: WidgetBridgeError } = { written: false }
+    const run = async () => {
+      if (seq !== connectSeq) return // 轮到自己时已过期 → 不写
+      try {
+        await options.handleStore.write(handle)
+        result = { written: true }
+      } catch (error) {
+        // **不吞**：句柄没落盘，这次连接就不成立
+        const described = describeWidgetError(error)
+        console.warn(`[widget] 保存目录句柄失败：${described.name}`)
+        result = {
+          written: false,
+          error: { name: 'HandleStoreError', message: described.message },
+        }
+      }
+    }
+    const chained = handleWriteChain.then(run)
+    handleWriteChain = chained // run 自己兜住了异常，队列不会卡死
+    return chained.then(() => result)
+  }
 
   /**
    * 句柄是不是「目标目录」——**落盘前的唯一关卡**（v3.7.8）。
@@ -368,13 +513,76 @@ export function createWidgetBridge(options: {
     }
   }
 
+  /**
+   * 让宿主确认「这个句柄指向的目录，就是 Widget 扩展真正读的容器」。
+   *
+   * 返回 `undefined` 表示通过；否则给出该落到的状态与诊断信息。
+   * 只有 `verified` 一种结果算通过——`timeout` / `cancelled` 都不算。
+   */
+  async function verifyHandle(handle: WidgetDirectoryHandleLike): Promise<
+    | undefined
+    | {
+        status: WidgetBridgeStatus
+        detail: string
+        errorCode?: string
+        errorName?: string
+        cancelled?: boolean
+      }
+  > {
+    let result: WidgetDirectoryVerificationResult
+    try {
+      result = await verifier.verify(handle)
+    } catch (error) {
+      // 验证器本身不该抛（P2 内部已兜底），这里只防万一
+      const described = describeWidgetError(error)
+      console.warn(`[widget] 目录验证器异常：${described.name}`)
+      return { status: 'failed', detail: described.message, errorName: described.name }
+    }
+
+    if (result.status === 'verified') return undefined
+
+    if (result.status === 'cancelled') {
+      return { status: 'unconnected', detail: '已取消验证', cancelled: true }
+    }
+    if (result.status === 'timeout') {
+      console.warn('[widget] 目录验证超时（12 秒内没收到宿主响应）')
+      return { status: 'verify-timeout', detail: '没有收到 macOS 宿主的确认' }
+    }
+
+    // failed
+    console.warn(
+      `[widget] 目录验证失败：reason=${result.reason}${
+        result.errorCode ? ` code=${result.errorCode}` : ''
+      }${result.errorName ? ` error=${result.errorName}` : ''}`,
+    )
+    if (result.reason === 'unsupported') {
+      return { status: 'unsupported', detail: result.detail ?? '' }
+    }
+    if (result.reason === 'request-write-failed' || result.reason === 'read-error') {
+      // 真实文件系统错误：不是「目录身份不对」，别混为一谈
+      return {
+        status: 'failed',
+        detail: result.detail ?? '',
+        ...(result.errorName ? { errorName: result.errorName } : {}),
+      }
+    }
+    return {
+      status: 'verify-failed',
+      detail: result.detail ?? '',
+      ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+      ...(result.errorName ? { errorName: result.errorName } : {}),
+    }
+  }
+
   async function status(): Promise<WidgetBridgeStatus> {
     if (!options.fileSystem.supported()) return 'unsupported'
     const handle = await options.handleStore.read()
     if (!handle) return 'unconnected'
     // 存着的是一个坏句柄（历史遗留）→ 直接说「选错了」，不要拿它去查权限
     if (inspect(handle)) return 'wrong-folder'
-    const { state } = await askPermission(handle, false)
+    // 有句柄但本次会话没验过身份 → 不许报「已连接」（v3.7.8 P3 的核心闸门）
+    if (!verifiedHandle) return 'needs-verify'
+    const { state } = await askPermission(verifiedHandle, false)
     return state === 'granted' ? 'connected' : 'needs-permission'
   }
 
@@ -413,9 +621,32 @@ export function createWidgetBridge(options: {
     const handle = await options.handleStore.read()
     if (!handle) return { result: 'unconnected' }
     if (inspect(handle)) return { result: 'wrong-folder' }
-    const { state } = await askPermission(handle, false)
+    // **没验过就不写**：自动同步 / 手动「仅同步」都走这里，闸门只设一次
+    if (!verifiedHandle) return { result: 'needs-verify' }
+    const { state } = await askPermission(verifiedHandle, false)
     if (state !== 'granted') return { result: 'needs-permission' }
-    return writeWith(handle, text)
+    return writeWith(verifiedHandle, text)
+  }
+
+  /** 验证没通过时，把结果原样翻成「连接结果」（**不落盘、不写快照**） */
+  function rejectVerification(
+    failure: {
+      status: WidgetBridgeStatus
+      detail: string
+      errorCode?: string
+      errorName?: string
+      cancelled?: boolean
+    },
+    reused: boolean,
+  ): WidgetConnectOutcome {
+    return {
+      status: failure.status,
+      wrote: false,
+      ...(reused ? { reused: true } : {}),
+      ...(failure.cancelled ? { cancelled: true } : {}),
+      ...(failure.errorCode ? { verifyErrorCode: failure.errorCode } : {}),
+      ...(failure.errorName ? { error: { name: failure.errorName, message: failure.detail } } : {}),
+    }
   }
 
   return {
@@ -426,34 +657,58 @@ export function createWidgetBridge(options: {
     status,
     write,
 
+    cancelVerification() {
+      verifier.cancel()
+    },
+
     async connect(text) {
       if (!options.fileSystem.supported()) return { status: 'unsupported', wrote: false }
+
+      // 每次连接领一个序号；验证回来之后用它判断自己是不是已经过期
+      const seq = ++connectSeq
+      const superseded = (): WidgetConnectOutcome => ({
+        status: 'unconnected',
+        wrote: false,
+        cancelled: true,
+        superseded: true,
+      })
 
       // ① 复用已存句柄（v3.7.8）：浏览器重启后权限退回 prompt 是常态，
       //    这里在**用户点击**提供的手势上下文里补一次授权，不该逼教师重新选目录。
       const stored = await options.handleStore.read()
       if (stored && !inspect(stored)) {
         const current = await askPermission(stored, false)
-        if (current.state === 'granted') {
-          return finish(await writeWith(stored, text), true)
-        }
+        let usable = current.state === 'granted'
         if (current.state === 'prompt') {
           // 只有走到这里才请求权限：`requestPermission` 需要用户手势，
           // 而 `connect()` 只由按钮点击触发（页面加载时绝不调用）。
           const requested = await askPermission(stored, true)
           if (requested.state === 'granted') {
-            return finish(await writeWith(stored, text), true)
-          }
-          if (requested.error) {
+            usable = true
+          } else if (requested.error) {
             // 抛错（例如缺用户手势的 SecurityError）→ 是「失败」，不是「没授权」
             return { status: 'failed', wrote: false, error: requested.error }
+          } else {
+            return { status: 'needs-permission', wrote: false }
           }
-          return { status: 'needs-permission', wrote: false }
+        }
+        if (usable) {
+          // **② 目录身份验证**：权限有了还不够，必须当场问宿主「这是不是容器」
+          const failure = await verifyHandle(stored)
+          // 验证期间又有人发起连接 → 这次的结果作废（不落句柄、不写快照、不改状态）
+          if (seq !== connectSeq) return superseded()
+          if (failure) return rejectVerification(failure, true)
+          verifiedHandle = stored
+          const writeOutcome = await writeWith(stored, text)
+          // 写入期间又被超越：这次写入**已经落地**（无法回滚，但落在已验证的目录里），
+          // 只是**不再向调用方报成功**——否则界面会被一次过期请求点亮成「已连接」（P3.4）。
+          if (seq !== connectSeq) return superseded()
+          return finish(writeOutcome, true)
         }
         // denied / 其它 → 句柄已经不可用了，只能重新选
       }
 
-      // ② 重新选择目录
+      // ③ 重新选择目录
       const picked = await options.fileSystem.pickDirectory()
       if (!picked) {
         // 用户取消：保持原状（**不覆盖、不删除**已有句柄）
@@ -470,13 +725,54 @@ export function createWidgetBridge(options: {
           ? { status: 'failed', wrote: false, error: requested.error }
           : { status: 'needs-permission', wrote: false }
       }
-      // **校验与授权都过了才落盘**：选错时不会污染原有句柄
-      await options.handleStore.write(picked)
-      return finish(await writeWith(picked, text), false)
+
+      // ④ 验证通过才落盘：验证失败时**原句柄与原有连接原样保留**
+      const failure = await verifyHandle(picked)
+      if (seq !== connectSeq) return superseded()
+      if (failure) return rejectVerification(failure, false)
+
+      // 句柄落盘走串行队列：轮到自己时若已不是最新那次，**根本不写**（P3.6）
+      const persisted = await persistHandle(picked, seq)
+      if (seq !== connectSeq) return superseded()
+      if (!persisted.written) {
+        // **句柄没落盘，这次连接就不成立**（P3.7）：
+        // 不能只把快照写进去就报「已连接」——下次开页面没有句柄，用户会莫名其妙掉线。
+        return {
+          status: 'failed',
+          wrote: false,
+          ...(persisted.error ? { error: persisted.error } : {}),
+        }
+      }
+      verifiedHandle = picked
+      const writeOutcome = await writeWith(picked, text)
+      // 同上：写入落地了，但这次请求已过期 → 不报成功，状态由新的那次决定
+      if (seq !== connectSeq) return superseded()
+      return finish(writeOutcome, false)
     },
 
-    async disconnect() {
-      await options.handleStore.clear()
+    async disconnect(): Promise<WidgetDisconnectOutcome> {
+      // 让任何在途连接作废：排队中的写入会在轮到时被跳过
+      connectSeq += 1
+      verifiedHandle = undefined
+      // **清库也进同一条队列**（P3.7）：必须等「已经开始的写入」落地之后再清，
+      // 否则那个写入可能在 clear 之后才提交，把句柄又写回来。
+      // 反过来，清库之后的任何新连接都会排在这条 clear 后面，顺序明确。
+      //
+      // **失败不能污染队列**（P3.8）：这里自己兜住异常，让 `handleWriteChain` 永远是
+      // resolved 的——否则一次清库失败就会让后面所有连接都存不进句柄。
+      // 但失败本身要如实带出去，不能装作断开成功。
+      let error: WidgetBridgeError | undefined
+      const clearRun = handleWriteChain.then(async () => {
+        try {
+          await options.handleStore.clear()
+        } catch (caught) {
+          error = describeWidgetError(caught)
+          console.warn(`[widget] 清除目录句柄失败：${error.name}`)
+        }
+      })
+      handleWriteChain = clearRun
+      await clearRun
+      return error ? { ok: false, error } : { ok: true }
     },
 
     download(text) {

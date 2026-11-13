@@ -290,5 +290,170 @@ check("候选里含 Widget 扩展容器里的那份", SnapshotStore.candidateFil
     $0.path.contains("Library/Containers/\(SnapshotStore.widgetBundleID)/")
 } || SnapshotStore.isSandboxed)
 
+print("\n== 9. 目录身份验证（v3.7.8 P1：宿主只认自己的容器）==")
+// 用一个临时目录冒充「Widget 容器」——验证器只认传进去的那个目录，正好可测。
+// 这里钉的是「哪种情况必须失败」：这些判断错了不会报错，只会把错目录当成对的。
+let verifyRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("td-verify-smoke-\(UUID().uuidString)", isDirectory: true)
+try? FileManager.default.createDirectory(at: verifyRoot, withIntermediateDirectories: true)
+
+func requestJSON(
+    _ nonce: String,
+    createdAt: Date,
+    type: String = WidgetVerifyProtocol.requestType,
+    version: Int = 1
+) -> String {
+    "{\"protocol\": \(version), \"type\": \"\(type)\", \"nonce\": \"\(nonce)\", "
+        + "\"createdAt\": \"\(WidgetVerifyProtocol.timestamp(createdAt))\"}"
+}
+
+@discardableResult
+func writeRequestFile(_ name: String, _ json: String, into directory: URL = verifyRoot) -> Bool {
+    (try? Data(json.utf8).write(to: directory.appendingPathComponent(name))) != nil
+}
+
+func responseObject(_ nonce: String, in directory: URL = verifyRoot) -> [String: Any]? {
+    let url = directory.appendingPathComponent(WidgetVerifyProtocol.responseName(nonce: nonce))
+    guard let data = try? Data(contentsOf: url),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return object
+}
+
+func fileCount(in directory: URL) -> Int {
+    (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?.count ?? -1
+}
+
+let verifyNow = date(2026, 11, 13, 15, 0)
+let nonceA = "8f1c2d4e-0a1b-4c2d-9e3f-5a6b7c8d9e0f"
+
+// ① 合法请求 → 通过，响应内容对得上
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceA),
+                 requestJSON(nonceA, createdAt: verifyNow.addingTimeInterval(-5)))
+let okOutcome = ContainerVerifier.verify(nonce: nonceA, directory: verifyRoot, now: verifyNow)
+check("合法请求 → 验证通过", okOutcome.ok && okOutcome.failure == nil, okOutcome.detail)
+let okResponse = responseObject(nonceA)
+check("响应 nonce 与请求一致", okResponse?["nonce"] as? String == nonceA, "\(okResponse?["nonce"] ?? "nil")")
+check("响应 ok = true、protocol = 1、type = result",
+      okResponse?["ok"] as? Bool == true
+        && okResponse?["protocol"] as? Int == 1
+        && okResponse?["type"] as? String == WidgetVerifyProtocol.responseType)
+check("响应里不带本地绝对路径",
+      !((okResponse?["detail"] as? String) ?? "").contains("/Users"))
+
+// ② nonce 不合法：一律拒绝，且**一个文件都不碰**（它会被拼进文件名）
+let countBefore = fileCount(in: verifyRoot)
+check("nonce 为 nil → nonce-invalid",
+      ContainerVerifier.verify(nonce: nil, directory: verifyRoot, now: verifyNow).failure == .nonceInvalid)
+check("nonce 为空串 → nonce-invalid",
+      ContainerVerifier.verify(nonce: "", directory: verifyRoot, now: verifyNow).failure == .nonceInvalid)
+check("nonce 含路径穿越 → nonce-invalid",
+      ContainerVerifier.verify(nonce: "../../etc/passwd", directory: verifyRoot, now: verifyNow).failure
+        == .nonceInvalid)
+check("nonce 过长（65 位）→ nonce-invalid",
+      ContainerVerifier.verify(nonce: String(repeating: "a", count: 65), directory: verifyRoot, now: verifyNow)
+        .failure == .nonceInvalid)
+check("非法 nonce 不产生任何文件", fileCount(in: verifyRoot) == countBefore,
+      "\(countBefore) → \(fileCount(in: verifyRoot))")
+
+// ③ 请求文件不存在（**用户选错目录时最常走到的分支**）
+let nonceMissing = "11111111-2222-3333-4444-555555555555"
+let missingOutcome = ContainerVerifier.verify(nonce: nonceMissing, directory: verifyRoot, now: verifyNow)
+check("请求文件不存在 → request-missing", missingOutcome.failure == .requestMissing, missingOutcome.detail)
+check("失败也写一份失败响应（网页能读到就不会干等）",
+      responseObject(nonceMissing)?["ok"] as? Bool == false)
+check("失败响应的 errorCode = request-missing",
+      responseObject(nonceMissing)?["errorCode"] as? String == "request-missing")
+
+// ④ 请求内容里的 nonce 与深链不一致
+let nonceB = "22222222-3333-4444-5555-666666666666"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceB), requestJSON(nonceA, createdAt: verifyNow))
+check("请求内容 nonce 不一致 → nonce-mismatch",
+      ContainerVerifier.verify(nonce: nonceB, directory: verifyRoot, now: verifyNow).failure == .nonceMismatch)
+
+// ⑤ 过期 / 未来时间
+let nonceExpired = "33333333-4444-5555-6666-777777777777"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceExpired),
+                 requestJSON(nonceExpired, createdAt: verifyNow.addingTimeInterval(-300)))
+check("请求过期（5 分钟前）→ request-expired",
+      ContainerVerifier.verify(nonce: nonceExpired, directory: verifyRoot, now: verifyNow).failure
+        == .requestExpired)
+let nonceFuture = "44444444-5555-6666-7777-888888888888"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceFuture),
+                 requestJSON(nonceFuture, createdAt: verifyNow.addingTimeInterval(600)))
+check("请求时间在未来 → request-expired",
+      ContainerVerifier.verify(nonce: nonceFuture, directory: verifyRoot, now: verifyNow).failure
+        == .requestExpired)
+
+// ⑥ 格式坏 / 协议版本不符
+let nonceBroken = "55555555-6666-7777-8888-999999999999"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceBroken), "{ 这不是 JSON")
+check("请求不是 JSON → request-malformed",
+      ContainerVerifier.verify(nonce: nonceBroken, directory: verifyRoot, now: verifyNow).failure
+        == .requestMalformed)
+let nonceVersion = "66666666-7777-8888-9999-aaaaaaaaaaaa"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceVersion),
+                 requestJSON(nonceVersion, createdAt: verifyNow, version: 99))
+check("协议版本不符 → request-malformed",
+      ContainerVerifier.verify(nonce: nonceVersion, directory: verifyRoot, now: verifyNow).failure
+        == .requestMalformed)
+
+// ⑦ 多个 nonce 互不覆盖（请求隔离）
+let nonceG = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
+let nonceH = "88888888-9999-aaaa-bbbb-cccccccccccc"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceG), requestJSON(nonceG, createdAt: verifyNow))
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceH), requestJSON(nonceH, createdAt: verifyNow))
+_ = ContainerVerifier.verify(nonce: nonceG, directory: verifyRoot, now: verifyNow)
+_ = ContainerVerifier.verify(nonce: nonceH, directory: verifyRoot, now: verifyNow)
+check("两个 nonce 的响应互不覆盖",
+      responseObject(nonceG)?["nonce"] as? String == nonceG
+        && responseObject(nonceH)?["nonce"] as? String == nonceH)
+
+// ⑧ 容器算不出来 / 不存在 → 明确报错，不当成功
+check("容器目录为 nil → container-unavailable",
+      ContainerVerifier.verify(nonce: nonceA, directory: nil, now: verifyNow).failure == .containerUnavailable)
+check("容器目录不存在 → container-unavailable",
+      ContainerVerifier.verify(nonce: nonceA, directory: verifyRoot.appendingPathComponent("nope"), now: verifyNow)
+        .failure == .containerUnavailable)
+
+// ⑨ 响应写不进去 → **不得报告成功**
+let readOnlyDir = verifyRoot.appendingPathComponent("readonly", isDirectory: true)
+try? FileManager.default.createDirectory(at: readOnlyDir, withIntermediateDirectories: true)
+let nonceDenied = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+writeRequestFile(WidgetVerifyProtocol.requestName(nonce: nonceDenied),
+                 requestJSON(nonceDenied, createdAt: verifyNow), into: readOnlyDir)
+try? FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnlyDir.path)
+let deniedOutcome = ContainerVerifier.verify(nonce: nonceDenied, directory: readOnlyDir, now: verifyNow)
+try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnlyDir.path)
+check("响应写不进去 → 不得报告成功",
+      !deniedOutcome.ok && deniedOutcome.failure == .responseWriteFailed, deniedOutcome.detail)
+
+// ⑩ 残留清理：只删自己前缀、且超过 10 分钟的普通文件
+let staleFile = verifyRoot.appendingPathComponent("td-verify-stale.res")
+try? Data("x".utf8).write(to: staleFile)
+try? FileManager.default.setAttributes([.modificationDate: verifyNow.addingTimeInterval(-3600)],
+                                       ofItemAtPath: staleFile.path)
+_ = ContainerVerifier.verify(nonce: nonceA, directory: verifyRoot, now: verifyNow) // 触发一次清理
+check("超过 10 分钟的残留被清理", !FileManager.default.fileExists(atPath: staleFile.path))
+check("新鲜的响应不会被清理",
+      FileManager.default.fileExists(
+        atPath: verifyRoot.appendingPathComponent(WidgetVerifyProtocol.responseName(nonce: nonceA)).path))
+
+// ⑪ 深链分流：verify / refresh / 未知 host 各走各的
+check("深链：verify 带 nonce",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://verify?nonce=\(nonceA)")!) == .verify(nonce: nonceA))
+check("深链：verify 缺 nonce → .verify(nil)",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://verify")!) == .verify(nonce: nil))
+check("深链：重复 nonce 参数 → .verify(nil)（不取第一个凑数）",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://verify?nonce=a&nonce=b")!) == .verify(nonce: nil))
+check("深链：refresh 行为不变",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://refresh")!) == .refresh)
+check("深链：refresh 带多余参数仍是 refresh",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://refresh?x=1")!) == .refresh)
+check("深链：未知 host 仍是 unknown（不会误进 verify）",
+      TeacherDeskDeepLink.parse(URL(string: "teacherdesk://nope?nonce=\(nonceA)")!) == .unknown)
+
+try? FileManager.default.removeItem(at: verifyRoot)
+
 print("\n结果：\(checks - failures)/\(checks) 项通过" + (failures == 0 ? " —— 全绿" : " —— \(failures) 项失败"))
 exit(failures == 0 ? 0 : 1)

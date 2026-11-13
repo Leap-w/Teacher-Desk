@@ -145,7 +145,7 @@ fi
 
 step "类型检查（全部源码，含 SwiftUI/WidgetKit）"
 
-SOURCES="Shared/DeepLink.swift Shared/SnapshotModel.swift Shared/SnapshotEntry.swift Shared/SnapshotStore.swift Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift Shared/DesignTokens.swift Shared/Views/WidgetChrome.swift Shared/Views/TodayScheduleView.swift Shared/Views/WeekScheduleView.swift TeacherDesk/TeacherDeskApp.swift TeacherDesk/HostView.swift TeacherDesk/HostLauncher.swift TeacherDesk/PWALocator.swift TeacherDesk/WidgetDiagnostics.swift TeacherDesk/WidgetPreview.swift TeacherDeskWidget/TeacherDeskWidgetBundle.swift TeacherDeskWidget/TeacherDeskWidgets.swift"
+SOURCES="Shared/DeepLink.swift Shared/ContainerVerifier.swift Shared/SnapshotModel.swift Shared/SnapshotEntry.swift Shared/SnapshotStore.swift Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift Shared/DesignTokens.swift Shared/Views/WidgetChrome.swift Shared/Views/TodayScheduleView.swift Shared/Views/WeekScheduleView.swift TeacherDesk/TeacherDeskApp.swift TeacherDesk/HostView.swift TeacherDesk/HostLauncher.swift TeacherDesk/PWALocator.swift TeacherDesk/WidgetDiagnostics.swift TeacherDesk/WidgetPreview.swift TeacherDeskWidget/TeacherDeskWidgetBundle.swift TeacherDeskWidget/TeacherDeskWidgets.swift"
 
 if "$SWIFTC" -typecheck -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -swift-version 5 $SOURCES 2>"$BUILD_DIR/typecheck.log"; then
   ok "全部源文件类型检查通过（两档工具链都跑得动，因为没有宏）"
@@ -161,7 +161,8 @@ step "快照冒烟（解码 / 派生 / 链接 / 样例一致）"
 SMOKE_BIN="$BUILD_DIR/snapshot-smoke"
 if "$SWIFTC" -O -target arm64-apple-macos14.0 -sdk "$SDK" -module-cache-path "$CACHE" -o "$SMOKE_BIN" \
   Tools/SnapshotSmoke/main.swift Shared/DeepLink.swift Shared/SnapshotModel.swift Shared/SnapshotStore.swift \
-  Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift 2>"$BUILD_DIR/smoke.log"; then
+  Shared/SnapshotDerive.swift Shared/WidgetLinks.swift Shared/SnapshotSample.swift \
+  Shared/ContainerVerifier.swift 2>"$BUILD_DIR/smoke.log"; then
   # ⚠️ 不要写成 `"$SMOKE_BIN" | tail`：管道的退出码是 **tail 的**，
   # 于是冒烟失败也会显示成全绿（这个坑在本版真的踩过一次）。
   # 先把输出落盘、按二进制自己的退出码判断，再打印。

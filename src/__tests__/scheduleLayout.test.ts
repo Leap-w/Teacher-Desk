@@ -83,6 +83,17 @@ describe('macOS 小组件卡片整体移入设置', () => {
     expect(card).toContain('widget.disconnect()')
   })
 
+  it('pagehide 监听器注册与解绑用的是同一个引用（v3.7.8 P3.3）', () => {
+    // 早先写成内联箭头函数，removeEventListener 拿不到同一个引用，
+    // 反复进出设置页会累积闭包并把 composable 实例一起留住。
+    const card = read(WIDGET_CARD)
+    expect(card).toContain("window.addEventListener('pagehide', onPageHide)")
+    expect(card).toContain("window.removeEventListener('pagehide', onPageHide)")
+    expect(card).toContain('onBeforeUnmount')
+    // 卸载时仍然要取消一次进行中的验证
+    expect(card).toContain('widget.cancelVerification()')
+  })
+
   it('旧位置不再留副本，路由指向新设置页', () => {
     expect(existsSync('src/views/Schedule/components/WidgetBridgeCard.vue')).toBe(false)
     const routes = read('src/router/routes.ts')
