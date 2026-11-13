@@ -15,13 +15,22 @@ import { appConfig } from '@/config'
  * 查找对应的更新日志，不另存一份版本号。
  */
 export interface ReleaseNote {
-  /** 应用版本号，不带 `v`（如 `3.7.7`） */
+  /** 应用版本号，不带 `v`（如 `3.7.8`） */
   version: string
   /** 2～4 条用户能理解的更新内容 */
   highlights: readonly string[]
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '3.7.8',
+    highlights: [
+      '修复 macOS 桌面小组件连接失败的问题：连接时请选中 TeacherDesk 文件夹本身，选对后课程表会立即写入快照。',
+      '修复桌面小组件数据不更新的问题：确认快照写入成功后才通知小组件刷新，改完课程表桌面会跟着变。',
+      '已连接过的设备不用每次重选文件夹：浏览器重启后点一次「连接小组件」即可恢复授权。',
+      '连接失败的提示更清楚了：会分别说明「没有授权」「选错了文件夹」和「写入失败」，并给出对应的处理办法。',
+    ],
+  },
   {
     version: '3.7.7',
     highlights: [
@@ -35,7 +44,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
 /** 当前版本号（package.json 单一来源，不带 `v`） */
 export const currentAppVersion = appConfig.version
 
-/** 弹窗里展示的版本号文案：`V3.7.7` */
+/** 弹窗里展示的版本号文案：`V3.7.8` */
 export const currentVersionLabel = `V${currentAppVersion.replace(/^v/i, '')}`
 
 /** 当前版本对应的更新内容；没有配置记录时返回空数组（不编造内容） */

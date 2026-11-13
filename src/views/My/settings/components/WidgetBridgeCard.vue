@@ -5,21 +5,29 @@ import { Check, Copy, Download, FolderOpen, RefreshCw } from 'lucide-vue-next'
 import { AppButton } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
 import {
+  WIDGET_CANCELLED_MESSAGE,
+  WIDGET_CONTAINER_DIR,
   WIDGET_SNAPSHOT_PATH,
   WIDGET_STATUS_LABELS,
-  openWidgetHostRefresh,
   useWidgetSnapshot,
 } from '@/composables/useWidgetSnapshot'
+import { describeWriteOutcome } from '@/services/widgetBridgeFeedback'
 
 /**
  * WidgetBridgeCard — **设置 → 教学设置 → 桌面小组件** 页上的快照入口
- * （v3.7.0；v3.7.6 从课程表页整体移入设置，连接机制原样保留）。
+ * （v3.7.0；v3.7.6 从课程表页整体移入设置；v3.7.8 修授权与提示）。
  *
  * 它只做一件事：把课程表变成桌面小组件能读的那份快照（`widget-snapshot.json`）。
  * **唯一的「非自动」动作是首次连接**——浏览器规定选目录必须由用户手势触发，
  * 所以这里有一颗按钮；连上之后，课程表一变就会自动重写（含应用启动时那一次）。
  *
- * 卡片只负责快照，不复制课表编辑能力：课程表仍在「工作 → 课程表」里改。
+ * ## v3.7.8 改了什么（2026-11-13）
+ *
+ * ① 卡片上给出、并被「复制」的是**目录**（`WIDGET_CONTAINER_DIR`），不再是快照文件路径——
+ *    旧版把文件路径当"要粘贴的路径"给教师，于是选择框里选中的是 `widget-snapshot.json`，
+ *    句柄成了文件句柄，之后每次写入都抛 `TypeMismatchError`，界面却只说「没有拿到写入权限」。
+ * ② 三种失败分开说：没授权 / 选错文件夹 / 真的写失败（带 `error.name`）。
+ * ③ 「同步并刷新」只在**快照确实写进去**之后才请求刷新，并且不说"桌面已更新"。
  */
 const toast = useToast()
 const widget = useWidgetSnapshot()
@@ -29,6 +37,8 @@ const pathCopied = ref(false)
 const statusText = computed(() => WIDGET_STATUS_LABELS[widget.status.value])
 const connected = computed(() => widget.status.value === 'connected')
 const unsupported = computed(() => widget.status.value === 'unsupported')
+/** 存着的句柄指向了文件（v3.7.8 之前留下的坏句柄）→ 提示重选，但不用先断开 */
+const wrongFolder = computed(() => widget.status.value === 'wrong-folder')
 
 const lastSyncText = computed(() =>
   widget.lastWrittenAt.value
@@ -40,30 +50,30 @@ const lastSyncText = computed(() =>
 )
 
 async function onConnect(): Promise<void> {
-  const outcome = await widget.connect()
-  if (outcome.warning) toast.warning(outcome.warning)
-  if (outcome.ok) toast.success(outcome.message)
-  else if (outcome.message !== '已取消') toast.warning(outcome.message)
+  const feedback = await widget.connect()
+  if (feedback.ok) toast.success(feedback.message)
+  else if (feedback.message !== WIDGET_CANCELLED_MESSAGE) toast.warning(feedback.message)
 }
 
 async function onSync(): Promise<void> {
-  const result = await widget.syncNow()
-  if (result === 'written') toast.success('快照已更新')
-  else if (result === 'unconnected') toast.warning('还没连接快照目录，先点「连接小组件」')
-  else if (result === 'needs-permission') toast.warning('权限已失效，请重新连接一次')
-  else if (result === 'unsupported') toast.warning('这个浏览器不支持自动同步，请用「下载快照」')
-  else toast.danger('写入失败：请确认那台 Mac 上装了 TeacherDesk 小组件，并重新连接')
+  const outcome = await widget.syncNow()
+  const feedback = describeWriteOutcome(outcome)
+  if (feedback.ok) toast.success(feedback.message)
+  else if (outcome.result === 'failed') toast.danger(feedback.message)
+  else toast.warning(feedback.message)
 }
 
-/** 「同步 + 立刻刷新」：跳一次 `teacherdesk://refresh` 让宿主 App 叫 WidgetKit 重画 */
+/** 「同步 + 立刻刷新」：**写入成功后**才跳 `teacherdesk://refresh` 让宿主 App 叫 WidgetKit 重画 */
 async function onSyncAndRefresh(): Promise<void> {
-  const result = await widget.syncNow()
-  if (result !== 'written') {
-    await onSync()
+  const outcome = await widget.syncAndRefresh()
+  const feedback = describeWriteOutcome(outcome)
+  if (!feedback.ok) {
+    if (outcome.result === 'failed') toast.danger(feedback.message)
+    else toast.warning(feedback.message)
     return
   }
-  toast.success('快照已更新，正在通知小组件刷新')
-  openWidgetHostRefresh()
+  // 只说「已请求」：深链交给系统，桌面何时重画由 WidgetKit 决定
+  toast.success('快照已写入，已请求小组件刷新（桌面通常几秒内重画）')
 }
 
 function onDownload(): void {
@@ -71,14 +81,15 @@ function onDownload(): void {
   else toast.danger('下载失败：请刷新后重试')
 }
 
+/** 复制的是**目录**——选择框要的就是它 */
 async function onCopyPath(): Promise<void> {
   try {
-    await navigator.clipboard.writeText(WIDGET_SNAPSHOT_PATH)
+    await navigator.clipboard.writeText(WIDGET_CONTAINER_DIR)
     pathCopied.value = true
-    toast.success('路径已复制')
+    toast.success('目录路径已复制')
     window.setTimeout(() => (pathCopied.value = false), 2000)
   } catch {
-    toast.warning('复制失败：请手动记下下面的路径')
+    toast.warning('复制失败：请手动记下下面的目录')
   }
 }
 
@@ -130,23 +141,34 @@ async function onDisconnect(): Promise<void> {
         这个浏览器不支持自动写入文件（Safari 尚未开放该能力）。请点「下载快照」， 再在 Mac 上运行
         <code>macos/Tools/install-snapshot.sh</code> 把它放进小组件的容器目录。
       </template>
+      <template v-else-if="wrongFolder">
+        上次保存的目录指向的是快照文件本身，所以一直写不进去。点「连接小组件」重新选中
+        <strong>TeacherDesk 这个文件夹</strong>即可，不用先断开。
+      </template>
       <template v-else-if="!connected">
         在宿主机上装好 TeacherDesk 小组件后，点「连接小组件」，在系统选择框里按
-        <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> 粘贴下面的路径并选中它。只需做一次。
+        <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> 粘贴下面的<strong>目录</strong>路径，选中
+        <strong>TeacherDesk 这个文件夹本身</strong> —— 不要点开它去选里面的
+        <code>widget-snapshot.json</code>。
       </template>
       <template v-else>
         课程表改动后会自动更新快照；点击小组件会打开 TeacherDesk。
-        「同步并刷新」会立刻让桌面上的小组件重画（其余时候系统在 15 分钟内自动刷新）。
+        「同步并刷新」会立刻请求系统重画桌面小组件（其余时候系统在 15 分钟内自动刷新）。
       </template>
     </p>
 
     <div class="widget-path">
-      <code>{{ WIDGET_SNAPSHOT_PATH }}</code>
-      <button type="button" class="path-copy" :aria-label="`复制快照路径`" @click="onCopyPath">
+      <span class="widget-path-label">目录</span>
+      <code>{{ WIDGET_CONTAINER_DIR }}</code>
+      <button type="button" class="path-copy" :aria-label="`复制快照目录`" @click="onCopyPath">
         <Check v-if="pathCopied" :size="14" :stroke-width="2" aria-hidden="true" />
         <Copy v-else :size="14" :stroke-width="2" aria-hidden="true" />
       </button>
     </div>
+    <p class="widget-path-note">
+      快照文件：<code>{{ WIDGET_SNAPSHOT_PATH }}</code> ——
+      由网页写入，只用于核对，不要在选择框里选它。
+    </p>
   </section>
 </template>
 
@@ -198,6 +220,17 @@ async function onDisconnect(): Promise<void> {
   color: var(--color-warning-strong);
 }
 
+/* v3.7.8：句柄指向文件（选错了）/ 真写失败，各给一种说法，不再都装成「需要重新授权」 */
+.widget-state.is-wrong-folder {
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
+}
+
+.widget-state.is-failed {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
+}
+
 .widget-time {
   font-size: var(--font-caption);
   color: var(--color-text-faint);
@@ -218,7 +251,8 @@ async function onDisconnect(): Promise<void> {
 }
 
 .widget-hint code,
-.widget-path code {
+.widget-path code,
+.widget-path-note code {
   padding: 1px 4px;
   border-radius: var(--radius-xs);
   background: var(--color-fill-disabled);
@@ -239,6 +273,20 @@ async function onDisconnect(): Promise<void> {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.widget-path-label {
+  flex-shrink: 0;
+  font-size: var(--font-caption);
+  color: var(--color-text-faint);
+}
+
+.widget-path-note {
+  margin-top: var(--space-2);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--color-text-faint);
+  word-break: break-all;
 }
 
 .widget-path code {

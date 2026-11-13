@@ -3,7 +3,7 @@
  *
  * 这不是「真的检查更新」：不调 GitHub API、不请求远程版本、不接 Releases。
  * 测试要钉住三件事：
- *  ① 版本号来自 package.json，弹窗显示 `V3.7.7`；
+ *  ① 版本号来自 package.json，弹窗显示当前版本（v3.7.8 为 `V3.7.8`）；
  *  ② 更新日志集中在 `config/releaseNotes.ts`，当前版本有 2～4 条、与版本号对齐；
  *  ③ 品牌卡片用「检查更新」替换了 GitHub 链接，弹窗复用 AppModal 且没有网络请求。
  */
@@ -17,9 +17,9 @@ import { RELEASE_NOTES, currentReleaseHighlights, currentVersionLabel } from '@/
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.7.7', () => {
-    expect(appConfig.version).toBe('3.7.7')
-    expect(currentVersionLabel).toBe('V3.7.7')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.7.8', () => {
+    expect(appConfig.version).toBe('3.7.8')
+    expect(currentVersionLabel).toBe('V3.7.8')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -30,11 +30,12 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.7.7 的三条更新内容与需求方给定的文案一致', () => {
+  it('v3.7.8 的四条更新内容与需求方给定的文案一致', () => {
     expect(currentReleaseHighlights()).toEqual([
-      '新增版本信息展示功能，可在「我的」页面查看当前版本及本次更新内容。',
-      '优化座位图导出文件命名，支持使用座位方案名称作为文件名。',
-      '优化部分界面交互及细节体验。',
+      '修复 macOS 桌面小组件连接失败的问题：连接时请选中 TeacherDesk 文件夹本身，选对后课程表会立即写入快照。',
+      '修复桌面小组件数据不更新的问题：确认快照写入成功后才通知小组件刷新，改完课程表桌面会跟着变。',
+      '已连接过的设备不用每次重选文件夹：浏览器重启后点一次「连接小组件」即可恢复授权。',
+      '连接失败的提示更清楚了：会分别说明「没有授权」「选错了文件夹」和「写入失败」，并给出对应的处理办法。',
     ])
   })
 

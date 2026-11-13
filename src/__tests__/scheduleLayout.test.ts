@@ -75,7 +75,8 @@ describe('macOS 小组件卡片整体移入设置', () => {
 
     const card = read(WIDGET_CARD)
     // 连接 / 同步刷新 / 下载 / 复制路径这些原有能力都还在
-    expect(card).toContain('openWidgetHostRefresh')
+    // （v3.7.8：「同步并刷新」改走 composable 的 syncAndRefresh——写成功才发刷新请求）
+    expect(card).toContain('syncAndRefresh')
     expect(card).toContain('WIDGET_SNAPSHOT_PATH')
     expect(card).toContain('navigator.clipboard.writeText')
     expect(card).toContain('widget.download()')

@@ -34,11 +34,19 @@ import {
   widgetBridge,
   type WidgetBridge,
   type WidgetBridgeStatus,
-  type WidgetWriteResult,
+  type WidgetWriteOutcome,
 } from '@/services/widgetBridge'
+import {
+  describeConnectOutcome,
+  syncThenNotify,
+  type WidgetFeedback,
+} from '@/services/widgetBridgeFeedback'
 import { resolvePeriods } from '@/utils/timetable'
 import { buildWidgetSnapshot, serializeWidgetSnapshot } from '@/utils/widgetSnapshot'
 import type { WidgetSnapshot } from '@/types/widget'
+
+/** 「已取消」这句不弹提示（取消不是错误）；卡片与 toast 共用一份文案 */
+export { WIDGET_CANCELLED_MESSAGE } from '@/services/widgetBridgeFeedback'
 
 /** 课程表变化后的防抖时长：换课 / 导入会连着写几次盘，没必要每次都落一遍快照 */
 const DEBOUNCE_MS = 1500
@@ -87,11 +95,13 @@ export function currentWidgetSnapshotText(): string {
   return serializeWidgetSnapshot(readWidgetSnapshotSources())
 }
 
-/** 桥状态的中文说法（界面与 toast 共用一份文案） */
+/** 桥状态的中文说法（界面与 toast 共用一份文案；v3.7.8 起每种失败都有自己的说法） */
 export const WIDGET_STATUS_LABELS: Record<WidgetBridgeStatus, string> = {
   unsupported: '当前浏览器不支持自动同步',
   unconnected: '未连接',
   'needs-permission': '需要重新授权',
+  'wrong-folder': '需要重新选择文件夹',
+  failed: '写入失败',
   connected: '已连接',
 }
 
@@ -112,41 +122,66 @@ export function useWidgetSnapshot() {
 
   void refreshStatus()
 
-  /** 连接（必须在点击事件里调用：系统选择框与授权都需要用户手势） */
-  async function connect(): Promise<{ ok: boolean; message: string; warning?: string }> {
+  /**
+   * 连接（必须在点击事件里调用：系统选择框与授权都需要用户手势）。
+   *
+   * 状态与文案的对应关系全在 `describeConnectOutcome` 里（纯函数，可单测）——
+   * v3.7.8 之前这里把「写失败」折成「没有拿到写入权限」，是本次故障的误报来源。
+   */
+  async function connect(): Promise<WidgetFeedback> {
     busy.value = true
     try {
       const outcome = await bridge.connect(currentWidgetSnapshotText())
       status.value = outcome.status
-      if (outcome.wrote) {
-        lastWrittenAt.value = new Date().toISOString()
-        return {
-          ok: true,
-          message: '已连接，课程表已写入快照',
-          // 「写成功了但选错文件夹」是唯一一种「网页说成功、小组件没变」的成因，必须说出来
-          ...(outcome.folderWarning ? { warning: outcome.folderWarning } : {}),
-        }
-      }
-      if (outcome.status === 'unsupported') {
-        return { ok: false, message: '这个浏览器不支持自动同步，请用「下载快照」' }
-      }
-      if (outcome.status === 'needs-permission') {
-        return { ok: false, message: '没有拿到写入权限，再点一次并选择「允许」' }
-      }
-      return { ok: false, message: '已取消' }
+      if (outcome.wrote) lastWrittenAt.value = new Date().toISOString()
+      return describeConnectOutcome(outcome)
     } finally {
       busy.value = false
     }
   }
 
+  /**
+   * 写完之后卡片该显示什么状态。
+   *
+   * `failed` 要**保留**：句柄与权限都还在，`status()` 会说「已连接」，但这次确实没写进去——
+   * 抹成「已连接」就是又一次「网页说好了、小组件没变」。其余结果以 `status()` 为准
+   * （它看的是持久状态：未连接 / 需要授权 / 选错目录）。
+   */
+  async function statusAfter(outcome: WidgetWriteOutcome): Promise<WidgetBridgeStatus> {
+    return outcome.result === 'failed' ? 'failed' : bridge.status()
+  }
+
   /** 立即同步一次（静默写；返回结果让页面决定提示什么） */
-  async function syncNow(): Promise<WidgetWriteResult> {
+  async function syncNow(): Promise<WidgetWriteOutcome> {
     busy.value = true
     try {
-      const result = await bridge.write(currentWidgetSnapshotText())
-      status.value = await bridge.status()
-      if (result === 'written') lastWrittenAt.value = new Date().toISOString()
-      return result
+      const outcome = await bridge.write(currentWidgetSnapshotText())
+      status.value = await statusAfter(outcome)
+      if (outcome.result === 'written') lastWrittenAt.value = new Date().toISOString()
+      return outcome
+    } finally {
+      busy.value = false
+    }
+  }
+
+  /**
+   * 「同步 + 请求小组件刷新」（v3.7.8 Phase 5）。
+   *
+   * **只有快照真的写进去了才跳 `teacherdesk://refresh`**（见 `syncThenNotify`）：
+   * 文件没变就通知，只会让小组件把同一份旧数据再画一遍。
+   * 反过来也不夸口——深链只代表「请求已交给系统」，桌面何时重画由 WidgetKit 决定。
+   */
+  async function syncAndRefresh(): Promise<WidgetWriteOutcome> {
+    busy.value = true
+    try {
+      const outcome = await syncThenNotify(
+        bridge,
+        currentWidgetSnapshotText(),
+        openWidgetHostRefresh,
+      )
+      status.value = await statusAfter(outcome)
+      if (outcome.result === 'written') lastWrittenAt.value = new Date().toISOString()
+      return outcome
     } finally {
       busy.value = false
     }
@@ -176,6 +211,7 @@ export function useWidgetSnapshot() {
     refreshStatus,
     connect,
     syncNow,
+    syncAndRefresh,
     disconnect,
     download,
   }
@@ -193,9 +229,10 @@ export function startWidgetSnapshotSync(pinia?: Pinia): () => void {
   /** 只在「已经连上」时才写：未连接 / 需要授权都不该在后台反复尝试（只会白刷日志） */
   async function syncIfConnected(): Promise<void> {
     if (stopped) return
-    const result = await widgetBridge.write(currentWidgetSnapshotText())
-    if (result !== 'written') {
-      console.warn(`[widget] 自动同步跳过：${result}`)
+    const outcome = await widgetBridge.write(currentWidgetSnapshotText())
+    if (outcome.result !== 'written') {
+      const detail = outcome.error ? `（${outcome.error.name}）` : ''
+      console.warn(`[widget] 自动同步跳过：${outcome.result}${detail}`)
     }
   }
 
@@ -231,11 +268,24 @@ export function startWidgetSnapshotSync(pinia?: Pinia): () => void {
   }
 }
 
-/** 给宿主 App / 小组件用的深链（在用户手势里跳转，浏览器才允许拉起外部协议） */
+/**
+ * 给宿主 App / 小组件用的深链（在用户手势里跳转，浏览器才允许拉起外部协议）
+ *
+ * 只负责「把请求交给系统」——**不代表桌面已经重画**（WidgetKit 自己决定何时刷新）。
+ * 所以调用方的话术只能说「已请求刷新」，不能说「已更新」。
+ */
 export function openWidgetHostRefresh(): void {
   if (typeof window === 'undefined') return
   window.location.href = `teacherdesk://refresh`
 }
 
-/** 快照文件路径（界面展示 + 复制；不含开发机绝对路径，`~` 开头由配置给） */
-export const WIDGET_SNAPSHOT_PATH = `${appConfig.widget.containerDir.replace(/\/+$/, '')}/${appConfig.widget.snapshotFileName}`
+/**
+ * 快照**目录**（v3.7.8：选择框里要选的是它，不是下面那个文件）。
+ *
+ * 之前卡片把 `WIDGET_SNAPSHOT_PATH`（文件）当"要粘贴的路径"给教师，于是选择框里
+ * 选中的是 `widget-snapshot.json` 本身，句柄成了文件句柄——这就是本次故障的起点。
+ */
+export const WIDGET_CONTAINER_DIR = appConfig.widget.containerDir.replace(/\/+$/, '')
+
+/** 快照文件路径（**只用于展示/核对**；不含开发机绝对路径，`~` 开头由配置给） */
+export const WIDGET_SNAPSHOT_PATH = `${WIDGET_CONTAINER_DIR}/${appConfig.widget.snapshotFileName}`
