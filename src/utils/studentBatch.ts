@@ -1,4 +1,3 @@
-import { isValidDormitory } from '@/utils/student'
 import type { Student, StudentInput } from '@/types'
 
 /**
@@ -6,7 +5,7 @@ import type { Student, StudentInput } from '@/types'
  * 这是与「清空」区分开的关键：教师点了批量修改却只想改宿舍时，班委与标签必须原样不动。
  */
 export interface StudentBatchChanges {
-  /** 目标宿舍；`''` = 清空（未分配）。`undefined` = 不修改 */
+  /** 目标宿舍（自由文本，预设只是快捷选项）；`''` = 清空（未分配）。`undefined` = 不修改 */
   dormitory?: string
   /** 目标班委职务；`''` = 清空。`undefined` = 不修改 */
   cadreRole?: string
@@ -23,23 +22,23 @@ function sameTags(a: readonly string[], b: readonly string[]): boolean {
 /**
  * 为一名学生构造本次批量修改的补丁（Phase 5B）。
  *
- * 三种返回值的语义**刻意分开**（调用方据此分账）：
- * - `null` —— **本次修改不适用于这名学生**（目前只有一种情形：所选宿舍与性别不符）。
- *   不去「尽力而为」地写入：`normalizeStudent` 的宿舍白名单收敛会在下次加载时把
- *   错性别的房间清掉，写进去也是一个会自己消失的值，教师却会先看到它生效了一瞬间。
- * - `{}` —— 适用，但改完与现状**完全一样**（比如标签本来就已存在）。不计入任何计数，
+ * 两种返回值的语义**刻意分开**（调用方据此分账）：
+ * - `{}` —— 改完与现状**完全一样**（比如标签本来就已存在）。不计入任何计数，
  *   否则「批量给全班加同一个标签」第二次执行会报告「更新 63 人」。
  * - 非空对象 —— 真的变了。
+ *
+ * v3.8.1 Phase 2：宿舍与性别解耦后不再有「不适用」的学生——**任意非空字符串都合法**，
+ * 包括历史值与非预设的自定义宿舍。因此本函数不再返回 `null`。
  */
 export function buildBatchPatch(
   student: Student,
   changes: StudentBatchChanges,
-): Partial<StudentInput> | null {
+): Partial<StudentInput> {
   const patch: Partial<StudentInput> = {}
 
   if (changes.dormitory !== undefined) {
     const next = changes.dormitory
-    if (next && !isValidDormitory(next, student.gender)) return null
+    // 不再按性别 / 预设白名单拒绝；只区分「不修改」与「清空」
     if ((student.dormitory ?? '') !== next) patch.dormitory = next || undefined
   }
 

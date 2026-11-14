@@ -95,6 +95,23 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Fund/index.vue'),
         meta: { title: '班费管理' },
       },
+      {
+        // v3.8.0（Phase 2）：违纪管理。同样**追加在最后**——二级导航顺序由本表决定，
+        // 插在中间会把教师已经习惯的五个模块整体挪位（§9.10）。
+        path: 'violations',
+        name: 'violations',
+        component: () => import('@/views/Violations/index.vue'),
+        meta: { title: '违纪管理' },
+      },
+      {
+        // v3.8.1（Phase 1）：班级照片墙从弹窗改为独立页面。仍**追加在最后**，
+        // 既有六个二级导航项的位置一个不动；`/class/photos` 是可直接访问的静态路径，
+        // 构建期 `scripts/hosting-routes.cjs` 会为它生成深链占位。
+        path: 'photos',
+        name: 'photos',
+        component: () => import('@/views/Photos/index.vue'),
+        meta: { title: '照片墙' },
+      },
     ],
   },
   {

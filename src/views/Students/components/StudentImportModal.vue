@@ -23,7 +23,6 @@ import { useToast } from '@/composables/useToast'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import { useSheetImport } from '@/composables/useSheetImport'
 import {
-  DORMITORY_HINT,
   STUDENT_IMPORT_HEADERS,
   STUDENT_IMPORT_OPTIONAL,
   STUDENT_IMPORT_REQUIRED,
@@ -203,12 +202,6 @@ const hints = computed<ImportHint[]>(() => {
     list.push({
       tone: 'warning',
       text: `${current.emptyStudentNo} 行学号为空：没有学号就没有合并依据，每次导入都会新增一条`,
-    })
-  }
-  if (current.missingDormitory > 0) {
-    list.push({
-      tone: 'info',
-      text: `${current.missingDormitory} 行宿舍不在固定清单内，本次留空。可选宿舍：${DORMITORY_HINT}`,
     })
   }
   if (current.missingScope > 0) {

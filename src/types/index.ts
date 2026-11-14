@@ -72,8 +72,9 @@ export interface Student {
    */
   seatNumber?: number
   /**
-   * 宿舍。**Phase 5A 起为固定 8 间之一**（见 `utils/student.ts` 的 `DORMITORIES`），
-   * 空 = 未分配；不在清单内的历史值由 `normalizeStudent` 收敛为空。
+   * 宿舍。**v3.8.1 Phase 2 起是自由文本**：八项预设（见 `utils/student.ts` 的
+   * `DORMITORY_PRESETS`）只是表单快捷选项，不是合法值白名单；任何非空字符串都原样保留。
+   * 空 = 未分配；不再按性别校验，`normalizeStudent` 也不会因不在预设内而清空。
    * 全班统一住校，住校状态不入模型
    */
   dormitory?: string

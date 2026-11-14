@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { AppButton, AppModal } from '@/components/ui'
 import { familyScopeLabel, formatStudentShortName } from '@/utils/student'
 import { useStudentStore } from '@/stores/student'
+import { hasDormitoryValue } from '@/utils/student'
 import type { Student } from '@/types'
 import StudentProfileHeader from './StudentProfileHeader.vue'
 
@@ -36,6 +37,10 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   edit: [student: Student]
   remove: [student: Student]
+  /** 查看该学生的违纪档案（Phase 2 违纪管理） */
+  openViolationProfile: [student: Student]
+  /** 打开该学生的照片管理（Phase 2 照片管理） */
+  openPhotos: [student: Student]
 }>()
 
 function close() {
@@ -49,6 +54,14 @@ function onEdit() {
 function onRemove() {
   if (props.student) emit('remove', props.student)
 }
+
+function onViolationProfile() {
+  if (props.student) emit('openViolationProfile', props.student)
+}
+
+function onPhotos() {
+  if (props.student) emit('openPhotos', props.student)
+}
 </script>
 
 <template>
@@ -59,6 +72,12 @@ function onRemove() {
       <p class="detail-formal">
         档案名 · {{ formatStudentShortName(student, studentStore.nameCounts) }}
       </p>
+
+      <!-- 关联记录入口：不把功能藏进深层菜单，也不改动学生档案本身的结构 -->
+      <div class="detail-links">
+        <AppButton size="sm" variant="secondary" @click="onViolationProfile"> 违纪档案 </AppButton>
+        <AppButton size="sm" variant="secondary" @click="onPhotos">学生照片</AppButton>
+      </div>
 
       <!-- 信息分组：每组独立 Card Section（Apple Settings 风） -->
       <section class="detail-card">
@@ -74,7 +93,7 @@ function onRemove() {
           </div>
           <div class="detail-item">
             <dt>宿舍</dt>
-            <dd>{{ student.dormitory || '—' }}</dd>
+            <dd>{{ hasDormitoryValue(student.dormitory) ? student.dormitory : '—' }}</dd>
           </div>
           <div class="detail-item">
             <dt>联系电话</dt>
@@ -132,6 +151,13 @@ function onRemove() {
   margin-top: var(--space-2);
   font-size: var(--font-caption);
   color: var(--color-text-tertiary);
+}
+
+.detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 /* 信息分组卡：浅底圆角（同 Profile 卡做法），与头部留一行呼吸 */

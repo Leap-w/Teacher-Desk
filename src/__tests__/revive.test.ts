@@ -240,38 +240,69 @@ describe('逐域最小规范化：认得出的留下，认不出的丢弃，缺�
     expect(store.activeStudents).toHaveLength(0)
   })
 
-  it('学生：宿舍非固定清单内的值被清空，清单内的值原样保留', () => {
+  it('学生：宿舍是自由文本——历史值与非预设值都原样保留（v3.8.1 Phase 2）', () => {
     browser.localStorage.seed(
       STUDENTS_KEY,
       JSON.stringify([
         { id: 's1', name: '甲', gender: 'male', dormitory: '3 号楼 412' },
         { id: 's2', name: '乙', gender: 'female', dormitory: '女生2栋113' },
         { id: 's3', name: '丙', gender: 'female', dormitory: '男生1栋209' },
+        { id: 's4', name: '丁', gender: 'male', dormitory: '男生1栋211' },
+        { id: 's5', name: '戊', gender: 'female', dormitory: '男生1栋212' },
+        { id: 's6', name: '己', gender: 'male', dormitory: '  实验楼 A-3F  ' },
       ]),
     )
 
     const students = useStudentStore().students
 
-    // Phase 5A 起宿舍是固定 8 间的下拉，历史自由文本留着就是界面上一个选不中的值
-    expect(students[0]!.dormitory).toBeUndefined()
+    // 预设只是快捷选项，不是白名单：历史值、跨性别值、任意自定义值都必须原样保留
+    expect(students[0]!.dormitory).toBe('3 号楼 412')
     expect(students[1]!.dormitory).toBe('女生2栋113')
-    // 性别与房间对不上同样不合法：女生不能住男生楼
-    expect(students[2]!.dormitory).toBeUndefined()
+    expect(students[2]!.dormitory).toBe('男生1栋209')
+    expect(students[3]!.dormitory).toBe('男生1栋211')
+    expect(students[4]!.dormitory).toBe('男生1栋212')
+    // 不 trim、不改写：首尾空格与内部空格都保留（自由文本的「原值」语义）
+    expect(students[5]!.dormitory).toBe('  实验楼 A-3F  ')
   })
 
-  it('学生：宿舍收敛是幂等的——合法值在一次重载之后依然在', () => {
+  it('学生：宿舍空串与非字符串仍按既有约定剔除（空 = 未分配）', () => {
     browser.localStorage.seed(
       STUDENTS_KEY,
-      JSON.stringify([{ id: 's1', name: '甲', gender: 'female', dormitory: '女生2栋114' }]),
+      JSON.stringify([
+        { id: 's1', name: '甲', gender: 'male', dormitory: '' },
+        { id: 's2', name: '乙', gender: 'male', dormitory: 123 },
+        { id: 's3', name: '丙', gender: 'male', dormitory: null },
+        { id: 's4', name: '丁', gender: 'male' },
+      ]),
     )
-    expect(useStudentStore().students[0]!.dormitory).toBe('女生2栋114')
+
+    const students = useStudentStore().students
+    for (const student of students) {
+      expect(student.dormitory).toBeUndefined()
+    }
+  })
+
+  it('学生：宿舍保留是幂等的——自定义值在一次重载之后依然原样存在', () => {
+    browser.localStorage.seed(
+      STUDENTS_KEY,
+      JSON.stringify([
+        { id: 's1', name: '甲', gender: 'female', dormitory: '女生2栋114' },
+        { id: 's2', name: '乙', gender: 'male', dormitory: '南校区 5 号楼 208' },
+      ]),
+    )
+    expect(useStudentStore().students.map((item) => item.dormitory)).toEqual([
+      '女生2栋114',
+      '南校区 5 号楼 208',
+    ])
 
     // 重新装载一次（模拟刷新页面 / 新设备拉回云端那份）。
-    // 收敛写在 normalizeStudent 里，它同时跑在首屏加载、跨标签页同步、云同步三条路径上——
-    // 一旦有人把它改成「无条件清空」，教师刚选好的宿舍会在下一次同步时凭空消失，
-    // 而界面上只表现为「宿舍又没了」，看不出是谁清的
+    // 规范化同时跑在首屏加载、跨标签页同步、云同步三条路径上——
+    // 一旦有人把它改回「按预设白名单清空」，教师刚选好的自定义宿舍会凭空消失。
     setActivePinia(createPinia())
-    expect(useStudentStore().students[0]!.dormitory).toBe('女生2栋114')
+    expect(useStudentStore().students.map((item) => item.dormitory)).toEqual([
+      '女生2栋114',
+      '南校区 5 号楼 208',
+    ])
   })
 
   it('学生：昌都市内亲属是**三态**，读回来不许被折叠成两态', () => {

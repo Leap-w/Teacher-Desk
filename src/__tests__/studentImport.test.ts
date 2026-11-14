@@ -124,28 +124,25 @@ describe('逐行校验：拦的只有空姓名与重复学号，其余只提示'
     expect(result.rows[1]!.errors.join()).toContain('第 2 行')
   })
 
-  it('宿舍不在固定清单内：只提示、不拦，且该行宿舍留空', () => {
+  it('宿舍是自由文本：不在八项预设内也原样导入，不提示、不置空', () => {
     const result = parseOk(sheet(['甲', '女', '0101', '3 号楼 412']))
     const row = result.rows[0]!
 
-    // 学生本身是有效的，不该为了一间写错的宿舍丢掉整条档案
     expect(row.errors).toEqual([])
-    expect(row.warnings.join()).toContain('3 号楼 412')
-    expect(row.dormitory).toBe('')
-    expect(row.dormitoryRejected).toBe(true)
+    expect(row.warnings.join()).not.toContain('宿舍')
+    expect(row.dormitory).toBe('3 号楼 412')
   })
 
-  it('宿舍属于另一个性别时同样算不合法（女生不能住男生楼）', () => {
+  it('宿舍与性别解耦：女生导入男生楼的值同样原样保留', () => {
     const result = parseOk(sheet(['甲', '女', '0101', '男生1栋209']))
 
-    expect(result.rows[0]!.dormitory).toBe('')
-    expect(result.rows[0]!.dormitoryRejected).toBe(true)
+    expect(result.rows[0]!.errors).toEqual([])
+    expect(result.rows[0]!.dormitory).toBe('男生1栋209')
   })
 
-  it('宿舍在清单内则原样保留', () => {
-    const result = parseOk(sheet(['甲', '男', '0101', '男生1栋209']))
-    expect(result.rows[0]!.dormitory).toBe('男生1栋209')
-    expect(result.rows[0]!.dormitoryRejected).toBe(false)
+  it('宿舍预设值同样原样保留（预设只是快捷选项）', () => {
+    const result = parseOk(sheet(['甲', '男', '0101', '男生1栋203']))
+    expect(result.rows[0]!.dormitory).toBe('男生1栋203')
   })
 
   it('标签按中英文逗号、顿号、分号切开并去重', () => {
@@ -332,8 +329,8 @@ describe('合并分流：学号命中更新、没命中新增，被拦的一律�
     expect(result.total).toBe(4)
     expect(result.importable).toBe(result.added + result.updated)
     expect(result.total).toBe(result.importable + result.blocked)
-    // 宿舍写错留着空值但学生照常导入，所以它是「提示」不是「拦下」
-    expect(result.missingDormitory).toBe(1)
+    // 自定义宿舍照常导入（不再有「宿舍不合法」这一类提示），只有缺姓名那一行被拦
+    expect(result.plan.adds.find((item) => item.name === '丙')?.dormitory).toBe('3 号楼 412')
     expect(result.blocked).toBe(1)
   })
 })

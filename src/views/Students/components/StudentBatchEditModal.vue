@@ -5,7 +5,13 @@ import { AppButton, AppField, AppInput, AppModal, AppSelect } from '@/components
 import { useToast } from '@/composables/useToast'
 import { runLockedOperation } from '@/composables/useOperationLock'
 import { useStudentStore } from '@/stores/student'
-import { ALL_DORMITORIES, CADRE_CUSTOM, CADRE_OPTIONS } from '@/utils/student'
+import {
+  CADRE_CUSTOM,
+  CADRE_OPTIONS,
+  DORMITORY_CUSTOM,
+  DORMITORY_PRESETS,
+  isDormitorySelectionMissing,
+} from '@/utils/student'
 import { splitTagInput } from '@/utils/studentBatch'
 import type { StudentBatchChanges } from '@/utils/studentBatch'
 import type { SelectOption, Student } from '@/types'
@@ -39,15 +45,14 @@ const CADRE_UNCHANGED = '__unchanged__'
 const CADRE_CLEAR = '__clear__'
 
 /**
- * 宿舍：不修改 / 未分配（清空）/ 全部 8 间。
- * **列出全部 8 间而不是按性别收窄**——一次选中的学生可能男女都有，
- * 而选项取决于谁被选中会让人猜不透。性别是否匹配交给落库前的校验去挡，
- * 挡不住的那部分会跳过并报数（见 `utils/studentBatch.ts`）。
+ * 宿舍：不修改 / 未分配（清空）/ 八项快捷预设 / ＋自定义。
+ * **预设只是快捷选项**；可以批量为多名学生设成任意自定义宿舍，不再按性别过滤或拒绝。
  */
 const dormitoryChoices: SelectOption<string>[] = [
   { label: '不修改', value: DORMITORY_UNCHANGED },
   { label: '未分配（清空宿舍）', value: '' },
-  ...ALL_DORMITORIES.map((room) => ({ label: room, value: room })),
+  ...DORMITORY_PRESETS.map((room) => ({ label: room, value: room })),
+  { label: '＋ 自定义宿舍…', value: DORMITORY_CUSTOM },
 ]
 
 /** 班委：不修改 / 清空 / 预设职务 / ＋自定义。预设里的「无」被滤掉——它就是「清空」 */
@@ -59,6 +64,7 @@ const cadreChoices: SelectOption<string>[] = [
 
 const form = reactive({
   dormitory: DORMITORY_UNCHANGED,
+  dormitoryCustom: '',
   cadreRole: CADRE_UNCHANGED,
   cadreCustom: '',
   addTags: '',
@@ -79,9 +85,14 @@ const removableTags = computed(() => {
 })
 
 const isCustomCadre = computed(() => form.cadreRole === CADRE_CUSTOM)
+const isCustomDormitory = computed(() => form.dormitory === DORMITORY_CUSTOM)
 
 /** 选了「＋自定义」却什么都没填——这时提交等于把班委清空，多半不是本意 */
 const customMissing = computed(() => isCustomCadre.value && !form.cadreCustom.trim())
+/** 宿舍同理：选了自定义却空着，提交等于把宿舍清空；要清空请选「未分配」 */
+const customDormitoryMissing = computed(() =>
+  isDormitorySelectionMissing(form.dormitory, form.dormitoryCustom),
+)
 
 const addTags = computed(() => splitTagInput(form.addTags))
 
@@ -94,7 +105,11 @@ const hasChanges = computed(
 )
 
 const canSubmit = computed(
-  () => hasChanges.value && !customMissing.value && props.students.length > 0,
+  () =>
+    hasChanges.value &&
+    !customMissing.value &&
+    !customDormitoryMissing.value &&
+    props.students.length > 0,
 )
 
 watch(
@@ -102,6 +117,7 @@ watch(
   (open) => {
     if (!open) return
     form.dormitory = DORMITORY_UNCHANGED
+    form.dormitoryCustom = ''
     form.cadreRole = CADRE_UNCHANGED
     form.cadreCustom = ''
     form.addTags = ''
@@ -119,7 +135,10 @@ function toggleRemoveTag(tag: string) {
 
 function buildChanges(): StudentBatchChanges {
   const changes: StudentBatchChanges = {}
-  if (form.dormitory !== DORMITORY_UNCHANGED) changes.dormitory = form.dormitory
+  if (form.dormitory !== DORMITORY_UNCHANGED) {
+    // 自定义宿舍原样提交（不 trim、不改写）；空选择由 canSubmit 拦住
+    changes.dormitory = form.dormitory === DORMITORY_CUSTOM ? form.dormitoryCustom : form.dormitory
+  }
   if (form.cadreRole !== CADRE_UNCHANGED) {
     if (form.cadreRole === CADRE_CLEAR) changes.cadreRole = ''
     else if (form.cadreRole === CADRE_CUSTOM) changes.cadreRole = form.cadreCustom.trim()
@@ -138,10 +157,8 @@ async function submit() {
     studentStore.applyStudentBatch(ids, buildChanges()),
   )
 
-  if (outcome.updated === 0 && outcome.skipped === 0) {
+  if (outcome.updated === 0) {
     toast.info(`所选的 ${ids.length} 名学生无需修改`)
-  } else if (outcome.skipped > 0) {
-    toast.warning(`已更新 ${outcome.updated} 名，跳过 ${outcome.skipped} 名（性别与所选宿舍不符）`)
   } else {
     toast.success(`已更新 ${outcome.updated} 名学生`)
   }
@@ -159,8 +176,17 @@ function close() {
   <AppModal :model-value="modelValue" title="批量修改" :width="520" @update:model-value="close">
     <p class="batch-hint">将对已选中的 {{ students.length }} 名学生生效。不修改的项保持原样。</p>
 
-    <AppField label="宿舍" hint="只能选该学生性别对应的房间，不符的会跳过">
+    <AppField
+      label="宿舍"
+      :error="customDormitoryMissing ? '请输入宿舍名称（要清空请选「未分配」）' : ''"
+      hint="可选预设，也可自定义；不受性别限制"
+    >
       <AppSelect v-model="form.dormitory" :options="dormitoryChoices" />
+      <AppInput
+        v-if="isCustomDormitory"
+        v-model="form.dormitoryCustom"
+        placeholder="输入宿舍名称"
+      />
     </AppField>
 
     <AppField

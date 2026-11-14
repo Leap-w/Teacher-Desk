@@ -3,7 +3,7 @@
  *
  * 这不是「真的检查更新」：不调 GitHub API、不请求远程版本、不接 Releases。
  * 测试要钉住三件事：
- *  ① 版本号来自 package.json，弹窗显示当前版本（v3.7.8 为 `V3.7.8`）；
+ *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.1 为 `V3.8.1`）；
  *  ② 更新日志集中在 `config/releaseNotes.ts`，当前版本有 2～4 条、与版本号对齐；
  *  ③ 品牌卡片用「检查更新」替换了 GitHub 链接，弹窗复用 AppModal 且没有网络请求。
  */
@@ -12,14 +12,19 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { appConfig } from '@/config'
-import { RELEASE_NOTES, currentReleaseHighlights, currentVersionLabel } from '@/config/releaseNotes'
+import {
+  RELEASE_NOTES,
+  currentReleaseDate,
+  currentReleaseHighlights,
+  currentVersionLabel,
+} from '@/config/releaseNotes'
 
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.7.8', () => {
-    expect(appConfig.version).toBe('3.7.8')
-    expect(currentVersionLabel).toBe('V3.7.8')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.8.1', () => {
+    expect(appConfig.version).toBe('3.8.1')
+    expect(currentVersionLabel).toBe('V3.8.1')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -30,13 +35,16 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.7.8 的四条更新内容与需求方给定的文案一致', () => {
+  it('v3.8.1 的四条更新内容与实际交付一致（不宣称云端已验收）', () => {
+    expect(currentReleaseDate()).toBe('2026-11-14')
     expect(currentReleaseHighlights()).toEqual([
-      '修复 macOS 桌面小组件连接失败的问题：连接时请选中 TeacherDesk 文件夹本身，选对后课程表会立即写入快照。',
-      '修复桌面小组件数据不更新的问题：确认快照写入成功后才通知小组件刷新，改完课程表桌面会跟着变。',
-      '已连接过的设备不用每次重选文件夹：浏览器重启后点一次「连接小组件」即可恢复授权。',
-      '连接失败的提示更清楚了：会分别说明「没有授权」「选错了文件夹」和「写入失败」，并给出对应的处理办法。',
+      '「照片墙」改为班级管理中的独立页面，可按学生查看、上传照片、设置当前证件照和查看大图；照片仍默认保存在本机。',
+      '新增「导出完整备份（含照片）」ZIP，可把文字数据与照片文件一起备份并在换设备后恢复；原来的 JSON 备份继续保留，但它只包含照片信息、不包含照片文件。',
+      '学生档案新增宿舍管理：内置八项常用宿舍，也可输入任意自定义宿舍；支持批量修改和 Excel 导入，历史宿舍值会原样保留，修改性别不会影响宿舍。',
+      '违纪管理改为更直接的事件记录：24 项系统预设、支持自定义事件与默认严重程度；取消类型分类，历史违纪记录、家长处理意见和个人违纪档案继续保留。',
     ])
+    // 更新日志不能把尚未完成的云端真实链路写成已验收
+    expect(currentReleaseHighlights().every((item) => !item.includes('云端已'))).toBe(true)
   })
 
   it('每条更新日志都有版本号和非空内容', () => {
@@ -61,6 +69,8 @@ describe('品牌卡片与弹窗的实现约束', () => {
     expect(source).toContain('aria-label="版本信息"')
     expect(source).toContain('已经是最新版本')
     expect(source).toContain('本次更新内容')
+    expect(source).toContain('currentReleaseDate')
+    expect(source).toContain('更新于')
     expect(source).toContain('好的')
   })
 

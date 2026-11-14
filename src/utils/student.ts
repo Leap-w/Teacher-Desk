@@ -1,4 +1,4 @@
-import type { FamilyLocation, FamilyScope, Gender, SelectOption, Student } from '@/types'
+import type { FamilyLocation, FamilyScope, SelectOption, Student } from '@/types'
 
 /** 返家范围代码 → 中文文案（列表 Badge / 详情 / 统计共用） */
 export const FAMILY_SCOPE_LABELS: Record<FamilyScope, string> = {
@@ -18,40 +18,95 @@ function isFamilyScope(value: unknown): value is FamilyScope {
   return typeof value === 'string' && value in FAMILY_SCOPE_LABELS
 }
 
-function isGender(value: unknown): value is Gender {
-  return value === 'male' || value === 'female'
-}
+/**
+ * 宿舍快捷预设（v3.8.1 Phase 2）。
+ *
+ * ## 只是快捷选项，**不是**合法值白名单
+ *
+ * 宿舍字段是自由文本：教师可以直接输入任意宿舍名称；历史值（如 `女生2栋113`、
+ * `男生1栋211`、`男生1栋212`、`3 号楼 412`）必须原样保留，不得因不在本清单里被清空。
+ *
+ * ## 顺序固定、不按性别拆分
+ *
+ * 顺序由需求指定，**不要调整**；也不再按学生性别过滤——性别与宿舍已解耦
+ * （女生可以保留男生楼的值，反之亦然），表单里八项对所有人都一致展示。
+ */
+export const DORMITORY_PRESETS: readonly string[] = [
+  '女生2栋212',
+  '女生2栋114',
+  '女生2栋115',
+  '女生2栋116',
+  '男生1栋203',
+  '男生1栋210',
+  '男生1栋208',
+  '男生1栋209',
+]
 
 /**
- * 宿舍房间（Phase 5A）：班级实际只占这 8 间，档案里不再接受自由文本。
- * **按性别分列**——宿舍分配本身就是按性别的，把男生排进女生楼是真实会犯的错，
- * 让选项表替教师挡掉，比事后发现再改便宜。
+ * 「＋ 自定义宿舍」的**哨兵值，绝不写入模型**——它只负责把输入框亮出来，
+ * 提交时取输入框里的文本（与 `CADRE_CUSTOM` 同一手法）。
  */
-export const DORMITORIES: Record<Gender, readonly string[]> = {
-  female: ['女生2栋113', '女生2栋114', '女生2栋115', '女生2栋116'],
-  male: ['男生1栋209', '男生1栋210', '男生1栋211', '男生1栋212'],
-}
+export const DORMITORY_CUSTOM = '__custom_dormitory__'
 
 /**
- * 拍平后的全部合法房间。**只给「判断合法性」用**（迁移收敛、Excel 导入校验）：
- * 这两条路径上性别未必可信或未必已知，放宽到 8 间才不会把一个字段的问题连坐给另一个。
- * 表单/下拉一律走 `dormitoryOptions()`，那里才按性别收窄。
+ * 表单下拉选项：未分配 + 八项快捷预设。
+ * **不再接受 gender 参数**：性别与宿舍解耦后，按性别收窄选项只会把另一栋的有效宿舍藏起来。
  */
-export const ALL_DORMITORIES: readonly string[] = [...DORMITORIES.female, ...DORMITORIES.male]
-
-/** 宿舍下拉选项：当前性别的 4 间 + 首项「未分配」（宿舍可选，留空合法） */
-export function dormitoryOptions(gender: Gender): SelectOption<string>[] {
+export function dormitoryOptions(): SelectOption<string>[] {
   return [
     { label: '未分配', value: '' },
-    ...DORMITORIES[gender].map((room) => ({ label: room, value: room })),
+    ...DORMITORY_PRESETS.map((room) => ({ label: room, value: room })),
   ]
 }
 
-/** 宿舍是否合法：性别可识别时只认该性别的房间，否则放宽到全部 8 间 */
-export function isValidDormitory(value: unknown, gender?: unknown): value is string {
-  if (typeof value !== 'string' || value === '') return false
-  const rooms = isGender(gender) ? DORMITORIES[gender] : ALL_DORMITORIES
-  return rooms.includes(value)
+/**
+ * 这个值是否属于八项快捷预设。
+ * **不是合法性校验**——只用于表单回填时判断「下拉里能不能选中」。
+ */
+export function isDormitoryPreset(value: unknown): value is string {
+  return typeof value === 'string' && (DORMITORY_PRESETS as readonly string[]).includes(value)
+}
+
+/** 宿舍是否有可展示的内容（全空白视为未分配；数据仍原样保留，只影响展示/校验） */
+export function hasDormitoryValue(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+/**
+ * 自定义宿舍是否「选了自定义却空着」。
+ * 单个表单与批量修改共用：空着提交等于清空，必须让教师明确选「未分配」而不是静默清掉。
+ */
+export function isDormitorySelectionMissing(select: string, custom: string): boolean {
+  return select === DORMITORY_CUSTOM && custom.trim() === ''
+}
+
+/** 表单里「下拉值 + 自定义输入」的两段式表示 */
+export interface DormitoryFormValue {
+  /** 下拉框选中值：预设、`''`（未分配）或 `DORMITORY_CUSTOM` */
+  select: string
+  /** 选中「＋ 自定义」时的输入内容 */
+  custom: string
+}
+
+/**
+ * 编辑回填：把已保存的宿舍拆成「下拉值 + 自定义输入」。
+ * **不在预设里的历史值必须回填到输入框**，否则原生 `<select>` 找不到匹配项会显示空白，
+ * 一保存就把这个值抹掉（与班委自定义同款处理）。
+ */
+export function splitDormitoryForForm(dormitory: string | undefined): DormitoryFormValue {
+  if (!dormitory) return { select: '', custom: '' }
+  if (isDormitoryPreset(dormitory)) return { select: dormitory, custom: '' }
+  return { select: DORMITORY_CUSTOM, custom: dormitory }
+}
+
+/**
+ * 提交：从「下拉值 + 自定义输入」还原成模型值。
+ * - 自定义输入**原样返回**（不 trim、不格式化——需求明确不得改写用户输入）；
+ * - 空值与项目既有约定一致：返回 `undefined`（不写这个键），即「未分配」。
+ */
+export function dormitoryFromForm(select: string, custom: string): string | undefined {
+  const value = select === DORMITORY_CUSTOM ? custom : select
+  return value || undefined
 }
 
 /**
@@ -120,12 +175,13 @@ export function normalizeStudent(raw: Student): Student {
   // Phase 2.1 收敛：历史 localStorage 中可能残留 boarding 键（全班统一住校，模型已移除），
   // 升级时一并剔除，保证该键不再随 deep watch 写回持久层
   delete normalized.boarding
-  // Phase 5A 收敛：宿舍改为固定 8 间后，历史自由文本（「3 号楼 412」「5 号楼 208」等）一律剔除。
-  // **刻意用白名单而不是「升级时清一次 + 迁移标记」**：本函数在首屏加载、跨标签页同步、
-  // 云同步三条路径上都会跑，白名单是幂等的——从备份文件恢复、或新设备拉回一份旧云端快照，
-  // 旧值同样会被清掉；一次性标记只在升级那一刻生效，之后旧值会重新冒出来且永不再清。
-  // 性别不可识别时放宽到全部 8 间：gender 自己有问题，不该连坐宿舍
-  if (!isValidDormitory(normalized.dormitory, normalized.gender)) delete normalized.dormitory
+  // v3.8.1 Phase 2：宿舍是**自由文本**，八项预设只是快捷选项、不是白名单。
+  // 这里**只剔除空值与非字符串**（项目既有约定：可选字段空串 = 不写这个键），
+  // 对任何非空字符串**原样保留**：不 trim、不改写、不按性别校验。
+  // 这一步同时跑在首屏加载 / 跨标签页同步 / 云端采纳 / 备份导入四条路径上，
+  // 因此历史值（女生2栋113、男生1栋211、男生1栋212、3 号楼 412…）不会被静默清掉。
+  const dormitory = normalized.dormitory
+  if (typeof dormitory !== 'string' || dormitory === '') delete normalized.dormitory
   const suffix = typeof normalized.idCardSuffix === 'string' ? normalized.idCardSuffix.trim() : ''
   if (suffix) normalized.idCardSuffix = suffix.slice(0, 4)
   else delete normalized.idCardSuffix
@@ -140,7 +196,7 @@ export function normalizeStudent(raw: Student): Student {
       : ''
   // 关系只在「有亲属」时留下：没有亲属却有关系，是一句自相矛盾的数据。
   // 这条不变式放在数据层而不是表单里——导入、备份恢复、跨端同步三条路径都会经过这里，
-  // 表单只管得住其中一条（同宿舍白名单为什么要用白名单而不是「升级时清一次」）
+  // 表单只管得住其中一条（同上面宿舍值为什么必须在数据层原样保留：表单只管得住一条路径）
   if (relation && normalized.hasChangduRelative === true)
     normalized.changduRelativeRelation = relation
   else delete normalized.changduRelativeRelation

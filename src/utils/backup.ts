@@ -3,6 +3,7 @@ import type { StoragePort } from '@/services/storage'
 import { isSampleRecordId } from '@/utils/id'
 import { periodLabelOf } from '@/utils/timetable'
 import { isPlainObject } from '@/utils/object'
+import { reviveStudentPhotos } from '@/utils/studentPhoto'
 
 /**
  * 数据备份 / 恢复（近期增量「数据管理」，tag v0.9.0）。
@@ -65,6 +66,32 @@ const FUND_RECORDS_KEY = `${appConfig.storageKeyPrefix}:fund:records`
 const SUBSTITUTES_KEY = `${appConfig.storageKeyPrefix}:substitutes`
 const FUND_COLLECTIONS_KEY = `${appConfig.storageKeyPrefix}:fund:collections`
 const FUND_CATEGORIES_KEY = `${appConfig.storageKeyPrefix}:fund:expenseCategories`
+/**
+ * v3.8.0（Phase 1A）：违纪记录。
+ * 一个键装**全部**违纪事件（一条事件一个对象，见 `types/violation.ts`），
+ * 因此这里只登记一行；键名与 `repositories/violation/violationRepository.ts` 必须一致。
+ */
+const VIOLATION_KEY = `${appConfig.storageKeyPrefix}:violations`
+/**
+ * v3.8.1（Phase 3）：违纪**自定义预设**。
+ *
+ * 独立一键（与 `repositories/violation/violationPresetRepository.ts` 一致）：
+ * 自定义事件的名称 + 默认严重程度是教师攒下来的可复用数据，丢了以后历史事件虽然
+ * 还有 `behaviorLabel` 快照，但「再次选择自动带出默认严重程度」就永久失效了。
+ * 与违纪记录一样是纯 JSON 数组，不引入任何二进制。
+ */
+const VIOLATION_PRESETS_KEY = `${appConfig.storageKeyPrefix}:violationPresets`
+/**
+ * v3.8.0（Phase 1B）：学生照片**元数据**。
+ *
+ * ⚠️ **本备份只包含照片信息，不包含照片文件**：图片二进制在 IndexedDB（本机）与
+ * CloudBase 云存储（云端），这里只有纯 JSON 元数据（id / 学生 / 分类 / 当前证件照 /
+ * 上传时间 / fileId / storagePath / 逻辑删除墓碑等）。因此 **JSON 里绝不会有 Blob、
+ * Base64、dataURL、签名 URL 或本地上传队列**；换设备或清理本机数据后，未上传云端的
+ * 照片文件无法从备份恢复（后续 UI 必须把这件事告诉教师）。
+ * 本阶段不实现 ZIP 照片备份 / 二进制恢复。
+ */
+export const STUDENT_PHOTO_KEY = `${appConfig.storageKeyPrefix}:studentPhotos`
 /** Phase 4 的课表键（Phase 4.1 起改用 TIMETABLE_KEY，见下方 LEGACY_CLEAR_MODULES） */
 const LEGACY_TIMETABLE_KEY = `${appConfig.storageKeyPrefix}:timetable:lessons`
 
@@ -98,6 +125,12 @@ export const BACKUP_MODULES: BackupModule[] = [
   // v3.7.5：代课台账（独立于课程表；它记的是「某天某节谁替谁上」，丢了统计就对不上了）
   { key: SUBSTITUTES_KEY, label: '代课记录', unit: '条' },
   { key: PROFILE_KEY, label: '个人资料', unit: '份' },
+  // v3.8.0：违纪记录（Phase 1A 数据层；一条事件一份事实，丢了历史统计就全对不上）
+  { key: VIOLATION_KEY, label: '违纪记录', unit: '条' },
+  // v3.8.1（Phase 3）：违纪自定义事件预设（名称 + 默认严重程度；与历史事件用 presetId 关联）
+  { key: VIOLATION_PRESETS_KEY, label: '违纪自定义事件', unit: '个' },
+  // v3.8.0（Phase 1B）：学生照片**元数据**（不含照片文件；见文件上方 STUDENT_PHOTO_KEY 说明）
+  { key: STUDENT_PHOTO_KEY, label: '学生照片', unit: '张' },
 ]
 
 /**
@@ -159,6 +192,19 @@ function labelOf(key: string): string {
 }
 
 /**
+ * 写盘 / 导出 / 导入前对某个数据块做**最后一道净化**。
+ *
+ * 只有照片块需要：它的元数据来自多个版本与同步通道，历史数据 / 第三方导入可能夹带
+ * `signedUrl` / `blob` / `base64` / `dataUrl` / 本地 objectURL 等**绝不能进备份**的字段。
+ * `reviveStudentPhotos` 会保留未知的 JSON-safe 字段（跨版本兼容），但剔除二进制 / 敏感键。
+ * 其它数据块原样返回：备份层不替各 store 做字段校验（那是各 store normalize 的职责）。
+ */
+function sanitizeModuleItems(key: string, items: unknown[]): unknown[] {
+  if (key !== STUDENT_PHOTO_KEY) return items
+  return reviveStudentPhotos(items) as unknown[]
+}
+
+/**
  * 读出数据块的原始值：缺键 = 无数据（不进 values），JSON 损坏的块记入 broken 并跳过。
  * 默认读全部备份数据块；传 modules 可读别的键（「清空示例数据」用它捎带旧键，见 LEGACY_CLEAR_MODULES）。
  */
@@ -178,7 +224,7 @@ export function readModules(
       broken.push(module.label)
       continue
     }
-    if (Array.isArray(parsed)) values[module.key] = parsed
+    if (Array.isArray(parsed)) values[module.key] = sanitizeModuleItems(module.key, parsed)
     else broken.push(module.label)
   }
   return { values, broken }
@@ -270,9 +316,10 @@ export function parseBackup(text: string): ParseBackupResult {
     if (!Array.isArray(value)) {
       return { ok: false, error: `备份内容读不出来：${labelOf(key)}部分格式不对。` }
     }
-    const missing = value.filter((item) => idOf(item) === null).length
+    const cleanValue = sanitizeModuleItems(key, value)
+    const missing = cleanValue.filter((item) => idOf(item) === null).length
     if (missing > 0) idless.push({ label: labelOf(key), count: missing })
-    data[key] = value
+    data[key] = cleanValue
   }
 
   const exportedAt = typeof parsed.exportedAt === 'string' ? parsed.exportedAt : ''
@@ -369,8 +416,8 @@ export function planMerge(
     if (skipLabels.includes(module.label)) continue
     const incoming = backup.data[module.key]
     if (incoming === undefined) continue
-    const items = current[module.key] ?? []
-    const merged = mergeById(items, incoming as unknown[])
+    const items = sanitizeModuleItems(module.key, current[module.key] ?? [])
+    const merged = mergeById(items, sanitizeModuleItems(module.key, incoming as unknown[]))
     writes[module.key] = JSON.stringify(merged.items)
     stats.push({
       label: module.label,

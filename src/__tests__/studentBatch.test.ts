@@ -8,8 +8,8 @@
  *  ① **整批只写一次盘、只广播一条**。`syncPersisted` 的 deep watch 盯着数组本身，
  *     一次整体替换 = 一次写盘；循环调 `updateStudent()` 的话，选 30 个人就是 30 次写盘
  *     + 30 条广播（`applyStudentImport` 的注释里已把这条写成纪律，这里把它测出来）。
- *  ② **性别与宿舍不符要跳过，不能写进去**。`normalizeStudent` 的白名单收敛会在下次
- *     加载时把错性别的房间清掉——写进去也是一个会自己消失的值，教师却先看到它生效了。
+ *  ② **宿舍与性别解耦（v3.8.1 Phase 2）**：不再有「性别与宿舍不符」的跳过——
+ *     女生可以批量设成男生楼的值，反之亦然；任意自定义宿舍都原样写入。
  *  ③ **「没变化」不等于「跳过」**。批量给全班加一个本来就有的标签，第二次执行应当
  *     报告「无需修改」；把它算进 `skipped`，教师会看到一句莫名其妙的「跳过 63 人」。
  *  ④ **不修改就是真的不修改**。「不修改」与「清空」必须区分开——混成一个的话，
@@ -31,9 +31,10 @@ import type { Student } from '@/types'
 
 const STUDENTS_KEY = `${appConfig.storageKeyPrefix}:students`
 
-/** 女生宿舍 / 男生宿舍各一间，用于性别校验的用例 */
-const GIRLS_ROOM = '女生2栋113'
-const BOYS_ROOM = '男生1栋209'
+/** 当前八项预设里的两间 + 一个自定义值，用于解耦后的批量用例 */
+const GIRLS_ROOM = '女生2栋212'
+const BOYS_ROOM = '男生1栋203'
+const CUSTOM_ROOM = '北校区 3 号楼 412'
 
 function makeStudent(
   id: string,
@@ -194,8 +195,8 @@ describe('补丁规则：不修改 ≠ 清空', () => {
   })
 })
 
-describe('性别校验：不符的跳过，不做静默写入', () => {
-  it('给女生选男生宿舍 → 跳过她、照常改别人', async () => {
+describe('宿舍与性别解耦：不再有「不符就跳过」（v3.8.1 Phase 2）', () => {
+  it('给女生批量设男生楼的值 → 照常写入，不跳过', async () => {
     const store = seedAndOpen([
       makeStudent('s1', '女生甲', '0101'),
       makeStudent('s2', '男生乙', '0102', { gender: 'male' }),
@@ -204,41 +205,58 @@ describe('性别校验：不符的跳过，不做静默写入', () => {
     const outcome = store.applyStudentBatch(['s1', 's2'], { dormitory: BOYS_ROOM })
     await nextTick()
 
-    expect(outcome).toEqual({ updated: 1, skipped: 1 })
-    // 不写进去的理由：normalizeStudent 的宿舍白名单会在下次加载时把它清掉，
-    // 教师会先看到它生效了一瞬间，再莫名其妙地消失
-    expect(find(store, 's1').dormitory).toBeUndefined()
+    expect(outcome).toEqual({ updated: 2, skipped: 0 })
+    expect(find(store, 's1').dormitory).toBe(BOYS_ROOM)
     expect(find(store, 's2').dormitory).toBe(BOYS_ROOM)
+    // normalizeStudent 不再按性别清空：重新加载后值仍在
+    setActivePinia(createPinia())
+    expect(useStudentStore().students.find((item) => item.id === 's1')?.dormitory).toBe(BOYS_ROOM)
   })
 
-  it('全班性别一致时一次都不跳过（跳过是例外，不是常态）', async () => {
+  it('给男生批量设女生楼的值 → 同样照常写入', async () => {
+    const store = seedAndOpen([makeStudent('s1', '男生甲', '0101', { gender: 'male' })])
+    expect(store.applyStudentBatch(['s1'], { dormitory: GIRLS_ROOM })).toEqual({
+      updated: 1,
+      skipped: 0,
+    })
+    expect(find(store, 's1').dormitory).toBe(GIRLS_ROOM)
+  })
+
+  it('批量设任意自定义宿舍：原样写入（不 trim、不按预设判断）', async () => {
     const store = seedAndOpen([
       makeStudent('s1', '甲', '0101'),
       makeStudent('s2', '乙', '0102'),
       makeStudent('s3', '丙', '0103'),
     ])
 
-    expect(store.applyStudentBatch(['s1', 's2', 's3'], { dormitory: GIRLS_ROOM })).toEqual({
+    expect(store.applyStudentBatch(['s1', 's2', 's3'], { dormitory: CUSTOM_ROOM })).toEqual({
       updated: 3,
       skipped: 0,
     })
+    for (const id of ['s1', 's2', 's3']) {
+      expect(find(store, id).dormitory).toBe(CUSTOM_ROOM)
+    }
   })
 
-  it('全员不符 → 一个都不改，也就一个字节都不写', async () => {
-    const store = seedAndOpen([makeStudent('s1', '甲', '0101')])
-    browser.localStorage.resetCounters()
+  it('只改宿舍时，班委与标签等其它字段原样不动', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '甲', '0101', {
+        dormitory: '女生2栋214',
+        cadreRole: '班长',
+        tags: ['走读'],
+      }),
+    ])
 
-    expect(store.applyStudentBatch(['s1'], { dormitory: BOYS_ROOM })).toEqual({
-      updated: 0,
-      skipped: 1,
-    })
+    store.applyStudentBatch(['s1'], { dormitory: CUSTOM_ROOM })
     await nextTick()
 
-    expect(browser.localStorage.writesFor(STUDENTS_KEY)).toBe(0)
-    expect(posted).toHaveLength(0)
+    const updated = find(store, 's1')
+    expect(updated.dormitory).toBe(CUSTOM_ROOM)
+    expect(updated.cadreRole).toBe('班长')
+    expect(updated.tags).toEqual(['走读'])
   })
 
-  it('清空宿舍不做性别校验（「未分配」对谁都成立）', async () => {
+  it('清空宿舍：未分配对谁都成立', async () => {
     const store = seedAndOpen([
       makeStudent('s1', '女生甲', '0101', { dormitory: GIRLS_ROOM }),
       makeStudent('s2', '男生乙', '0102', { gender: 'male', dormitory: BOYS_ROOM }),
@@ -248,6 +266,39 @@ describe('性别校验：不符的跳过，不做静默写入', () => {
       updated: 2,
       skipped: 0,
     })
+    expect(find(store, 's1').dormitory).toBeUndefined()
+    expect(find(store, 's2').dormitory).toBeUndefined()
+  })
+
+  it('修改性别不影响宿舍：单个更新后宿舍原样保留，重新加载也不被清', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '甲', '0101', { gender: 'female', dormitory: '女生2栋212' }),
+    ])
+
+    const updated = store.updateStudent('s1', { gender: 'male' })
+    await nextTick()
+
+    expect(updated?.gender).toBe('male')
+    expect(find(store, 's1').dormitory).toBe('女生2栋212')
+    // 重新加载 = 走 normalizeStudent（首屏 / 同步 / 备份恢复同一路径）
+    setActivePinia(createPinia())
+    expect(useStudentStore().students.find((item) => item.id === 's1')?.dormitory).toBe(
+      '女生2栋212',
+    )
+  })
+
+  it('批量只改标签时，宿舍与性别原样不动（批量修改没有性别字段）', async () => {
+    const store = seedAndOpen([
+      makeStudent('s1', '甲', '0101', { gender: 'female', dormitory: '北校区 3 号楼 412' }),
+    ])
+
+    store.applyStudentBatch(['s1'], { addTags: ['走读'] })
+    await nextTick()
+
+    const student = find(store, 's1')
+    expect(student.dormitory).toBe('北校区 3 号楼 412')
+    expect(student.gender).toBe('female')
+    expect(student.tags).toEqual(['走读'])
   })
 })
 

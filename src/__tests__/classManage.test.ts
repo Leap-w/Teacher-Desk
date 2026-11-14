@@ -47,18 +47,36 @@ describe('班级管理路由（V1.3.0 IA）', () => {
     expect(children.map((child) => child.path)).toEqual(['schedule', 'works', 'substitutes'])
   })
 
-  it('「班级管理」下挂五个子模块（v3.6.1 起 weekend 换成 holiday）', () => {
+  it('「班级管理」下挂七个子模块（v3.8.1 起末尾追加照片墙）', () => {
     expect(classRoute).toBeDefined()
     const children = (classRoute?.children ?? []).filter(
       (child) => child.path !== '' && !child.redirect,
     )
+    // 顺序即二级导航顺序：新模块**只能追加在最后**，插入中间会把既有位置整体挪动。
+    // v3.8.0 追加「违纪管理」、v3.8.1 追加「照片墙」，前六个位置始终不变。
     expect(children.map((child) => child.path)).toEqual([
       'seats',
       'leave',
       'duty',
       'holiday',
       'fund',
+      'violations',
+      'photos',
     ])
+  })
+
+  it('违纪管理与照片墙依次追加在最后且带名称（次级导航渲染靠它）', () => {
+    expect(classRoute).toBeDefined()
+    const children = (classRoute?.children ?? []).filter(
+      (child) => child.path !== '' && !child.redirect,
+    )
+    const violations = children[children.length - 2]
+    expect(violations).toMatchObject({ path: 'violations', name: 'violations' })
+    expect(violations?.meta?.title).toBe('违纪管理')
+
+    const photos = children[children.length - 1]
+    expect(photos).toMatchObject({ path: 'photos', name: 'photos' })
+    expect(photos?.meta?.title).toBe('照片墙')
   })
 
   it('「假期管理」排在原「周末管理」的位置上，二级导航顺序不变', () => {

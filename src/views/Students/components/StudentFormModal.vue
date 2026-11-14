@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { AppButton, AppField, AppInput, AppModal, AppSelect, AppTextarea } from '@/components/ui'
 import { useStudentStore } from '@/stores/student'
 import {
   CADRE_CUSTOM,
   CADRE_OPTIONS,
+  DORMITORY_CUSTOM,
   FAMILY_SCOPE_OPTIONS,
   PRESET_CADRES,
+  dormitoryFromForm,
   dormitoryOptions,
-  isValidDormitory,
+  isDormitorySelectionMissing,
+  splitDormitoryForForm,
 } from '@/utils/student'
 import type { FamilyScope, Gender, SelectOption, Student, StudentInput } from '@/types'
 
@@ -47,7 +50,10 @@ interface FormState {
   /** 身份证尾号（选填，最多 4 位）；重名时显示成「姓名（尾号）」 */
   idCardSuffix: string
   gender: Gender
+  /** 宿舍下拉值：预设、空串（未分配）或 `DORMITORY_CUSTOM`（此时取 dormitoryCustom） */
   dormitory: string
+  /** 「＋ 自定义宿舍」输入内容（自由文本；不 trim、不改写） */
+  dormitoryCustom: string
   cadreRole: string
   /** 自定义职务的输入框内容；仅当 cadreRole === CADRE_CUSTOM 时参与提交 */
   cadreCustom: string
@@ -78,6 +84,7 @@ function blankForm(): FormState {
     idCardSuffix: '',
     gender: 'female',
     dormitory: '',
+    dormitoryCustom: '',
     cadreRole: '',
     cadreCustom: '',
     tags: '',
@@ -93,48 +100,59 @@ function blankForm(): FormState {
 }
 
 const form = reactive<FormState>(blankForm())
-const errors = reactive({ name: '', studentNo: '', scope: '' })
+/** 防双击重复提交：成功后保持 true 到下次打开（弹窗关闭是异步 DOM 更新） */
+const submitting = ref(false)
+const errors = reactive({ name: '', studentNo: '', scope: '', dormitory: '' })
 
 const modalTitle = computed(() => (props.student ? '编辑学生' : '新增学生'))
 
 const isCustomCadre = computed(() => form.cadreRole === CADRE_CUSTOM)
+const isCustomDormitory = computed(() => form.dormitory === DORMITORY_CUSTOM)
 
-/** 宿舍选项按性别分列：男生只能选男生楼，反之亦然 */
-const dormitoryChoices = computed(() => dormitoryOptions(form.gender))
+/** 自定义宿舍留空时才显示错误；补上内容后错误立刻消失，不用等再次提交 */
+const dormitoryError = computed(() =>
+  errors.dormitory && isDormitorySelectionMissing(form.dormitory, form.dormitoryCustom)
+    ? errors.dormitory
+    : '',
+)
 
 /**
- * 性别与宿舍是耦合的。改了性别后原来选中的房间可能已不在选项里——留着一个
- * 选不中的值，原生 `<select>` 会显示空白，但提交时它仍在 form 里，等于把女生
- * 悄悄存进了男生楼。所以一旦失配立刻清空，让教师重新选。
+ * 宿舍选项：未分配 + 八项快捷预设 + 「＋ 自定义宿舍」。
+ * **对男女一致展示**（性别与宿舍解耦）；预设只是快捷选项，不在预设里的历史值由
+ * `splitDormitoryForForm` 回填到自定义输入框。
  */
-watch(
-  () => form.gender,
-  (gender) => {
-    if (form.dormitory && !isValidDormitory(form.dormitory, gender)) form.dormitory = ''
-  },
-)
+const dormitoryChoices: SelectOption<string>[] = [
+  ...dormitoryOptions(),
+  { label: '＋ 自定义宿舍…', value: DORMITORY_CUSTOM },
+]
 
 watch(
   () => props.modelValue,
   (open) => {
     if (!open) return
     Object.assign(form, blankForm())
+    submitting.value = false
     errors.name = ''
     errors.studentNo = ''
     errors.scope = ''
+    errors.dormitory = ''
     if (!props.student) return
 
     // 既有职务不在预设里（上一轮导入或自定义录入的）→ 回填成「＋ 自定义」+ 输入框，
     // 否则原生 select 找不到匹配项会显示成「无」，一保存就把这个职务抹掉了
     const cadre = props.student.cadreRole ?? ''
     const cadreIsCustom = Boolean(cadre) && !PRESET_CADRES.includes(cadre)
+    // 宿舍同理：不在八项快捷预设里的历史值（自定义宿舍）必须回填到自定义输入框，
+    // 不能因为原生 select 选不中就把它丢掉
+    const dormitory = splitDormitoryForForm(props.student.dormitory)
 
     Object.assign(form, {
       name: props.student.name,
       studentNo: props.student.studentNo,
       idCardSuffix: props.student.idCardSuffix ?? '',
       gender: props.student.gender,
-      dormitory: props.student.dormitory ?? '',
+      dormitory: dormitory.select,
+      dormitoryCustom: dormitory.custom,
       cadreRole: cadreIsCustom ? CADRE_CUSTOM : cadre,
       cadreCustom: cadreIsCustom ? cadre : '',
       tags: (props.student.tags ?? []).join('，'),
@@ -183,7 +201,12 @@ function validate(): boolean {
   // 返家范围是后续周末统计的基础，新增/编辑时均必选
   errors.scope = form.scope ? '' : '请选择返家范围'
 
-  return !errors.name && !errors.studentNo && !errors.scope
+  // 选了「自定义宿舍」却空着提交，等于悄悄清空宿舍；要清空必须明确选「未分配」
+  errors.dormitory = isDormitorySelectionMissing(form.dormitory, form.dormitoryCustom)
+    ? '请输入宿舍名称（要清空请选「未分配」）'
+    : ''
+
+  return !errors.name && !errors.studentNo && !errors.scope && !errors.dormitory
 }
 
 /** 班委职务的最终值：自定义模式取输入框；哨兵值本身绝不入库 */
@@ -193,13 +216,15 @@ function cadreRoleValue(): string | undefined {
 }
 
 function submit() {
+  if (submitting.value) return
   if (!validate()) return
+  submitting.value = true
   const payload: StudentInput = {
     name: form.name.trim(),
     studentNo: form.studentNo.trim(),
     idCardSuffix: form.idCardSuffix.trim() || undefined,
     gender: form.gender,
-    dormitory: form.dormitory || undefined,
+    dormitory: dormitoryFromForm(form.dormitory, form.dormitoryCustom),
     cadreRole: cadreRoleValue(),
     tags: form.tags
       .split(/[,，]/)
@@ -257,8 +282,17 @@ function close() {
           <AppSelect v-model="form.gender" :options="GENDER_OPTIONS" />
         </AppField>
 
-        <AppField label="宿舍" hint="女生 2 栋 / 男生 1 栋">
+        <AppField
+          label="宿舍"
+          :error="dormitoryError"
+          hint="八项预设只是快捷选项；也可输入其他宿舍，留空表示未分配"
+        >
           <AppSelect v-model="form.dormitory" :options="dormitoryChoices" />
+          <AppInput
+            v-if="isCustomDormitory"
+            v-model="form.dormitoryCustom"
+            placeholder="输入宿舍名称（如：3 号楼 412）"
+          />
         </AppField>
 
         <AppField label="班委职务">

@@ -16,7 +16,8 @@ let sessionRandomRanks: ReadonlyMap<string, number> = new Map()
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { GraduationCap, Search, SlidersHorizontal } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { GraduationCap, Images, Search, SlidersHorizontal } from 'lucide-vue-next'
 
 import { AppButton, AppCard, AppModal, EmptyState } from '@/components/ui'
 import { useToast } from '@/composables/useToast'
@@ -42,7 +43,9 @@ import StudentFormModal from './components/StudentFormModal.vue'
 import StudentHubSidebar from './components/StudentHubSidebar.vue'
 import type { StudentFilterKey } from './components/StudentFilterChips.vue'
 import StudentImportModal from './components/StudentImportModal.vue'
+import StudentPhotoManager from './components/StudentPhotoManager.vue'
 
+const router = useRouter()
 const studentStore = useStudentStore()
 const dutyStore = useDutyStore()
 const leaveStore = useLeaveStore()
@@ -64,6 +67,10 @@ const importOpen = ref(false)
 const editingStudent = ref<Student | undefined>(undefined)
 const detailOpen = ref(false)
 const detailId = ref<string | undefined>(undefined)
+/** 单名学生照片管理（v3.8.0 Phase 2；v3.8.1 起班级照片墙改为独立页面） */
+const photoStudent = ref<Student | undefined>(undefined)
+const photoOpen = ref(false)
+
 const confirmOpen = ref(false)
 /**
  * 待删除的学生。**确认后不清空**：弹窗关闭有淡出动画，动画期间它仍在渲染，
@@ -269,6 +276,35 @@ function openDetail(student: Student) {
   detailOpen.value = true
 }
 
+/**
+ * 班级照片墙（v3.8.1 Phase 1）：从弹窗改为班级管理下的独立页面。
+ * 这里只做路由跳转，照片数据与上传/删除能力全部留在独立页与既有 Store 里。
+ */
+function openPhotoWall(): void {
+  void router.push({ name: 'photos' })
+}
+
+/** 学生照片管理（单个学生，弹窗形式保留；不承载整个班级照片墙） */
+function openStudentPhotos(student: Student): void {
+  photoStudent.value = student
+  photoOpen.value = true
+}
+
+/** 学生详情 → 照片管理 */
+function openPhotosFromDetail(student: Student): void {
+  openStudentPhotos(student)
+}
+
+/**
+ * 学生详情 → 违纪档案。
+ *
+ * 跳到违纪管理页并带 `?student=<id>`：个人档案的查看 / 编辑 / 删除 / 看照片都在那边，
+ * 不在这里复制一套编辑弹窗（两处实现迟早会分叉）。
+ */
+function openViolationProfile(student: Student): void {
+  void router.push({ name: 'violations', query: { student: student.id } })
+}
+
 function openEdit(student: Student) {
   detailOpen.value = false
   editingStudent.value = student
@@ -361,6 +397,10 @@ function clearFilters() {
         <!-- v3.1.0：顺序改为 批量导入 → 批量管理 → 新增学生（主按钮仍在最后、仍带底色）；
              两个次按钮是一对「批量」操作，挨着放，主按钮单独收尾 -->
         <template v-else>
+          <AppButton variant="secondary" @click="openPhotoWall">
+            <Images :size="16" :stroke-width="2" aria-hidden="true" />
+            照片墙
+          </AppButton>
           <AppButton variant="secondary" @click="importOpen = true">批量导入</AppButton>
           <AppButton variant="secondary" @click="batchMode = true">批量管理</AppButton>
           <AppButton @click="openCreate">＋ 新增学生</AppButton>
@@ -453,7 +493,12 @@ function clearFilters() {
       :disambiguator="detailStudent ? disambiguatorOf(detailStudent) : undefined"
       @edit="openEdit"
       @remove="askRemove"
+      @open-violation-profile="openViolationProfile"
+      @open-photos="openPhotosFromDetail"
     />
+
+    <!-- 单名学生照片管理（v3.8.1 起班级照片墙已迁到 /class/photos 独立页面） -->
+    <StudentPhotoManager v-if="photoStudent" v-model="photoOpen" :student="photoStudent" />
 
     <AppModal v-model="confirmOpen" title="删除学生" :width="380">
       <p class="confirm-text">
@@ -494,10 +539,22 @@ function clearFilters() {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-4);
   padding: 0 4px 14px;
   margin-bottom: var(--spacing-lg);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* 窄屏：标题独占一行，操作按钮另起一行；避免「学生档案」被按钮挤成竖排 */
+@media (max-width: 640px) {
+  .page-toolbar {
+    align-items: flex-start;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
 }
 
 /* CDL 页面头：语义层级令牌（UI-1） */

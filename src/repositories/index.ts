@@ -16,6 +16,15 @@ export { dutyRepository } from './duty/dutyRepository'
 export { weekendRepository } from './weekend/weekendRepository'
 export { holidayRepository, HOLIDAYS_KEY } from './holiday/holidayRepository'
 export { holidayRecordRepository, HOLIDAY_RECORDS_KEY } from './holiday/holidayRecordRepository'
+// v3.8.0（Phase 1A）：违纪管理数据层（`teacherdesk:violations`）
+export { violationRepository, VIOLATIONS_KEY } from './violation/violationRepository'
+// v3.8.1（Phase 3）：违纪自定义预设（`teacherdesk:violationPresets`；独立键、随同步/备份走）
+export {
+  violationPresetRepository,
+  VIOLATION_PRESETS_KEY,
+} from './violation/violationPresetRepository'
+// v3.8.0（Phase 1B）：学生照片元数据（`teacherdesk:studentPhotos`；图片二进制在 IDB / 云存储）
+export { studentPhotoRepository, STUDENT_PHOTOS_KEY } from './studentPhoto/studentPhotoRepository'
 export { scheduleRepository } from './schedule/scheduleRepository'
 export { semesterRepository } from './semester/semesterRepository'
 export { substituteRepository, SUBSTITUTES_KEY } from './substitute/substituteRepository'

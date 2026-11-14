@@ -305,3 +305,83 @@ export function createCloudBaseRemote(): RemotePort {
     },
   }
 }
+
+/* ==================== 云存储文件（Phase 1B · 传统模式） ==================== */
+
+/**
+ * 云存储客户端的最小形状（`app.storage.from()` 返回的 ClassicStorageFileApi）。
+ *
+ * 单独抽成接口是为了让 `createCloudFileApi` 可以在测试里注入假实现，
+ * 而不必 mock 整个 SDK —— 图片链路的上传/签名/下载/存在性判断因此都能在 node 里被验证。
+ */
+export interface ClassicStorageLike {
+  upload(path: string, fileBody: unknown, options?: { contentType?: string }): Promise<unknown>
+  createSignedUrl(filePath: string, expiresIn: number): Promise<unknown>
+  download(filePath: string): Promise<unknown>
+  exists(filePath: string): Promise<unknown>
+}
+
+/** 照片文件端口：上传 / 签名 URL / 下载 / 是否存在 */
+export interface CloudFileApi {
+  /** 上传一张照片，返回 CloudBase fileID */
+  upload(cloudPath: string, content: Blob, contentType: string): Promise<{ fileId: string }>
+  /**
+   * 为私有文件签发**临时**访问地址。
+   * 调用方**绝不持久化**返回值（会过期）；本函数也不打印 URL。
+   */
+  createSignedUrl(fileId: string, expiresIn: number): Promise<string>
+  /** 按 fileID 下载文件内容 */
+  download(fileId: string): Promise<Blob>
+  /** 云端文件是否仍可访问（权限/网络失败会抛错，不吞成 false） */
+  exists(fileId: string): Promise<boolean>
+}
+
+/**
+ * 把 SDK 的 `{ data, error }` 形状适配成「失败必抛 + 稳定返回值」。
+ * 复用本文件已有的 `call` / `CloudError`（错误信息带上云端原因，便于诊断）。
+ */
+export function createCloudFileApi(storage: ClassicStorageLike): CloudFileApi {
+  return {
+    async upload(cloudPath, content, contentType) {
+      const data = await call<{ id?: unknown }>(storage.upload(cloudPath, content, { contentType }))
+      const fileId = typeof data?.id === 'string' ? data.id.trim() : ''
+      if (!fileId) throw new CloudError('照片已上传，但云端没有返回文件标识', null)
+      return { fileId }
+    },
+
+    async createSignedUrl(fileId, expiresIn) {
+      const data = await call<{ signedUrl?: unknown }>(storage.createSignedUrl(fileId, expiresIn))
+      const signedUrl = typeof data?.signedUrl === 'string' ? data.signedUrl.trim() : ''
+      if (!signedUrl) throw new CloudError('云端没有返回照片访问地址', null)
+      return signedUrl
+    },
+
+    async download(fileId) {
+      const blob = await call<Blob | null>(storage.download(fileId))
+      if (!(blob instanceof Blob)) {
+        throw new CloudError('云端照片下载失败：没有拿到文件内容', null)
+      }
+      return blob
+    },
+
+    async exists(fileId) {
+      const value = await call<unknown>(storage.exists(fileId))
+      return value === true
+    },
+  }
+}
+
+/** 缓存云存储客户端（与 `getApp()` 一样惰性创建） */
+let cloudFileApi: CloudFileApi | null = null
+
+/**
+ * 取云存储文件端口。**本文件仍是全应用唯一 import SDK 的地方**；
+ * 上层（`services/photoCloud.ts`）只认识 `CloudFileApi` 这个接口。
+ */
+export function getCloudFileApi(): CloudFileApi {
+  if (cloudFileApi) return cloudFileApi
+  // 传统模式：`from()` 无参（PG/Neo 的 `from(bucketId)` 不适用于本环境）
+  const storage = getApp().storage.from() as unknown as ClassicStorageLike
+  cloudFileApi = createCloudFileApi(storage)
+  return cloudFileApi
+}

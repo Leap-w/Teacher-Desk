@@ -1,4 +1,4 @@
-import { ALL_DORMITORIES, FAMILY_SCOPE_LABELS, isValidDormitory } from '@/utils/student'
+import { FAMILY_SCOPE_LABELS } from '@/utils/student'
 import type { FamilyLocation, FamilyScope, Gender, Student, StudentInput } from '@/types'
 import { cellText, isBlankRow, normalizeHeader } from '@/services/sheetCell'
 
@@ -47,11 +47,6 @@ export interface ParsedRow {
   errors: string[]
   /** 提示：不拦截，只是让教师知道 */
   warnings: string[]
-  /**
-   * 原文件里写了宿舍、但不合法（已置空）。**结构化标记而非靠 warnings 文本反查**——
-   * 统计与文案是两件事，靠字符串去认，改一次文案就会让计数静默变成 0
-   */
-  dormitoryRejected: boolean
 }
 
 /** 表头识别结果：列下标，-1 表示没有这一列 */
@@ -168,7 +163,7 @@ export const STUDENT_IMPORT_OPTIONAL: readonly string[] = STUDENT_IMPORT_HEADERS
 
 /**
  * 模板示例（v3.3.1 起，v3.5.0 扩到 13 列，v3.6.1 再扩到 15 列）。三行的取舍：
- * ① 一行女生、一行男生——宿舍按性别分列，示例里各举一间才说明得清；
+ * ① 一行女生、一行男生——示例里各举一间当前快捷预设，说明「预设只是快捷选项」；
  * ② 第一行**故意留空「备注」**、第二行**故意留空「身份证尾号」与「班委」**，
  *    让教师看见选填列可以空着（空着不等于清空既有值，这条口径见 `toPatch`）；
  * ③ 「标签」写成 `住校生,体育委员`——逗号分隔这件事光靠文字说明容易被忽略；
@@ -183,7 +178,7 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '女',
     '0101',
     '3287',
-    '女生2栋113',
+    '女生2栋212',
     '班长',
     '13800000000',
     '住校生,体育委员',
@@ -200,7 +195,7 @@ export const STUDENT_IMPORT_SAMPLE: readonly (readonly string[])[] = [
     '男',
     '0102',
     '',
-    '男生1栋209',
+    '男生1栋203',
     '',
     '13900000000',
     '住校生',
@@ -479,15 +474,9 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
     // （Excel 里写成 15 位手机号也不会被整段存进来）
     const idCardSuffix = at('idCardSuffix').trim().slice(0, 4)
 
-    const dormitoryText = at('dormitory')
-    let dormitory = dormitoryText
-    const dormitoryRejected =
-      Boolean(dormitoryText) && !isValidDormitory(dormitoryText, gender || undefined)
-    if (dormitoryRejected) {
-      // 只提示不拦截：学生本身是有效的，不该为了一间写错的宿舍丢掉整条档案
-      warnings.push(`宿舍「${dormitoryText}」不在固定宿舍清单内，本次留空`)
-      dormitory = ''
-    }
+    // 宿舍是自由文本：任何非空字符串都照原样导入（预设只是表单快捷选项，不是白名单）。
+    // 单元格文本本身按既有 `cellText` 规则去首尾空白（Excel 解析的通用约定），内部空格保留。
+    const dormitory = at('dormitory')
 
     const scopeText = at('scope')
     const scope = SCOPE_ALIASES[scopeText] ?? ''
@@ -555,7 +544,6 @@ export function parseStudentRows(rows: unknown[][]): ParseResult {
       changduRelativeRelation,
       errors,
       warnings,
-      dormitoryRejected,
     })
   }
 
@@ -594,8 +582,6 @@ export interface StudentImportResult {
   duplicateNames: string[]
   /** 学号为空的行数——这些行每次导入都会新增，教师必须知道 */
   emptyStudentNo: number
-  /** 宿舍写错被留空的行数 */
-  missingDormitory: number
   /** 缺返家范围的行数 */
   missingScope: number
   plan: StudentImportPlan
@@ -635,12 +621,10 @@ export function planStudentImport(rows: ParsedRow[], existing: Student[]): Stude
   const plan: StudentImportPlan = { adds: [], updates: [] }
   const previewRows: ImportPreviewRow[] = []
   let emptyStudentNo = 0
-  let missingDormitory = 0
   let missingScope = 0
 
   for (const row of rows) {
     if (!row.studentNo) emptyStudentNo += 1
-    if (row.dormitoryRejected) missingDormitory += 1
     if (!row.scope) missingScope += 1
 
     if (row.errors.length > 0) {
@@ -673,7 +657,6 @@ export function planStudentImport(rows: ParsedRow[], existing: Student[]): Stude
     updated,
     duplicateNames: [...duplicateNames],
     emptyStudentNo,
-    missingDormitory,
     missingScope,
     plan,
   }
@@ -758,6 +741,3 @@ function applyRelativeFields(patch: Partial<StudentInput>, row: ParsedRow): void
   }
   patch.changduRelativeRelation = undefined
 }
-
-/** 预览用：固定宿舍清单，教师看到「不在清单内」时能立刻知道该怎么改 */
-export const DORMITORY_HINT = ALL_DORMITORIES.join(' / ')

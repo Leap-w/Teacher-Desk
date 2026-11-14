@@ -49,6 +49,12 @@ export default defineConfig({
         // 最常见的情形**，偏偏那条路径没有任何 runtime 缓存兜底（本配置没有 runtimeCaching）
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,xlsx}'],
         cleanupOutdatedCaches: true,
+        // 导航回退改由 public/sw-navigation.js 接管（v3.7.8）：Workbox 的
+        // navigateFallback 会把预缓存里的 index.html 原样交给导航请求，而
+        // CloudBase 默认域名网关给「非导航请求」追加的 Content-Disposition:
+        // attachment 会被一起带出来，Chrome 就把首页当附件下载。详见该文件头注释。
+        navigateFallback: null,
+        importScripts: ['sw-navigation.js'],
       },
       devOptions: {
         enabled: false,

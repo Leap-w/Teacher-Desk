@@ -125,10 +125,10 @@ export const useStudentStore = defineStore('student', () => {
    * 循环调 `updateStudent()` 的话，选 30 个人就是 30 次写盘 + 30 次广播。
    * （组件层不得绕过这里直接写 `students.value`，§11.3。）
    *
-   * 补丁由纯函数 `buildBatchPatch()` 构造——性别与宿舍是否匹配、标签如何去重、
-   * 「没变化」与「不适用」怎么区分，规则都在那边，因此可以脱离浏览器单测。
-   * 这里只负责分账：`skipped` 是**不适用**的人数（如所选宿舍与该生性别不符），
-   * 「适用但改完没变化」既不算更新也不算跳过。
+   * 补丁由纯函数 `buildBatchPatch()` 构造——标签如何去重、「没变化」怎么区分，
+   * 规则都在那边，因此可以脱离浏览器单测。v3.8.1 Phase 2 起宿舍与性别解耦，
+   * 不再存在「所选宿舍与该生性别不符」这种不适用情形；`skipped` 字段保留为 0，
+   * 供未来真正需要「逐生判断是否适用」的批量动作使用。
    */
   function applyStudentBatch(
     ids: readonly string[],
@@ -136,7 +136,6 @@ export const useStudentStore = defineStore('student', () => {
   ): { updated: number; skipped: number } {
     const targets = new Set(ids)
     let updated = 0
-    let skipped = 0
     const next: Student[] = []
     for (const student of students.value) {
       // 没被选中 / 已被软删除的：原样带过去，且不参与任何计数
@@ -145,11 +144,6 @@ export const useStudentStore = defineStore('student', () => {
         continue
       }
       const patch = buildBatchPatch(student, changes)
-      if (!patch) {
-        skipped += 1
-        next.push(student)
-        continue
-      }
       if (Object.keys(patch).length === 0) {
         next.push(student)
         continue
@@ -159,9 +153,9 @@ export const useStudentStore = defineStore('student', () => {
     }
     // 一个人都没变就不赋值：不赋值 = 不写盘、不广播
     // （`writeJSON` 的幂等只是第二道保险，不该当成主要手段）
-    if (updated === 0) return { updated, skipped }
+    if (updated === 0) return { updated, skipped: 0 }
     students.value = next
-    return { updated, skipped }
+    return { updated, skipped: 0 }
   }
 
   /**

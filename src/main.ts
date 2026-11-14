@@ -7,6 +7,9 @@ import { startAutoSync } from './sync/autoSync'
 import { probeCloudSession } from './services/cloudSync'
 import { startWidgetSnapshotSync } from './composables/useWidgetSnapshot'
 import { onSyncReload } from './services/sync'
+import { startStudentPhotoAutoRetry } from './stores/studentPhoto'
+import { startViolationSync } from './stores/violation'
+import { startViolationPresetSync } from './stores/violationPreset'
 
 import 'virtual:uno.css'
 import './styles/main.css'
@@ -23,6 +26,29 @@ import './styles/main.css'
  * 只会让两页短暂地各显示一份不同的数据。表单内容是即时提交的（无草稿态），没有真正的未保存数据。
  */
 onSyncReload(() => window.location.reload())
+
+/**
+ * Pinia 实例要**留一个引用**：下面的 Widget 快照同步需要它。
+ *
+ * 提前到 `startAutoSync()` 之前创建，是为了让「违纪自定义预设」的 Store 能在**首轮云同步
+ * 对账之前**完成 Repository.bind（见下一条注释）。`app.use(pinia)` 仍然只装这一次，
+ * 之后所有 Store 共用同一个实例。
+ */
+const pinia = createPinia()
+
+/**
+ * v3.8.1 Phase 4：**违纪事件 + 自定义预设都必须在启动时注册同步键**。
+ *
+ * 违纪页面是懒加载的——如果只在页面里实例化 Store，没打开过违纪页的设备就永远不会把
+ * `teacherdesk:violations` / `teacherdesk:violationPresets` 注册进 `syncedKeys()`，
+ * 这些数据在云端同步里等于不存在（而界面上完全看不出来）。
+ *
+ * Phase 3 只预注册了预设键；Phase 4 验收发现事件键同样缺失，这里补齐：
+ * 两个 Store 都在 `startAutoSync()` 的首次对账之前完成 Repository.bind。
+ * 只提前注册 / 加载这两个 Store，不改变同步协议、LWW 或数据格式。
+ */
+startViolationSync(pinia)
+startViolationPresetSync(pinia)
 
 /**
  * 云端同步的接线（Phase 9B 起，Cloud-3 改为经同步引擎）：启动即对账一次，
@@ -50,15 +76,18 @@ void probeCloudSession()
 
 const app = createApp(App)
 
-/**
- * Pinia 实例要**留一个引用**：下面的 Widget 快照同步需要它。
- * 不是为了拿 store（那条路会实例化课表 store、进而触发首次播种），而是为了**监听**
- * 已经存在的 store 状态——见 `composables/useWidgetSnapshot.ts` 顶部的说明。
- */
-const pinia = createPinia()
-
 app.use(pinia)
 app.use(router)
+
+/**
+ * 学生照片的离线补传接线（v3.8.0 · Phase 1B 数据层）。
+ *
+ * 照片采用**本地优先**：上传失败 / 断网 / 未登录都只意味着"还没上云"，本地照片照常可用。
+ * 这里在启动时恢复本机上传队列，并在「联网 / 回到前台」时自动补传。
+ * 它只碰照片模块自己的 outbox 与云端文件通道，不参与普通业务 JSON 同步；
+ * 任何失败都留在本机队列里，下一次再试，绝不丢本地照片。
+ */
+startStudentPhotoAutoRetry()
 
 app.mount('#app')
 

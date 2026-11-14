@@ -2,7 +2,11 @@
 import { Check } from 'lucide-vue-next'
 
 import { AppButton, AppModal } from '@/components/ui'
-import { currentReleaseHighlights, currentVersionLabel } from '@/config/releaseNotes'
+import {
+  currentReleaseDate,
+  currentReleaseHighlights,
+  currentVersionLabel,
+} from '@/config/releaseNotes'
 
 /**
  * VersionModal — 版本信息窗口（v3.7.7）。
@@ -22,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const highlights = currentReleaseHighlights()
+const releaseDate = currentReleaseDate()
 
 function close(): void {
   emit('update:modelValue', false)
@@ -42,6 +47,7 @@ function close(): void {
 
       <h2 class="version-dialog__title">已经是最新版本</h2>
       <p class="version-dialog__version">当前版本 {{ currentVersionLabel }}</p>
+      <p v-if="releaseDate" class="version-dialog__date">更新于 {{ releaseDate }}</p>
       <p class="version-dialog__desc">您的 TeacherDesk 已经是最新版本，暂时不需要更新。</p>
 
       <section v-if="highlights.length" class="version-dialog__notes">
@@ -92,6 +98,13 @@ function close(): void {
   font-weight: var(--font-weight-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--color-primary-strong);
+}
+
+.version-dialog__date {
+  margin: 4px 0 0;
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .version-dialog__desc {

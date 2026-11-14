@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { MapPin } from 'lucide-vue-next'
 
+import { hasDormitoryValue } from '@/utils/student'
+
 /**
  * StudentCardMeta — 学生卡片辅助信息行（V2.0.3-alpha · Phase UI-4A 沉淀）：
  * 值日组 / 家庭地区 / 宿舍等一行式元信息；请假、值日、周末管理可复用。
@@ -27,7 +29,7 @@ defineProps<{
       <MapPin :size="14" :stroke-width="2" aria-hidden="true" />
       {{ region }}
     </span>
-    <span v-if="dormitory" class="meta-line">宿舍 · {{ dormitory }}</span>
+    <span v-if="hasDormitoryValue(dormitory)" class="meta-line">宿舍 · {{ dormitory }}</span>
     <span v-if="phone" class="meta-line">电话 · {{ phone }}</span>
   </div>
 </template>
@@ -58,7 +60,10 @@ defineProps<{
   gap: 4px;
   font-size: var(--font-caption);
   color: var(--color-text-tertiary);
-  white-space: nowrap;
+  /* 宿舍是自由文本，历史值/自定义值可能很长：窄屏必须换行，不能横向截断 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .meta-line svg {

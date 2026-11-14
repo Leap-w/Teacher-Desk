@@ -36,4 +36,19 @@ export default defineConfigWithVueTs(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Service Worker 侧脚本：跑在 worker 全局里，只有这几个 Web API 可用，
+    // 不声明的话会被 no-undef 全报一遍（v3.7.8 新增 public/sw-navigation.js）
+    name: 'teacherdesk/service-worker',
+    files: ['public/sw-navigation.js'],
+    languageOptions: {
+      globals: {
+        self: 'readonly',
+        caches: 'readonly',
+        fetch: 'readonly',
+        Headers: 'readonly',
+        Response: 'readonly',
+      },
+    },
+  },
 )
