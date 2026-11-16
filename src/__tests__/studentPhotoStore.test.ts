@@ -3,7 +3,10 @@
  *
  * 覆盖：
  * - 新增：图片处理 → IndexedDB（原图+缩略图）→ 元数据落盘 → 入队上传；失败补偿；
+ * - 自动分类（v3.8.2）：首张证件照 / 其后生活照；墓碑不计入；显式分类优先；
  * - 当前证件照：手动指定 / 更换 / 删除后无悬空标记 / 唯一性收敛；
+ *   **自动指定只在"尚无当前"时发生，绝不覆盖手动选择**（v3.8.2）；
+ * - 手动调整类型（v3.8.2）：证件照 ↔ 生活照，降级清标记、落盘失败回滚；
  * - 逻辑删除：墓碑先落盘、后清本地、云端保留；墓碑重启后仍在；
  * - 状态派生：local-only / remote-only / ready / uploading / missing / deleted；
  * - 上传：离线跳过、成功写 fileId、失败重试、重启恢复、幂等不重复上传；
@@ -107,7 +110,8 @@ describe('新增照片：本地优先 + 元数据落盘 + 入队上传', () => {
       storagePath: `student-photos/s1/${created.id}.jpg`,
     })
     expect(created.fileId).toBeUndefined()
-    expect(created.isCurrentIdPhoto).toBeUndefined()
+    // v3.8.2：该生没有任何有效照片 → 默认证件照，且自动成为当前证件照
+    expect(created.isCurrentIdPhoto).toBe(true)
     expect(Number.isNaN(Date.parse(created.uploadedAt))).toBe(false)
 
     // 本机媒体：原图 + 缩略图同一个事务写入
@@ -123,11 +127,12 @@ describe('新增照片：本地优先 + 元数据落盘 + 入队上传', () => {
     expect(readPhotoOutbox().some((task) => task.photoId === created.id)).toBe(true)
   })
 
-  it('新上传证件照不会自动成为当前证件照', async () => {
+  it('首张证件照自动成为当前；第二张证件照不替换它（v3.8.2）', async () => {
     const store = openStore()
-    await store.addPhoto('s1', photoFile(), 'id-photo')
-    await store.addPhoto('s1', photoFile(), 'id-photo')
-    expect(store.currentIdPhoto('s1')).toBeUndefined()
+    const first = await store.addPhoto('s1', photoFile(), 'id-photo')
+    const second = await store.addPhoto('s1', photoFile(), 'id-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(first.id)
+    expect(store.findPhoto(second.id)?.isCurrentIdPhoto).toBeUndefined()
   })
 
   it('多张证件照 + 多张生活照可共存', async () => {
@@ -192,6 +197,75 @@ describe('新增照片：本地优先 + 元数据落盘 + 入队上传', () => {
       restore()
       warn.mockRestore()
     }
+  })
+})
+
+/* ==================== 自动分类（v3.8.2） ==================== */
+
+describe('自动分类：不传分类时按实时数据判', () => {
+  it('首张 → 证件照，第二、第三张 → 生活照', async () => {
+    const store = openStore()
+    const first = await store.addPhoto('s1', photoFile())
+    const second = await store.addPhoto('s1', photoFile())
+    const third = await store.addPhoto('s1', photoFile())
+
+    expect(first.category).toBe('id-photo')
+    expect(second.category).toBe('life-photo')
+    expect(third.category).toBe('life-photo')
+    expect(store.listStudentPhotos('s1', 'id-photo')).toHaveLength(1)
+    expect(store.listStudentPhotos('s1', 'life-photo')).toHaveLength(2)
+  })
+
+  it('一次多选连续新增（同一批次）：第 1 张证件照、其余生活照', async () => {
+    const store = openStore()
+    const created: StudentPhoto[] = []
+    // 模拟 runPhotoUploadBatch：逐张 await，中间不经过组件那份快照
+    for (const file of [photoFile(), photoFile(), photoFile(), photoFile()]) {
+      created.push(await store.addPhoto('s1', file))
+    }
+    expect(created.map((item) => item.category)).toEqual([
+      'id-photo',
+      'life-photo',
+      'life-photo',
+      'life-photo',
+    ])
+  })
+
+  it('显式分类优先：首张显式生活照就是生活照，且不会成为当前证件照', async () => {
+    const store = openStore()
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    expect(life.category).toBe('life-photo')
+    expect(life.isCurrentIdPhoto).toBeUndefined()
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+
+    // 该生已有照片（显式生活照），再显式传证件照仍然尊重显式选择；
+    // 此时尚无当前证件照 → 按"无当前则自动成为当前"的规则成为当前
+    const idPic = await store.addPhoto('s1', photoFile(), 'id-photo')
+    expect(idPic.category).toBe('id-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(idPic.id)
+  })
+
+  it('学生之间互不影响：s1 已有照片不影响 s2 的首次判断', async () => {
+    const store = openStore()
+    await store.addPhoto('s1', photoFile())
+    const s2First = await store.addPhoto('s2', photoFile())
+    expect(s2First.category).toBe('id-photo')
+    expect(store.currentIdPhoto('s2')?.id).toBe(s2First.id)
+  })
+
+  it('删光有效照片后再上传 → 回到"首次"规则（证件照 + 成为当前）', async () => {
+    const store = openStore()
+    const first = await store.addPhoto('s1', photoFile())
+    const second = await store.addPhoto('s1', photoFile())
+    expect(second.category).toBe('life-photo')
+
+    await store.removePhoto(first.id)
+    await store.removePhoto(second.id)
+    expect(store.listStudentPhotos('s1')).toEqual([])
+
+    const again = await store.addPhoto('s1', photoFile())
+    expect(again.category).toBe('id-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(again.id)
   })
 })
 
@@ -327,6 +401,209 @@ describe('当前证件照：手动指定 / 更换 / 删除安全', () => {
     const store = useStudentPhotoStore()
     expect(store.currentIdPhoto('s1')?.id).toBe('new')
     expect(store.photos.filter((photo) => photo.isCurrentIdPhoto)).toHaveLength(1)
+  })
+})
+
+describe('当前证件照：自动指定绝不覆盖手动选择（v3.8.2）', () => {
+  it('手动更换后，后续上传生活照 / 证件照都不改变当前', async () => {
+    const store = openStore()
+    const first = await store.addPhoto('s1', photoFile())
+    const second = await store.addPhoto('s1', photoFile(), 'id-photo')
+    await store.setCurrentIdPhoto('s1', second.id)
+    expect(store.currentIdPhoto('s1')?.id).toBe(second.id)
+
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    const anotherId = await store.addPhoto('s1', photoFile(), 'id-photo')
+
+    expect(store.currentIdPhoto('s1')?.id).toBe(second.id)
+    expect(store.findPhoto(first.id)?.isCurrentIdPhoto).toBeUndefined()
+    expect(store.findPhoto(life.id)?.isCurrentIdPhoto).toBeUndefined()
+    expect(store.findPhoto(anotherId.id)?.isCurrentIdPhoto).toBeUndefined()
+  })
+
+  it('手动清空后：落盘无标记、重新加载不恢复（normalize 不越权）', async () => {
+    const store = openStore()
+    const photoA = await store.addPhoto('s1', photoFile())
+    expect(store.currentIdPhoto('s1')?.id).toBe(photoA.id)
+
+    await store.clearCurrentIdPhoto('s1')
+    await nextTick()
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+    expect(diskPhotos()[0]?.isCurrentIdPhoto).toBeUndefined()
+
+    setActivePinia(createPinia())
+    const reloaded = useStudentPhotoStore()
+    expect(reloaded.currentIdPhoto('s1')).toBeUndefined()
+  })
+
+  it('手动清空后再传生活照：不恢复当前证件照', async () => {
+    const store = openStore()
+    await store.addPhoto('s1', photoFile())
+    await store.clearCurrentIdPhoto('s1')
+
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    expect(life.isCurrentIdPhoto).toBeUndefined()
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+  })
+
+  it('手动清空后再传证件照：按"尚无当前"成为当前（不是复活旧标记）', async () => {
+    const store = openStore()
+    const old = await store.addPhoto('s1', photoFile())
+    await store.clearCurrentIdPhoto('s1')
+
+    const fresh = await store.addPhoto('s1', photoFile(), 'id-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(fresh.id)
+    // 旧照片仍是"没有标记"的历史照片，没有被自动指定回来
+    expect(store.findPhoto(old.id)?.isCurrentIdPhoto).toBeUndefined()
+    expect(store.photos.filter((item) => item.isCurrentIdPhoto)).toHaveLength(1)
+  })
+
+  it('历史照片（盘上有证件照、无标记）不会被自动指定当前，读路径也不写盘', async () => {
+    seedStudents()
+    const legacy = (id: string) => ({
+      id,
+      studentId: 's1',
+      studentName: '安琪',
+      category: 'id-photo',
+      storagePath: `student-photos/s1/${id}.jpg`,
+      mimeType: 'image/jpeg',
+      width: 10,
+      height: 10,
+      size: 10,
+      uploadedAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+      createdAt: '2026-09-01T00:00:00.000Z',
+    })
+    browser.localStorage.seed(
+      STUDENT_PHOTOS_KEY,
+      JSON.stringify([legacy('legacy-1'), legacy('legacy-2')]),
+    )
+
+    const store = useStudentPhotoStore()
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+    expect(diskPhotos().every((item) => item.isCurrentIdPhoto === undefined)).toBe(true)
+  })
+})
+
+/* ==================== 手动调整类型（v3.8.2） ==================== */
+
+describe('手动调整类型：setCategory', () => {
+  it('证件照 ↔ 生活照双向可改，不动 id / 路径 / 上传时间 / 二进制', async () => {
+    const store = openStore()
+    const created = await store.addPhoto('s1', photoFile(), 'life-photo')
+
+    const toId = await store.setCategory(created.id, 'id-photo')
+    expect(toId.category).toBe('id-photo')
+    expect(toId.id).toBe(created.id)
+    expect(toId.storagePath).toBe(created.storagePath)
+    expect(toId.uploadedAt).toBe(created.uploadedAt)
+    expect(doubles.media.files.has(created.id)).toBe(true)
+
+    const back = await store.setCategory(created.id, 'life-photo')
+    expect(back.category).toBe('life-photo')
+    expect(back.storagePath).toBe(created.storagePath)
+
+    // 落盘后重新读取结果一致
+    await nextTick()
+    expect(diskPhotos()[0]).toMatchObject({ id: created.id, category: 'life-photo' })
+    setActivePinia(createPinia())
+    const reloaded = useStudentPhotoStore()
+    expect(reloaded.findPhoto(created.id)?.category).toBe('life-photo')
+  })
+
+  it('把当前证件照改为生活照：当前标记一并清除（数据约束成立）', async () => {
+    const store = openStore()
+    const current = await store.addPhoto('s1', photoFile())
+    expect(current.isCurrentIdPhoto).toBe(true)
+
+    await store.setCategory(current.id, 'life-photo')
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+
+    await nextTick()
+    const onDisk = diskPhotos().find((item) => item.id === current.id)!
+    expect(onDisk.category).toBe('life-photo')
+    expect('isCurrentIdPhoto' in onDisk).toBe(false)
+  })
+
+  it('生活照改为证件照：不会自动成为当前证件照', async () => {
+    const store = openStore()
+    const idPic = await store.addPhoto('s1', photoFile())
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+
+    await store.setCategory(life.id, 'id-photo')
+    expect(store.findPhoto(life.id)?.category).toBe('id-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(idPic.id)
+  })
+
+  it('只影响目标照片：同学生其它照片的分类 / 当前标记 / 更新时间都不动', async () => {
+    // 关掉后台补传：上传成功会写 fileId 并顺带刷新 updatedAt，那和 setCategory 无关
+    doubles.cloud.setAvailable(false)
+    const store = openStore()
+    const current = await store.addPhoto('s1', photoFile())
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+
+    await store.setCategory(life.id, 'id-photo')
+    const untouched = store.findPhoto(current.id)!
+    expect(untouched.category).toBe('id-photo')
+    expect(untouched.isCurrentIdPhoto).toBe(true)
+    expect(untouched.updatedAt).toBe(current.updatedAt)
+  })
+
+  it('同一分类重复设置 → 原样返回，不产生多余写盘', async () => {
+    // 关掉后台补传：否则"写 fileId"也会改盘，这里要验的是 setCategory 本身不写
+    doubles.cloud.setAvailable(false)
+    const store = openStore()
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    await nextTick()
+
+    const again = await store.setCategory(life.id, 'life-photo')
+    expect(again.id).toBe(life.id)
+    expect(again.category).toBe('life-photo')
+    expect(again.updatedAt).toBe(life.updatedAt)
+
+    // 盘上那条记录一个字节都没动（updatedAt 是"最后更新时间"，没写就不会变）
+    await nextTick()
+    const onDisk = diskPhotos().find((item) => item.id === life.id)!
+    expect(onDisk.updatedAt).toBe(life.updatedAt)
+    expect(onDisk.category).toBe('life-photo')
+  })
+
+  it('落盘失败 → 抛 metadata-not-saved 并回滚内存分类', async () => {
+    const store = openStore()
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    await nextTick()
+
+    const restore = makeKeyUnwritable(STUDENT_PHOTOS_KEY)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await expect(store.setCategory(life.id, 'id-photo')).rejects.toMatchObject({
+        code: 'metadata-not-saved',
+      })
+      expect(store.findPhoto(life.id)?.category).toBe('life-photo')
+      expect(diskPhotos()[0]?.category).toBe('life-photo')
+      expect(doubles.media.files.has(life.id)).toBe(true)
+    } finally {
+      restore()
+      warn.mockRestore()
+    }
+  })
+
+  it('照片不存在 / 已删除 / 分类非法 → 可读错误', async () => {
+    const store = openStore()
+    await expect(store.setCategory('nope', 'life-photo')).rejects.toMatchObject({
+      code: 'photo-missing',
+    })
+
+    const photoA = await store.addPhoto('s1', photoFile())
+    await store.removePhoto(photoA.id)
+    await expect(store.setCategory(photoA.id, 'life-photo')).rejects.toMatchObject({
+      code: 'photo-missing',
+    })
+
+    const photoB = await store.addPhoto('s1', photoFile())
+    await expect(store.setCategory(photoB.id, 'group-photo' as never)).rejects.toMatchObject({
+      code: 'invalid-photo',
+    })
   })
 })
 

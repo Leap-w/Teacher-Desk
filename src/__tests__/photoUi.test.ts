@@ -339,7 +339,7 @@ describe('批量上传：逐张反馈、失败不中断、取消只取消未开�
 /* ==================== 与真实 Store 联调 ==================== */
 
 describe('上传 / 当前证件照 / 历史保留（真实 Store）', () => {
-  it('上传证件照与生活照：分类正确，新证件照不会自动成为当前', async () => {
+  it('上传证件照与生活照：分类正确，首张证件照成为当前（v3.8.2）', async () => {
     const store = openStore()
     const idPhoto = await store.addPhoto('s1', photoFile(), 'id-photo')
     const lifePhoto = await store.addPhoto('s1', photoFile(), 'life-photo')
@@ -348,7 +348,8 @@ describe('上传 / 当前证件照 / 历史保留（真实 Store）', () => {
     expect(store.listStudentPhotos('s1', 'life-photo').map((photo) => photo.id)).toEqual([
       lifePhoto.id,
     ])
-    expect(store.currentIdPhoto('s1')).toBeUndefined()
+    // v3.8.2：该生此前没有照片，这张证件照自动成为当前（没有它照片墙永远是空占位）
+    expect(store.currentIdPhoto('s1')?.id).toBe(idPhoto.id)
     expect(store.listStudentPhotos('s1')).toHaveLength(2)
   })
 

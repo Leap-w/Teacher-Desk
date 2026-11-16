@@ -20,6 +20,7 @@ import { formatStudentShortName } from '@/utils/student'
 import {
   buildPhotoStoragePath,
   currentIdPhotoOf,
+  defaultPhotoCategoryOf,
   deriveStudentPhotoState,
   isPhotoActive,
   isStudentPhotoCategory,
@@ -286,20 +287,32 @@ export const useStudentPhotoStore = defineStore('studentPhoto', () => {
    * 4. 写元数据并**从盘上确认**；
    * 5. 失败回滚本地媒体；成功则入队等待上传（联网且已登录时立即尝试）。
    *
-   * 新上传的证件照**不会自动成为当前证件照**——必须教师之后手动指定。
+   * ## 默认分类（v3.8.2）
+   *
+   * `category` 省略时按**此刻 Store 里的实时数据**判：该生没有任何有效照片 → `id-photo`，
+   * 否则 `life-photo`。判断只做这一次（不接收组件传来的数组快照），结果直接落进
+   * `category`，之后永不重新推导——所以教师手动改过的类型不会被后续上传覆盖。
+   *
+   * ## 当前证件照（v3.8.2）
+   *
+   * 证件照（自动归类或教师显式选择）且该生**尚无**当前证件照时，这张一并设为当前，
+   * 照片墙才有图可显示；**已有当前证件照时一律不动**——用户的手动指定优先。
+   * 生活照永远不参与这条判断。
    */
   async function addPhoto(
     studentId: string,
     file: Blob,
-    category: StudentPhotoCategory,
+    category?: StudentPhotoCategory,
   ): Promise<StudentPhoto> {
     const student = studentStore.activeStudents.find((item) => item.id === studentId)
     if (!student) {
       throw new StudentPhotoStoreError('student-not-found', '这名学生不在读名册中，未保存照片。')
     }
-    if (!isStudentPhotoCategory(category)) {
+    // 显式传入的分类必须合法；省略时走默认规则（运行期兜底，不信组件传来的值）
+    if (category !== undefined && !isStudentPhotoCategory(category)) {
       throw new StudentPhotoStoreError('invalid-photo', '照片分类不合法（只能是证件照或生活照）。')
     }
+    const resolvedCategory = category ?? defaultPhotoCategoryOf(photos.value, studentId)
 
     // 图片处理失败直接抛 PhotoProcessingError（带可读 code/message）
     const processed = await getPhotoProcessor()(file)
@@ -319,7 +332,7 @@ export const useStudentPhotoStore = defineStore('studentPhoto', () => {
       id,
       studentId,
       studentName: formatStudentShortName(student, studentStore.nameCounts),
-      category,
+      category: resolvedCategory,
       storagePath,
       mimeType: processed.mimeType,
       width: processed.width,
@@ -330,8 +343,22 @@ export const useStudentPhotoStore = defineStore('studentPhoto', () => {
       createdAt: nowIso,
     }
 
+    /*
+     * 自动成为当前证件照的唯一条件：这是一张证件照，**且该生此刻还没有当前证件照**。
+     * 先判后写：判定必须发生在把新记录并进数组之前，否则会把自己算成"已有一张"。
+     */
+    const autoCurrent =
+      resolvedCategory === 'id-photo' && !currentIdPhotoOf(photos.value, studentId)
+    if (autoCurrent) photo.isCurrentIdPhoto = true
+
     photos.value = [...photos.value, photo]
-    const persisted = await verifyPersisted(id, (saved) => !saved.deletedAt)
+    const persisted = await verifyPersisted(
+      id,
+      (saved) =>
+        !saved.deletedAt &&
+        saved.category === resolvedCategory &&
+        (autoCurrent ? saved.isCurrentIdPhoto === true : true),
+    )
     if (!persisted) {
       // 补偿：元数据没落盘 → 删掉刚写的本地媒体，避免"无法追踪的媒体孤儿"
       photos.value = photos.value.filter((item) => item.id !== id)
@@ -419,6 +446,59 @@ export const useStudentPhotoStore = defineStore('studentPhoto', () => {
       photos.value = previous
       throw metadataNotSavedError()
     }
+  }
+
+  /* ==================== 手动调整类型 ==================== */
+
+  /**
+   * 手动调整照片类型（v3.8.2）：证件照 ↔ 生活照 双向可改。
+   *
+   * 只改 `category`（以及 `updatedAt`），**不动** id / 存储路径 / 文件内容 / 上传时间，
+   * 也不影响同学生的其它照片。
+   *
+   * 两条刻意的取舍：
+   * - **不自动设为当前证件照**：生活照改成证件照只是"归类"，要不要让它上照片墙是
+   *   另一次明确动作（`setCurrentIdPhoto`）。否则一次误点就把墙上的照片换掉了。
+   * - **降级必须清标记**：把当前证件照改成生活照时，`isCurrentIdPhoto` 一起删掉——
+   *   「生活照是当前证件照」是 normalize 会直接抹掉的矛盾状态，留着等于写了一份读不回来的数据。
+   *
+   * 落盘失败回滚整次改动（与 `setCurrentIdPhoto` 同一套 `verifyPersisted` 口径）。
+   */
+  async function setCategory(
+    photoId: string,
+    category: StudentPhotoCategory,
+  ): Promise<StudentPhoto> {
+    if (!isStudentPhotoCategory(category)) {
+      throw new StudentPhotoStoreError('invalid-photo', '照片分类不合法（只能是证件照或生活照）。')
+    }
+    const target = findPhoto(photoId)
+    if (!target || target.deletedAt) {
+      throw new StudentPhotoStoreError('photo-missing', '这张照片不存在或已删除，无法调整类型。')
+    }
+    if (target.category === category) return target
+
+    const previous = photos.value
+    const nowIso = new Date().toISOString()
+    photos.value = photos.value.map((photo) => {
+      if (photo.id !== photoId) return photo
+      const next: StudentPhoto = { ...photo, category, updatedAt: nowIso }
+      // 生活照不能持有"当前证件照"标记（见上方说明）
+      if (category === 'life-photo') delete next.isCurrentIdPhoto
+      return next
+    })
+
+    const persisted = await verifyPersisted(
+      photoId,
+      (saved) =>
+        !saved.deletedAt &&
+        saved.category === category &&
+        (category === 'life-photo' ? saved.isCurrentIdPhoto !== true : true),
+    )
+    if (!persisted) {
+      photos.value = previous
+      throw metadataNotSavedError()
+    }
+    return findPhoto(photoId)!
   }
 
   /* ==================== 逻辑删除 ==================== */
@@ -697,6 +777,7 @@ export const useStudentPhotoStore = defineStore('studentPhoto', () => {
     addPhoto,
     setCurrentIdPhoto,
     clearCurrentIdPhoto,
+    setCategory,
     removePhoto,
     getPhotoBlob,
     getPhotoThumbnail,

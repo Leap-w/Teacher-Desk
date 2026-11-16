@@ -185,6 +185,8 @@ describe('UI 不绕过数据层', () => {
     expect(sources.photoManager).toContain('runPhotoUploadBatch')
     expect(sources.photoManager).toContain('addPhoto(')
     expect(sources.photoManager).toContain('setCurrentIdPhoto(')
+    // v3.8.2：上传后可手动调整照片类型（证件照 ↔ 生活照）
+    expect(sources.photoManager).toContain('setCategory(')
     expect(sources.photoManager).toContain('removePhoto(')
     expect(sources.photoManager).toContain('usePhotoThumbUrls')
     // v3.8.1 Phase 1.1：恢复出的「仅本机」照片必须有可点的上传入口（复用既有队列）

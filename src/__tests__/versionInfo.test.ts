@@ -3,7 +3,7 @@
  *
  * 这不是「真的检查更新」：不调 GitHub API、不请求远程版本、不接 Releases。
  * 测试要钉住三件事：
- *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.1 为 `V3.8.1`）；
+ *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.2 为 `V3.8.2`）；
  *  ② 更新日志集中在 `config/releaseNotes.ts`，当前版本有 2～4 条、与版本号对齐；
  *  ③ 品牌卡片用「检查更新」替换了 GitHub 链接，弹窗复用 AppModal 且没有网络请求。
  */
@@ -22,9 +22,9 @@ import {
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.8.1', () => {
-    expect(appConfig.version).toBe('3.8.1')
-    expect(currentVersionLabel).toBe('V3.8.1')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.8.2', () => {
+    expect(appConfig.version).toBe('3.8.2')
+    expect(currentVersionLabel).toBe('V3.8.2')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -35,16 +35,21 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.8.1 的四条更新内容与实际交付一致（不宣称云端已验收）', () => {
-    expect(currentReleaseDate()).toBe('2026-11-14')
-    expect(currentReleaseHighlights()).toEqual([
-      '「照片墙」改为班级管理中的独立页面，可按学生查看、上传照片、设置当前证件照和查看大图；照片仍默认保存在本机。',
-      '新增「导出完整备份（含照片）」ZIP，可把文字数据与照片文件一起备份并在换设备后恢复；原来的 JSON 备份继续保留，但它只包含照片信息、不包含照片文件。',
-      '学生档案新增宿舍管理：内置八项常用宿舍，也可输入任意自定义宿舍；支持批量修改和 Excel 导入，历史宿舍值会原样保留，修改性别不会影响宿舍。',
-      '违纪管理改为更直接的事件记录：24 项系统预设、支持自定义事件与默认严重程度；取消类型分类，历史违纪记录、家长处理意见和个人违纪档案继续保留。',
+  it('v3.8.2 的三条更新内容与实际交付一致（不夸大能力）', () => {
+    expect(currentReleaseDate()).toBe('2026-11-16')
+    const highlights = currentReleaseHighlights()
+    expect(highlights).toEqual([
+      '学生照片上传更省心：一名学生第一次上传的照片会自动作为证件照，之后再上传会自动归为生活照；证件照仍可手动改为生活照、生活照也可改回证件照，当前证件照可随时手动更换。',
+      '照片墙新增「批量导入」：按「班级-姓名-身份证号-证件照/生活照」命名照片后，可一次选中多张自动识别并预览。重名或查不到学生会请你人工确认归属，班级不符的文件会被拦下；身份证号只用于解析命名、不会保存，也不会自动替你核验身份。',
+      '修复从「班级管理」进入照片墙、请假、班费等页面时，顶部「班级管理」不再持续高亮的问题；二级页面自己的选中状态不受影响。',
     ])
     // 更新日志不能把尚未完成的云端真实链路写成已验收
-    expect(currentReleaseHighlights().every((item) => !item.includes('云端已'))).toBe(true)
+    expect(highlights.every((item) => !item.includes('云端已'))).toBe(true)
+    // 不能声称身份证已核验 / 解决了跨设备并发覆盖 / 做了照片去重
+    const all = highlights.join('')
+    expect(all).not.toContain('已核验')
+    expect(all).not.toContain('已解决')
+    expect(all).not.toContain('去重')
   })
 
   it('每条更新日志都有版本号和非空内容', () => {

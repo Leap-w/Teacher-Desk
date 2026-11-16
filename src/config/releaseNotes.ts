@@ -25,6 +25,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '3.8.2',
+    date: '2026-11-16',
+    highlights: [
+      '学生照片上传更省心：一名学生第一次上传的照片会自动作为证件照，之后再上传会自动归为生活照；证件照仍可手动改为生活照、生活照也可改回证件照，当前证件照可随时手动更换。',
+      '照片墙新增「批量导入」：按「班级-姓名-身份证号-证件照/生活照」命名照片后，可一次选中多张自动识别并预览。重名或查不到学生会请你人工确认归属，班级不符的文件会被拦下；身份证号只用于解析命名、不会保存，也不会自动替你核验身份。',
+      '修复从「班级管理」进入照片墙、请假、班费等页面时，顶部「班级管理」不再持续高亮的问题；二级页面自己的选中状态不受影响。',
+    ],
+  },
+  {
     version: '3.8.1',
     date: '2026-11-14',
     highlights: [
@@ -65,7 +74,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
 /** 当前版本号（package.json 单一来源，不带 `v`） */
 export const currentAppVersion = appConfig.version
 
-/** 弹窗里展示的版本号文案：`V3.8.1` */
+/** 弹窗里展示的版本号文案：`V3.8.2` */
 export const currentVersionLabel = `V${currentAppVersion.replace(/^v/i, '')}`
 
 /** 当前版本对应的更新内容；没有配置记录时返回空数组（不编造内容） */

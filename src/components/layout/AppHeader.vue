@@ -7,6 +7,7 @@ import { useCloudSync } from '@/composables/useCloudSync'
 import { useLoginModal } from '@/composables/useLoginModal'
 import { useToast } from '@/composables/useToast'
 import { useUserStore } from '@/stores/user'
+import { isNavActive } from '@/utils/nav'
 
 /**
  * AppHeader — 顶部玻璃胶囊导航（v3.0.3-rc · 对齐 Changdu-Memory `AppLayout.vue` 的 top-nav）。
@@ -49,20 +50,21 @@ const initial = computed(() => userStore.initial)
  * 唯一一处——常用工作清单的老师每次点一级导航都会被**送回课程表**，而模块自己的「记住上次停留」
  * 在那一步完全不起作用。指向模块根路径，让路由表那一份记忆决定去哪（`isActive` 认前缀，高亮不受影响）。
  *
- * 「班级管理」仍写 `/class/seats`：`/class` 的重定向目标就是它，两条路等价，不另设一层。
+ * 「班级管理」同样指向**模块根** `/class`（v3.8.2 · Phase 3）：`/class` 的空子路由
+ * 重定向到 `/class/seats`，点击落点不变；但一级高亮靠 `isNavActive` 的前缀匹配，
+ * 写 `/class/seats` 会让 photos / leave / fund 等其余二级页全部不高亮。
  */
 const NAV_ITEMS = [
   { label: '首页', to: '/' },
   { label: '学生档案', to: '/students' },
-  { label: '班级管理', to: '/class/seats' },
+  { label: '班级管理', to: '/class' },
   { label: '工作管理', to: '/work' },
   { label: '我的', to: '/my' },
 ] as const
 
-/** 当前激活的一级项（/class/leave 也算「班级管理」激活） */
+/** 当前激活的一级项（判定逻辑在 utils/nav，可逐路由单测） */
 function isActive(to: string): boolean {
-  if (to === '/') return route.path === '/'
-  return route.path === to || route.path.startsWith(`${to}/`)
+  return isNavActive(to, route.path)
 }
 
 const menuOpen = ref(false)

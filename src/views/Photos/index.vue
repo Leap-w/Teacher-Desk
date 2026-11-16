@@ -15,12 +15,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Search } from 'lucide-vue-next'
 
-import { AppCard, AppInput } from '@/components/ui'
+import { AppButton, AppCard, AppInput } from '@/components/ui'
 import { usePhotoThumbUrls } from '@/composables/usePhotoThumbUrls'
 import { useStudentStore } from '@/stores/student'
 import { useStudentPhotoStore } from '@/stores/studentPhoto'
 import { formatStudentShortName } from '@/utils/student'
 import { PHOTO_BACKUP_NOTICE, buildClassPhotoWall, photoCountSummary } from '@/utils/photoUi'
+import PhotoImportModal from './components/PhotoImportModal.vue'
 import StudentPhotoManager from '@/views/Students/components/StudentPhotoManager.vue'
 import type { Student } from '@/types'
 
@@ -81,6 +82,14 @@ function openStudent(student: Student): void {
   managerStudent.value = student
   managerOpen.value = true
 }
+
+/* ---------- 按文件名批量导入（v3.8.2 Phase 2） ---------- */
+const importOpen = ref(false)
+
+function onImportChanged(): void {
+  // 导入新增照片后重算缩略图（Store 是响应式的，wallRows 会自动更新；这里补拉缩略图）
+  ensureThumbs()
+}
 </script>
 
 <template>
@@ -92,10 +101,15 @@ function openStudent(student: Student): void {
             <Search :size="16" :stroke-width="2" aria-hidden="true" />
             <AppInput v-model="keyword" placeholder="按姓名 / 学号搜索" size="sm" clearable />
           </label>
-          <p class="wall-summary">
-            在读 {{ studentStore.activeStudents.length }} 人 · 已设置当前证件照
-            {{ withCurrentCount }} 人
-          </p>
+          <div class="wall-toolbar__right">
+            <p class="wall-summary">
+              在读 {{ studentStore.activeStudents.length }} 人 · 已设置当前证件照
+              {{ withCurrentCount }} 人
+            </p>
+            <AppButton size="sm" variant="secondary" @click="importOpen = true">
+              批量导入
+            </AppButton>
+          </div>
         </div>
 
         <p v-if="pendingUploadCount > 0" class="wall-pending">
@@ -155,6 +169,7 @@ function openStudent(student: Student): void {
     </AppCard>
 
     <StudentPhotoManager v-if="managerStudent" v-model="managerOpen" :student="managerStudent" />
+    <PhotoImportModal v-model="importOpen" @changed="onImportChanged" />
   </div>
 </template>
 
@@ -192,6 +207,13 @@ function openStudent(student: Student): void {
 
 .wall-search :deep(.app-input) {
   flex: 1;
+}
+
+.wall-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .wall-summary {

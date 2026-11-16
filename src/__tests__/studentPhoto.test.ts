@@ -9,9 +9,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   buildPhotoStoragePath,
   currentIdPhotoOf,
+  defaultPhotoCategoryOf,
   deriveStudentPhotoState,
   ensureSingleCurrentIdPhoto,
   formatStudentPhotoSize,
+  hasActivePhotoOf,
   isPhotoActive,
   normalizeStudentPhoto,
   photosOfStudent,
@@ -275,6 +277,45 @@ describe('排序与查询', () => {
     const before = photos.map((item) => item.id)
     sortStudentPhotos(photos)
     expect(photos.map((item) => item.id)).toEqual(before)
+  })
+})
+
+/* ==================== 默认分类（v3.8.2） ==================== */
+
+describe('hasActivePhotoOf / defaultPhotoCategoryOf：首次证件照、其后生活照', () => {
+  it('没有任何照片 → 默认 id-photo', () => {
+    expect(hasActivePhotoOf([], 's1')).toBe(false)
+    expect(defaultPhotoCategoryOf([], 's1')).toBe('id-photo')
+  })
+
+  it('已有一张有效照片 → 默认 life-photo（不论那张是什么分类）', () => {
+    const life = [photo({ id: 'a', category: 'life-photo' })]
+    expect(defaultPhotoCategoryOf(life, 's1')).toBe('life-photo')
+    const idPic = [photo({ id: 'b' })]
+    expect(defaultPhotoCategoryOf(idPic, 's1')).toBe('life-photo')
+  })
+
+  it('墓碑不算有效照片：删光之后回到"首次"规则', () => {
+    const tombstones = [
+      photo({ id: 'gone-1', deletedAt: '2026-11-10T00:00:00.000Z' }),
+      photo({ id: 'gone-2', category: 'life-photo', deletedAt: '2026-11-11T00:00:00.000Z' }),
+    ]
+    expect(hasActivePhotoOf(tombstones, 's1')).toBe(false)
+    expect(defaultPhotoCategoryOf(tombstones, 's1')).toBe('id-photo')
+  })
+
+  it('只看本人：别的学生的照片不影响判断', () => {
+    const others = [photo({ id: 'x', studentId: 's2' })]
+    expect(hasActivePhotoOf(others, 's1')).toBe(false)
+    expect(defaultPhotoCategoryOf(others, 's1')).toBe('id-photo')
+  })
+
+  it('本人有效照片与别人的墓碑混在一起 → life-photo', () => {
+    const mixed = [
+      photo({ id: 'mine', category: 'life-photo' }),
+      photo({ id: 'other', studentId: 's2' }),
+    ]
+    expect(defaultPhotoCategoryOf(mixed, 's1')).toBe('life-photo')
   })
 })
 

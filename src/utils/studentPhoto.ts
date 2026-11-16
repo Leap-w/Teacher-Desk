@@ -305,6 +305,32 @@ export function photosOfStudent(
   )
 }
 
+/**
+ * 该学生**是否有有效照片**（墓碑不算）。
+ *
+ * 「有效」= 未逻辑删除。已删除的照片只是墓碑、照片墙上不显示，因此不能拿它冒充
+ * 「已有照片」——否则教师删光再传时会被永远判成「后续上传」，再也拿不到默认的证件照。
+ */
+export function hasActivePhotoOf(photos: readonly StudentPhoto[], studentId: string): boolean {
+  return photos.some((photo) => photo.studentId === studentId && isPhotoActive(photo))
+}
+
+/**
+ * 新照片的默认分类（v3.8.2）：没有有效照片 → 证件照；已有 → 生活照。
+ *
+ * **入参必须是调用那一刻的照片数组**（Store 里就是 `photos.value`），不能是组件
+ * 早先取到的快照——一次多选连续上传时，第 2 张必须能看到第 1 张刚写进去的记录。
+ *
+ * 判定只发生在「新增」这一次，结果立刻落进 `category`，之后**永不重新推导**。
+ * 也正因为如此，教师手动改过的类型不会被后续上传覆盖（那条规则不需要额外字段）。
+ */
+export function defaultPhotoCategoryOf(
+  photos: readonly StudentPhoto[],
+  studentId: string,
+): StudentPhotoCategory {
+  return hasActivePhotoOf(photos, studentId) ? 'life-photo' : 'id-photo'
+}
+
 /** 某名学生当前的证件照（没有则 undefined） */
 export function currentIdPhotoOf(
   photos: readonly StudentPhoto[],

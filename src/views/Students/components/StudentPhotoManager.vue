@@ -3,8 +3,11 @@
  * 学生个人照片管理（Phase 2 UI）。
  *
  * 三个视图：证件照 / 生活照 / 全部照片；顶部单独展示"当前证件照"。
- * 上传 / 批量上传 / 删除 / 设为当前证件照 / 大图查看全部调用 Phase 1B 的 Store：
+ * 上传 / 批量上传 / 删除 / 调整类型 / 设为当前证件照 / 大图查看全部调用 Phase 1B 的 Store：
  * 图片处理、IndexedDB、云端上传、逻辑删除、状态派生都在数据层完成，组件不重复实现。
+ *
+ * v3.8.2：上传分类默认「自动」（首张证件照、其后生活照，规则在 Store 里）；
+ * 每张照片可「改为生活照 / 改为证件照」，改类型不会自动改当前证件照。
  */
 import { computed, ref, watch } from 'vue'
 
@@ -100,11 +103,20 @@ watch(
 /* ---------- 上传 ---------- */
 
 const fileInput = ref<HTMLInputElement>()
-const uploadCategory = ref<StudentPhotoCategory>('id-photo')
+/**
+ * 上传分类（v3.8.2）：`auto` = 交给 Store 按「该生有没有有效照片」判——没有就是证件照，
+ * 有就是生活照。显式选证件照 / 生活照仍然覆盖自动规则（手动优先）。
+ */
+const uploadCategory = ref<StudentPhotoCategory | 'auto'>('auto')
 const uploadCategoryOptions = [
+  { value: 'auto', label: '自动' },
   { value: 'id-photo', label: '证件照' },
   { value: 'life-photo', label: '生活照' },
 ] as const
+/** 上传按钮文案：自动模式下不写死成某一类 */
+const uploadButtonText = computed(() =>
+  uploadCategory.value === 'auto' ? '上传照片' : `上传${photoCategoryText(uploadCategory.value)}`,
+)
 const uploading = ref<{ active: boolean; done: number; total: number }>({
   active: false,
   done: 0,
@@ -131,7 +143,9 @@ function onFilesPicked(event: Event): void {
 async function startUpload(files: File[]): Promise<void> {
   if (uploading.value.active) return
   const items = toPhotoUploadItems(files)
-  const category = uploadCategory.value
+  // 'auto' 传 undefined：分类由 Store 按**实时数据**判，组件不替它算（快照会过期）
+  const category = uploadCategory.value === 'auto' ? undefined : uploadCategory.value
+  const categoryLabel = category ? photoCategoryText(category) : '照片'
   uploading.value = { active: true, done: 0, total: items.length }
   cancelRequested.value = false
   lastBatch.value = undefined
@@ -157,7 +171,7 @@ async function startUpload(files: File[]): Promise<void> {
   // 真实云端链路尚未验证，因此这里不承诺"云端已上传成功"——每张照片的实际状态由状态徽标展示。
   if (summary.failed === 0 && summary.success > 0) {
     toast.success(
-      `已保存 ${summary.success} 张${photoCategoryText(category)}到本机` +
+      `已保存 ${summary.success} 张${categoryLabel}到本机` +
         (photoStore.pendingUploadCount > 0 ? '，云端补传会自动进行' : ''),
     )
   } else if (summary.success > 0) {
@@ -200,6 +214,52 @@ async function confirmSetCurrent(): Promise<void> {
   } catch (error) {
     toast.danger(error instanceof Error ? error.message : '设置当前证件照失败')
   }
+}
+
+/* ---------- 调整照片类型（v3.8.2） ---------- */
+
+const categoryBusy = ref(false)
+const categoryTarget = ref<StudentPhoto>()
+const categoryConfirmOpen = ref(false)
+
+/**
+ * 「改为生活照 / 改为证件照」：
+ * - 生活照 → 证件照：直接改（不碰当前证件照，无副作用）；
+ * - 证件照 → 生活照：若它正是**当前证件照**，会顺带取消当前标记，因此先确认。
+ */
+function askChangeCategory(photo: StudentPhoto): void {
+  if (categoryBusy.value) return
+  const next: StudentPhotoCategory = photo.category === 'id-photo' ? 'life-photo' : 'id-photo'
+  if (next === 'life-photo' && photo.isCurrentIdPhoto) {
+    categoryTarget.value = photo
+    categoryConfirmOpen.value = true
+    return
+  }
+  void changeCategory(photo, next)
+}
+
+async function changeCategory(photo: StudentPhoto, category: StudentPhotoCategory): Promise<void> {
+  if (categoryBusy.value) return
+  categoryBusy.value = true
+  try {
+    await photoStore.setCategory(photo.id, category)
+    toast.success(`已改为${photoCategoryText(category)}`)
+    refreshThumbs()
+    emit('changed')
+  } catch (error) {
+    // Store 落盘失败已回滚内存，这里只如实报错——绝不显示"成功"
+    toast.danger(error instanceof Error ? error.message : '调整照片类型失败')
+  } finally {
+    categoryBusy.value = false
+  }
+}
+
+async function confirmChangeCategory(): Promise<void> {
+  const target = categoryTarget.value
+  if (!target) return
+  await changeCategory(target, 'life-photo')
+  categoryConfirmOpen.value = false
+  categoryTarget.value = undefined
 }
 
 /* ---------- 删除 ---------- */
@@ -308,7 +368,7 @@ function close(): void {
       <p v-else class="current-empty">
         <template v-if="isDeletedStudent">该学生没有证件照。已退档学生不能新增照片。</template>
         <template v-else>
-          当前还没有指定证件照。上传证件照后，可在下方列表里手动「设为当前证件照」。
+          当前还没有指定证件照。上传一张证件照会自动成为当前，也可以在列表里把某张设为当前。
         </template>
       </p>
 
@@ -325,7 +385,7 @@ function close(): void {
         </div>
         <div class="upload-actions">
           <AppButton :disabled="uploading.active" @click="pickFiles">
-            上传{{ photoCategoryText(uploadCategory) }}
+            {{ uploadButtonText }}
           </AppButton>
           <input
             ref="fileInput"
@@ -336,12 +396,13 @@ function close(): void {
             @change="onFilesPicked"
           />
           <p class="upload-hint">
-            <template v-if="uploadCategory === 'id-photo'">
-              支持一次选择多张；新上传的证件照不会自动成为当前证件照，需要手动指定。
+            <template v-if="uploadCategory === 'auto'">
+              支持一次选择多张；自动规则：该生还没有照片时存为证件照，之后存为生活照。
             </template>
-            <template v-else>
-              支持一次选择多张；生活照只作为生活照保存，不能设为当前证件照。
+            <template v-else-if="uploadCategory === 'id-photo'">
+              支持一次选择多张；该生还没有当前证件照时，这里上传的证件照会成为当前证件照。
             </template>
+            <template v-else>支持一次选择多张；生活照不能设为当前证件照。</template>
           </p>
         </div>
         <div v-if="uploading.active" class="upload-progress" role="status">
@@ -396,6 +457,14 @@ function close(): void {
                 设为当前
               </AppButton>
               <AppButton
+                size="sm"
+                variant="ghost"
+                :disabled="categoryBusy"
+                @click="askChangeCategory(photo)"
+              >
+                {{ photo.category === 'id-photo' ? '改为生活照' : '改为证件照' }}
+              </AppButton>
+              <AppButton
                 v-if="statusOf(photo).kind === 'upload-failed'"
                 size="sm"
                 variant="ghost"
@@ -444,6 +513,18 @@ function close(): void {
     <template #footer>
       <AppButton variant="ghost" @click="currentConfirmOpen = false">取消</AppButton>
       <AppButton @click="confirmSetCurrent">设为当前证件照</AppButton>
+    </template>
+  </AppModal>
+
+  <!-- 改为生活照确认（这张正好是当前证件照） -->
+  <AppModal v-model="categoryConfirmOpen" title="改为生活照" :width="420">
+    <p class="confirm-text">
+      这张是<strong>当前证件照</strong>，改为生活照后会取消「当前证件照」标记。
+    </p>
+    <p class="confirm-text">照片本身不会删除，之后可以再改回证件照并重新设为当前。</p>
+    <template #footer>
+      <AppButton variant="ghost" @click="categoryConfirmOpen = false">取消</AppButton>
+      <AppButton @click="confirmChangeCategory">改为生活照</AppButton>
     </template>
   </AppModal>
 
