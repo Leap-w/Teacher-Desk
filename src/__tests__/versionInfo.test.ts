@@ -3,7 +3,7 @@
  *
  * 这不是「真的检查更新」：不调 GitHub API、不请求远程版本、不接 Releases。
  * 测试要钉住三件事：
- *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.2 为 `V3.8.2`）；
+ *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.3 为 `V3.8.3`）；
  *  ② 更新日志集中在 `config/releaseNotes.ts`，当前版本有 2～4 条、与版本号对齐；
  *  ③ 品牌卡片用「检查更新」替换了 GitHub 链接，弹窗复用 AppModal 且没有网络请求。
  */
@@ -22,9 +22,9 @@ import {
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.8.2', () => {
-    expect(appConfig.version).toBe('3.8.2')
-    expect(currentVersionLabel).toBe('V3.8.2')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.8.3', () => {
+    expect(appConfig.version).toBe('3.8.3')
+    expect(currentVersionLabel).toBe('V3.8.3')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -35,13 +35,13 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.8.2 的三条更新内容与实际交付一致（不夸大能力）', () => {
-    expect(currentReleaseDate()).toBe('2026-11-16')
+  it('v3.8.3 的三条更新内容与实际交付一致（不夸大能力）', () => {
+    expect(currentReleaseDate()).toBe('2026-11-17')
     const highlights = currentReleaseHighlights()
     expect(highlights).toEqual([
-      '学生照片上传更省心：一名学生第一次上传的照片会自动作为证件照，之后再上传会自动归为生活照；证件照仍可手动改为生活照、生活照也可改回证件照，当前证件照可随时手动更换。',
-      '照片墙新增「批量导入」：按「班级-姓名-身份证号-证件照/生活照」命名照片后，可一次选中多张自动识别并预览。重名或查不到学生会请你人工确认归属，班级不符的文件会被拦下；身份证号只用于解析命名、不会保存，也不会自动替你核验身份。',
-      '修复从「班级管理」进入照片墙、请假、班费等页面时，顶部「班级管理」不再持续高亮的问题；二级页面自己的选中状态不受影响。',
+      '照片墙统一按竖版比例排列：横图、竖图、方图进同一种卡片大小，未上传照片的学生也占满一格，整面墙对齐不再参差。',
+      '照片可以自己调显示位置：点卡片上的「调整位置」拖动照片，选择缩略图中露出哪一部分（比如别把头顶切掉），保存后立刻生效，随时可恢复默认；只影响这台设备上的缩略图，原图不动，点开大图仍是完整照片。',
+      '修复在横屏手机等较矮屏幕上调整照片位置时，预览框被压扁、与卡片实际效果不一致的问题。',
     ])
     // 更新日志不能把尚未完成的云端真实链路写成已验收
     expect(highlights.every((item) => !item.includes('云端已'))).toBe(true)
@@ -50,6 +50,10 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(all).not.toContain('已核验')
     expect(all).not.toContain('已解决')
     expect(all).not.toContain('去重')
+    // 本版是「手动拖动」，不能写成识别人脸 / 自动定位正脸
+    expect(all).not.toContain('人脸')
+    expect(all).not.toContain('自动定位')
+    expect(all).not.toContain('自动识别')
   })
 
   it('每条更新日志都有版本号和非空内容', () => {

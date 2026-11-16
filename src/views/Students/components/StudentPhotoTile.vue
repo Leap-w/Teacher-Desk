@@ -22,8 +22,16 @@ const props = withDefaults(
     showCategory?: boolean
     /** 缩略图是否加载失败（失败时显示"预览不可用"，不一直显示"加载中"） */
     thumbFailed?: boolean
+    /** 本机自定义的 object-position；无配置时由 CSS 令牌给出系统默认 */
+    objectPosition?: string
   }>(),
-  { thumbUrl: undefined, lastError: undefined, showCategory: true, thumbFailed: false },
+  {
+    thumbUrl: undefined,
+    lastError: undefined,
+    showCategory: true,
+    thumbFailed: false,
+    objectPosition: undefined,
+  },
 )
 
 const emit = defineEmits<{ open: [photo: StudentPhoto] }>()
@@ -43,7 +51,14 @@ const uploadedAt = computed(() => formatPhotoUploadedAt(props.photo.uploadedAt))
     @click="emit('open', photo)"
   >
     <span class="photo-tile__media">
-      <img v-if="thumbUrl" :src="thumbUrl" alt="" class="photo-tile__img" loading="lazy" />
+      <img
+        v-if="thumbUrl"
+        :src="thumbUrl"
+        alt=""
+        class="photo-tile__img"
+        :style="objectPosition ? { objectPosition } : undefined"
+        loading="lazy"
+      />
       <span v-else class="photo-tile__placeholder">{{
         thumbFailed ? '预览不可用' : '加载中…'
       }}</span>
@@ -79,6 +94,8 @@ const uploadedAt = computed(() => formatPhotoUploadedAt(props.photo.uploadedAt))
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* v3.8.3：与 .wall-card 同一口径——button 缺 width:100% 会按 fit-content 收缩 */
+  width: 100%;
   padding: 0;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
@@ -102,7 +119,11 @@ const uploadedAt = computed(() => formatPhotoUploadedAt(props.photo.uploadedAt))
 .photo-tile__media {
   position: relative;
   display: block;
-  aspect-ratio: 4 / 3;
+  /* v3.8.3：与照片墙、当前证件照共用同一比例令牌 */
+  aspect-ratio: var(--photo-thumb-ratio);
+  /* v3.8.3 修复：同 .wall-media —— 不加 overflow 时，瘦长图的固有高度会经
+     flex 子项的自动最小尺寸把媒体区撑高，3:4 失效 */
+  overflow: hidden;
   background: var(--color-bg-subtle);
 }
 
@@ -110,6 +131,7 @@ const uploadedAt = computed(() => formatPhotoUploadedAt(props.photo.uploadedAt))
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: var(--photo-thumb-position);
   display: block;
 }
 

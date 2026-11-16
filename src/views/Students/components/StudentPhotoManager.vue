@@ -12,6 +12,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { AppBadge, AppButton, AppModal, AppSegmented } from '@/components/ui'
+import { usePhotoThumbPosition } from '@/composables/usePhotoThumbPosition'
 import { usePhotoThumbUrls } from '@/composables/usePhotoThumbUrls'
 import { useToast } from '@/composables/useToast'
 import { useStudentPhotoStore } from '@/stores/studentPhoto'
@@ -48,6 +49,8 @@ const photoStore = useStudentPhotoStore()
 const studentStore = useStudentStore()
 const toast = useToast()
 const { ensure, urlOf, hasFailed, releaseAll } = usePhotoThumbUrls()
+// 与照片墙共享同一份本机位置配置：同一 photoId 在各缩略图区域显示一致
+const { objectPositionOf } = usePhotoThumbPosition()
 
 const displayName = computed(() => formatStudentShortName(props.student, studentStore.nameCounts))
 const studentPhotos = computed(() => photoStore.listStudentPhotos(props.student.id))
@@ -345,6 +348,7 @@ function close(): void {
             :src="urlOf(currentPhoto.id)"
             alt="当前证件照"
             class="current-thumb__img"
+            :style="{ objectPosition: objectPositionOf(currentPhoto.id) }"
           />
           <span v-else class="current-thumb__placeholder">{{
             hasFailed(currentPhoto.id) ? '预览不可用' : '加载中…'
@@ -445,6 +449,7 @@ function close(): void {
               :state="photoStore.stateOf(photo.id)"
               :last-error="photoStore.lastErrorOf(photo.id)"
               :thumb-failed="hasFailed(photo.id)"
+              :object-position="objectPositionOf(photo.id)"
               @open="openViewer"
             />
             <div class="photo-cell__actions">
@@ -566,7 +571,8 @@ function close(): void {
 
 .current-thumb {
   width: 96px;
-  height: 120px;
+  /* v3.8.3：与照片墙、缩略图卡片统一 3:4（原固定 96×120 会切头） */
+  aspect-ratio: var(--photo-thumb-ratio);
   flex-shrink: 0;
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -577,6 +583,7 @@ function close(): void {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: var(--photo-thumb-position);
   display: block;
 }
 

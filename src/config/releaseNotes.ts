@@ -25,6 +25,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '3.8.3',
+    date: '2026-11-17',
+    highlights: [
+      '照片墙统一按竖版比例排列：横图、竖图、方图进同一种卡片大小，未上传照片的学生也占满一格，整面墙对齐不再参差。',
+      '照片可以自己调显示位置：点卡片上的「调整位置」拖动照片，选择缩略图中露出哪一部分（比如别把头顶切掉），保存后立刻生效，随时可恢复默认；只影响这台设备上的缩略图，原图不动，点开大图仍是完整照片。',
+      '修复在横屏手机等较矮屏幕上调整照片位置时，预览框被压扁、与卡片实际效果不一致的问题。',
+    ],
+  },
+  {
     version: '3.8.2',
     date: '2026-11-16',
     highlights: [
@@ -74,7 +83,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
 /** 当前版本号（package.json 单一来源，不带 `v`） */
 export const currentAppVersion = appConfig.version
 
-/** 弹窗里展示的版本号文案：`V3.8.2` */
+/** 弹窗里展示的版本号文案：`V3.8.3` */
 export const currentVersionLabel = `V${currentAppVersion.replace(/^v/i, '')}`
 
 /** 当前版本对应的更新内容；没有配置记录时返回空数组（不编造内容） */

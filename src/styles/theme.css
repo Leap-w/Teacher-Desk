@@ -237,6 +237,12 @@
   --page-top-gap: 32px; /* 页面标题距导航的统一间距（UI-2） */
   --card-gap: 24px; /* 卡片间距 */
   --section-gap: 32px; /* 区块间距 */
+
+  /* ========== 15.1 学生照片缩略图（v3.8.3 Phase 1）：全站统一 3:4 + 偏上取景 ==========
+     照片墙、照片管理弹窗卡片、当前证件照缩略图共用这两个令牌；
+     手动调整只在单个 img 上用 inline object-position 覆盖 --photo-thumb-position。 */
+  --photo-thumb-ratio: 3 / 4;
+  --photo-thumb-position: 50% 30%;
 }
 
 /* ========== 16. 深色模式（v3.0.1-rc） ==========

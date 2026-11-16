@@ -13,9 +13,11 @@
  * 点卡片进入该学生的照片管理。已退档学生不进入在读照片墙（其历史照片仍可从档案/违纪页查看）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search } from 'lucide-vue-next'
+import { Move, Search } from 'lucide-vue-next'
 
+import PhotoPositionEditor from '@/components/PhotoPositionEditor.vue'
 import { AppButton, AppCard, AppInput } from '@/components/ui'
+import { usePhotoThumbPosition } from '@/composables/usePhotoThumbPosition'
 import { usePhotoThumbUrls } from '@/composables/usePhotoThumbUrls'
 import { useStudentStore } from '@/stores/student'
 import { useStudentPhotoStore } from '@/stores/studentPhoto'
@@ -24,10 +26,12 @@ import { PHOTO_BACKUP_NOTICE, buildClassPhotoWall, photoCountSummary } from '@/u
 import PhotoImportModal from './components/PhotoImportModal.vue'
 import StudentPhotoManager from '@/views/Students/components/StudentPhotoManager.vue'
 import type { Student } from '@/types'
+import type { StudentPhoto } from '@/types/studentPhoto'
 
 const studentStore = useStudentStore()
 const photoStore = useStudentPhotoStore()
 const { ensure, urlOf, hasFailed } = usePhotoThumbUrls()
+const { objectPositionOf } = usePhotoThumbPosition()
 
 const keyword = ref('')
 
@@ -83,6 +87,17 @@ function openStudent(student: Student): void {
   managerOpen.value = true
 }
 
+/* ---------- 单张缩略图显示位置（本机偏好，不进业务数据 / 同步） ---------- */
+const positionOpen = ref(false)
+const positionPhoto = ref<StudentPhoto>()
+const positionThumbUrl = ref<string>()
+
+function openPosition(photo: StudentPhoto): void {
+  positionPhoto.value = photo
+  positionThumbUrl.value = urlOf(photo.id)
+  positionOpen.value = true
+}
+
 /* ---------- 按文件名批量导入（v3.8.2 Phase 2） ---------- */
 const importOpen = ref(false)
 
@@ -120,42 +135,55 @@ function onImportChanged(): void {
         </p>
 
         <div v-if="wallRows.length" class="wall-grid">
-          <button
-            v-for="row in wallRows"
-            :key="row.student.id"
-            type="button"
-            class="wall-card"
-            :aria-label="`打开 ${row.student.name} 的照片管理`"
-            @click="openStudent(row.student)"
-          >
-            <span class="wall-media">
-              <img
-                v-if="row.currentPhoto && urlOf(row.currentPhoto.id)"
-                :src="urlOf(row.currentPhoto.id)"
-                alt=""
-                class="wall-img"
-                loading="lazy"
-              />
-              <span v-else class="wall-placeholder">
-                <span class="wall-initial">{{ row.student.name.charAt(0) }}</span>
-                <span class="wall-placeholder-text">{{
-                  row.currentPhoto
-                    ? hasFailed(row.currentPhoto.id)
-                      ? '证件照加载失败'
-                      : '证件照加载中…'
-                    : '未设置证件照'
+          <div v-for="row in wallRows" :key="row.student.id" class="wall-cell">
+            <button
+              type="button"
+              class="wall-card"
+              :aria-label="`打开 ${row.student.name} 的照片管理`"
+              @click="openStudent(row.student)"
+            >
+              <span class="wall-media">
+                <img
+                  v-if="row.currentPhoto && urlOf(row.currentPhoto.id)"
+                  :src="urlOf(row.currentPhoto.id)"
+                  alt=""
+                  class="wall-img"
+                  :style="{ objectPosition: objectPositionOf(row.currentPhoto.id) }"
+                  loading="lazy"
+                />
+                <span v-else class="wall-placeholder">
+                  <span class="wall-initial">{{ row.student.name.charAt(0) }}</span>
+                  <span class="wall-placeholder-text">{{
+                    row.currentPhoto
+                      ? hasFailed(row.currentPhoto.id)
+                        ? '证件照加载失败'
+                        : '证件照加载中…'
+                      : '未设置证件照'
+                  }}</span>
+                </span>
+              </span>
+              <span class="wall-info">
+                <span class="wall-name">
+                  {{ formatStudentShortName(row.student, studentStore.nameCounts) }}
+                </span>
+                <span class="wall-count">{{
+                  photoCountSummary(photoStore.listStudentPhotos(row.student.id))
                 }}</span>
               </span>
-            </span>
-            <span class="wall-info">
-              <span class="wall-name">
-                {{ formatStudentShortName(row.student, studentStore.nameCounts) }}
-              </span>
-              <span class="wall-count">{{
-                photoCountSummary(photoStore.listStudentPhotos(row.student.id))
-              }}</span>
-            </span>
-          </button>
+            </button>
+            <!-- 调整入口是卡片按钮的兄弟节点：避免 button 套 button，且阻止冒泡不触发照片管理 -->
+            <button
+              v-if="row.currentPhoto && urlOf(row.currentPhoto.id)"
+              type="button"
+              class="wall-adjust"
+              :aria-label="`调整 ${row.student.name} 的照片显示位置`"
+              title="调整照片显示位置"
+              @click.stop="openPosition(row.currentPhoto)"
+            >
+              <Move :size="12" :stroke-width="2" aria-hidden="true" />
+              调整位置
+            </button>
+          </div>
         </div>
         <p v-else class="wall-empty">
           {{ keyword.trim() ? '没有匹配的学生。' : '暂无在读学生。' }}
@@ -170,6 +198,12 @@ function onImportChanged(): void {
 
     <StudentPhotoManager v-if="managerStudent" v-model="managerOpen" :student="managerStudent" />
     <PhotoImportModal v-model="importOpen" @changed="onImportChanged" />
+    <PhotoPositionEditor
+      v-if="positionPhoto"
+      v-model="positionOpen"
+      :photo="positionPhoto"
+      :thumb-url="positionThumbUrl"
+    />
   </div>
 </template>
 
@@ -238,10 +272,49 @@ function onImportChanged(): void {
   gap: var(--space-3);
 }
 
+/* 调整入口与卡片是兄弟节点：卡片本体保持单一 button，入口浮在图片右上角 */
+.wall-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.wall-adjust {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-full);
+  background: var(--color-bg-white);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-caption);
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0.94;
+}
+
+.wall-adjust:hover {
+  color: var(--color-primary-strong);
+  border-color: var(--color-border-medium);
+  opacity: 1;
+}
+
+.wall-adjust:focus-visible {
+  outline: none;
+  box-shadow: var(--ring-focus);
+}
+
 .wall-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  /* v3.8.3：button 的 width:auto 在 Chrome 下按 fit-content 算，
+     无照片的占位卡片会缩到 105px（有照片的撑满 157px），同排参差 */
+  width: 100%;
   padding: 0;
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
@@ -264,7 +337,12 @@ function onImportChanged(): void {
 
 .wall-media {
   display: block;
-  aspect-ratio: 3 / 4;
+  /* v3.8.3：比例与默认取景改由共享令牌给出（原来写死 3 / 4） */
+  aspect-ratio: var(--photo-thumb-ratio);
+  /* v3.8.3 修复：本元素是纵向 flex 子项，`min-height: auto` 会取内容的固有高度，
+     瘦长图（1:2、9:16、一寸照）会把媒体区顶高、3:4 失效；
+     overflow 非 visible 时自动最小尺寸归零，比例才真正生效（与 .current-thumb 同法） */
+  overflow: hidden;
   background: var(--color-bg-subtle);
 }
 
@@ -272,6 +350,7 @@ function onImportChanged(): void {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: var(--photo-thumb-position);
   display: block;
 }
 
