@@ -7,7 +7,9 @@
  * 支持上一张 / 下一张（首尾循环）、显示分类 / 上传时间 / 当前证件照标记 / 媒体状态。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { Move } from 'lucide-vue-next'
 
+import PhotoPositionEditor from '@/components/PhotoPositionEditor.vue'
 import { AppBadge, AppButton, AppModal } from '@/components/ui'
 import { useStudentPhotoStore } from '@/stores/studentPhoto'
 import {
@@ -88,6 +90,8 @@ function step(delta: number): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
+  // 位置调整面板打开时，左右键留给它（不在这里切换照片）
+  if (editorOpen.value) return
   if (event.key === 'ArrowLeft') {
     event.preventDefault()
     step(-1)
@@ -97,6 +101,42 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
+/* ---------- 缩略图显示位置（v3.8.3 调整：入口从照片墙卡片迁到这里） ---------- */
+const editorOpen = ref(false)
+const editorPhoto = ref<StudentPhoto>()
+const editorUrl = ref<string>()
+
+/**
+ * 打开位置调整面板。
+ *
+ * 只认「当前这张、有可显示图片、且没有被删除」的照片：详情页切到别的照片、
+ * 或记录已被删除时一律不进入编辑，避免把未确认的位置写到错的 photoId 上。
+ */
+function openPosition(): void {
+  const photo = current.value
+  const url = objectUrl.value
+  if (!photo || !url) return
+  const onDisk = store.findPhoto(photo.id)
+  if (!onDisk || onDisk.deletedAt) return
+  editorPhoto.value = photo
+  editorUrl.value = url
+  editorOpen.value = true
+}
+
+function resetEditor(): void {
+  editorOpen.value = false
+  editorPhoto.value = undefined
+  editorUrl.value = undefined
+}
+
+// 面板关闭（保存 / 取消 / 恢复默认都会关）后清掉编辑对象，下一张照片不会串用
+watch(editorOpen, (open) => {
+  if (!open) {
+    editorPhoto.value = undefined
+    editorUrl.value = undefined
+  }
+})
+
 watch(
   () => props.modelValue,
   (open) => {
@@ -105,6 +145,8 @@ watch(
       void loadCurrent()
       window.addEventListener('keydown', onKeydown)
     } else {
+      // 关详情页时编辑状态一并丢弃：未点「保存」的位置不会被写入
+      resetEditor()
       window.removeEventListener('keydown', onKeydown)
       revokeUrl()
     }
@@ -112,11 +154,14 @@ watch(
 )
 
 watch(currentId, () => {
+  // 切换照片：先丢弃上一张的编辑状态，再按新 id 取图
+  resetEditor()
   if (props.modelValue) void loadCurrent()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
+  resetEditor()
   revokeUrl()
 })
 
@@ -185,6 +230,14 @@ function close(): void {
           {{ status.description }}
         </p>
         <p class="viewer-position">{{ index + 1 }} / {{ photos.length }}</p>
+        <!-- v3.8.3 调整：缩略图显示位置改在这里调（原来在照片墙卡片上） -->
+        <div class="viewer-actions">
+          <AppButton size="sm" variant="secondary" :disabled="!objectUrl" @click="openPosition">
+            <Move :size="14" :stroke-width="2" aria-hidden="true" />
+            调整缩略图位置
+          </AppButton>
+          <span class="viewer-actions__hint">只影响照片墙上的缩略图，不改动这张原图。</span>
+        </div>
       </div>
     </div>
 
@@ -198,6 +251,14 @@ function close(): void {
       <AppButton @click="close">关闭</AppButton>
     </template>
   </AppModal>
+
+  <!-- 与照片墙共用同一个编辑面板与本机位置键；保存后照片墙立即更新 -->
+  <PhotoPositionEditor
+    v-if="editorPhoto"
+    v-model="editorOpen"
+    :photo="editorPhoto"
+    :thumb-url="editorUrl"
+  />
 </template>
 
 <style scoped>
@@ -303,5 +364,18 @@ function close(): void {
 .viewer-position {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-1);
+}
+
+.viewer-actions__hint {
+  font-size: var(--font-caption);
+  color: var(--color-text-tertiary);
 }
 </style>

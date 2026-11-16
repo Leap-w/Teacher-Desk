@@ -81,8 +81,12 @@ describe('路由与导航入口', () => {
   })
 
   it('照片墙是独立页面：不再用 AppModal 承载整个照片墙，且复用既有 Store / 管理器', () => {
-    // 页面只承载集体视图；单名学生照片管理用既有 StudentPhotoManager，不重写一套
-    expect(sources.photoWall).not.toContain('<AppModal')
+    // 页面只承载集体视图；单名学生照片管理用既有 StudentPhotoManager，不重写一套。
+    // v3.8.3 调整：页内新增了一个 AppModal，但它只服务「批量删除确认」，墙本身仍在 .photo-wall-page 里。
+    expect(sources.photoWall).toContain('class="photo-wall-page"')
+    // 页内只有「批量删除确认」这一个 AppModal，墙本身不是弹窗
+    expect(sources.photoWall.match(/<AppModal/g)?.length).toBe(1)
+    expect(sources.photoWall).toContain('title="批量删除照片"')
     expect(sources.photoWall).toContain('buildClassPhotoWall')
     expect(sources.photoWall).toContain('useStudentPhotoStore()')
     expect(sources.photoWall).toContain('StudentPhotoManager')

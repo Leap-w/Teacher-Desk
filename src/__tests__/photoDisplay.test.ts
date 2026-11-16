@@ -118,10 +118,62 @@ describe('手动位置配置：接线完整且范围可控', () => {
     expect(MANAGER).toContain(':object-position="objectPositionOf(photo.id)"')
   })
 
-  it('照片墙有独立调整入口，且不嵌套进卡片按钮', () => {
-    expect(WALL).toContain('class="wall-adjust"')
-    expect(WALL).toContain('@click.stop="openPosition(row.currentPhoto)"')
-    expect(WALL).toContain('<PhotoPositionEditor')
+  it('照片墙卡片不再有「调整位置」入口（v3.8.3 调整：已迁到照片详情页）', () => {
+    expect(WALL).not.toContain('class="wall-adjust"')
+    expect(WALL).not.toContain('openPosition(')
+    expect(WALL).not.toContain('<PhotoPositionEditor')
+  })
+
+  it('照片详情页提供「调整缩略图位置」，复用同一个编辑面板', () => {
+    expect(VIEWER).toContain('调整缩略图位置')
+    expect(VIEWER).toContain('<PhotoPositionEditor')
+    expect(VIEWER).toContain('@click="openPosition"')
+    expect(VIEWER).toContain(':photo="editorPhoto"')
+    expect(VIEWER).toContain(':thumb-url="editorUrl"')
+  })
+
+  it('详情页的编辑状态可被安全丢弃：切换照片 / 关闭 / 卸载都会重置', () => {
+    // 三处 resetEditor：currentId 变化、modelValue 关闭、onBeforeUnmount
+    expect(VIEWER.match(/resetEditor\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    expect(VIEWER).toContain('watch(currentId')
+    // 面板关闭后清掉编辑对象，下一张照片不会串用
+    expect(VIEWER).toContain('watch(editorOpen')
+  })
+
+  it('详情页不直接读写本机位置存储，编辑面板是唯一写入口', () => {
+    expect(VIEWER).not.toContain('localStorage')
+    expect(VIEWER).not.toContain('photoWall:display')
+    expect(VIEWER).not.toContain('usePhotoThumbPosition')
+  })
+
+  it('照片墙入口改为「批量管理」，导入与删除都收进管理模式', () => {
+    expect(WALL).toContain('批量管理')
+    expect(WALL).toContain('批量删除')
+    expect(WALL).toContain('退出管理')
+    expect(WALL).toContain('已选 {{ selectedCount }} 张照片')
+    expect(WALL).toContain('usePhotoBatchManage')
+    expect(WALL).toContain(':disabled="!hasSelection || deleting"')
+    // 批量导入能力原样复用，只是入口搬进管理模式
+    expect(WALL).toContain('PhotoImportModal')
+  })
+
+  it('批量选择只落在当前可见的照片上（搜索过滤后自动取消）', () => {
+    expect(WALL).toContain('const visiblePhotoIds = computed')
+    expect(WALL).toContain('usePhotoBatchManage(() => visiblePhotoIds.value)')
+  })
+
+  it('删除文案：不写「逻辑删除」，明确云端文件暂时保留、应用内不提供恢复', () => {
+    expect(WALL).not.toContain('逻辑删除')
+    expect(WALL).toContain('应用内不提供恢复')
+    expect(WALL).toContain('本次不会删除云端文件')
+  })
+
+  it('批量删除的提示按「成功 / 已在别处删除 / 失败」分开计数', () => {
+    // skipped 绝不能并进成功数：成功文案只读 result.removed
+    expect(WALL).toContain('已永久删除 ${result.removed.length} 张照片')
+    expect(WALL).toContain('已在其他标签页或设备删除')
+    expect(WALL).toContain('部分删除失败：${parts.join')
+    expect(WALL).not.toContain('已永久删除 ${result.skipped')
   })
 
   it('调整面板提供拖动、保存、取消、恢复默认，但没有任何图像改写 / 识别', () => {

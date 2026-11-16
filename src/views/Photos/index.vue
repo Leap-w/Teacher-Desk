@@ -13,12 +13,13 @@
  * 点卡片进入该学生的照片管理。已退档学生不进入在读照片墙（其历史照片仍可从档案/违纪页查看）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { Move, Search } from 'lucide-vue-next'
+import { Check, Search } from 'lucide-vue-next'
 
-import PhotoPositionEditor from '@/components/PhotoPositionEditor.vue'
-import { AppButton, AppCard, AppInput } from '@/components/ui'
+import { AppButton, AppCard, AppInput, AppModal } from '@/components/ui'
+import { usePhotoBatchManage } from '@/composables/usePhotoBatchManage'
 import { usePhotoThumbPosition } from '@/composables/usePhotoThumbPosition'
 import { usePhotoThumbUrls } from '@/composables/usePhotoThumbUrls'
+import { useToast } from '@/composables/useToast'
 import { useStudentStore } from '@/stores/student'
 import { useStudentPhotoStore } from '@/stores/studentPhoto'
 import { formatStudentShortName } from '@/utils/student'
@@ -26,10 +27,10 @@ import { PHOTO_BACKUP_NOTICE, buildClassPhotoWall, photoCountSummary } from '@/u
 import PhotoImportModal from './components/PhotoImportModal.vue'
 import StudentPhotoManager from '@/views/Students/components/StudentPhotoManager.vue'
 import type { Student } from '@/types'
-import type { StudentPhoto } from '@/types/studentPhoto'
 
 const studentStore = useStudentStore()
 const photoStore = useStudentPhotoStore()
+const toast = useToast()
 const { ensure, urlOf, hasFailed } = usePhotoThumbUrls()
 const { objectPositionOf } = usePhotoThumbPosition()
 
@@ -48,6 +49,26 @@ const wallRows = computed(() => {
     return haystack.includes(query)
   })
 })
+
+/**
+ * 当前屏幕上真正可见的照片（搜索过滤之后）。
+ * 批量选择只允许落在这些照片上：被筛掉的会被自动取消选择，删除也只会作用于可见项。
+ */
+const visiblePhotoIds = computed(() =>
+  wallRows.value.map((row) => row.currentPhoto?.id).filter((id): id is string => Boolean(id)),
+)
+
+const {
+  managing,
+  deleting,
+  selectedCount,
+  hasSelection,
+  isSelected,
+  enter: enterManage,
+  exit: exitManage,
+  toggle: toggleSelection,
+  removeSelected,
+} = usePhotoBatchManage(() => visiblePhotoIds.value)
 
 const withCurrentCount = computed(
   () => allRows.value.filter((row) => Boolean(row.currentPhoto)).length,
@@ -87,18 +108,58 @@ function openStudent(student: Student): void {
   managerOpen.value = true
 }
 
-/* ---------- 单张缩略图显示位置（本机偏好，不进业务数据 / 同步） ---------- */
-const positionOpen = ref(false)
-const positionPhoto = ref<StudentPhoto>()
-const positionThumbUrl = ref<string>()
+/* ---------- 批量管理（v3.8.3 调整：原独立「批量导入」入口升级为统一管理模式） ---------- */
+const deleteOpen = ref(false)
 
-function openPosition(photo: StudentPhoto): void {
-  positionPhoto.value = photo
-  positionThumbUrl.value = urlOf(photo.id)
-  positionOpen.value = true
+/** 卡片点击：浏览态进该生照片管理；管理态只切换这张**照片**的选中状态 */
+function onCardClick(student: Student, photoId: string | undefined): void {
+  if (!managing.value) {
+    openStudent(student)
+    return
+  }
+  if (photoId) toggleSelection(photoId)
 }
 
-/* ---------- 按文件名批量导入（v3.8.2 Phase 2） ---------- */
+function askDelete(): void {
+  if (!hasSelection.value || deleting.value) return
+  deleteOpen.value = true
+}
+
+async function confirmDelete(): Promise<void> {
+  if (deleting.value) return
+  const result = await removeSelected()
+  deleteOpen.value = false
+  // store 是响应式的，这里补一次取缩略图（与导入后的处理一致）
+  ensureThumbs()
+  if (result.requested === 0) {
+    toast.info('所选照片已不存在或已删除，选择已更新')
+    return
+  }
+  // 三档结果各自计数：成功只数 removed，skipped 绝不能并进成功数
+  if (!result.removed.length && !result.failed.length) {
+    toast.info(`这 ${result.skipped.length} 张照片已在其他标签页或设备删除`)
+    return
+  }
+  if (!result.failed.length) {
+    toast.success(`已永久删除 ${result.removed.length} 张照片`)
+    if (result.skipped.length) {
+      toast.info(`另有 ${result.skipped.length} 张照片已在其他标签页或设备删除`)
+    }
+  } else if (!result.removed.length && !result.skipped.length) {
+    toast.danger(
+      `删除失败：${result.failed.length} 张照片都没有删掉（${result.failed[0].message}）`,
+    )
+  } else {
+    const parts = [`成功 ${result.removed.length} 张`, `失败 ${result.failed.length} 张`]
+    if (result.skipped.length) parts.push(`已在别处删除 ${result.skipped.length} 张`)
+    toast.danger(`部分删除失败：${parts.join('，')}（${result.failed[0].message}）`)
+  }
+  if (!result.positionCleaned) {
+    toast.danger('照片已删除，但本机缩略图位置配置未清理干净，可稍后重试')
+  }
+}
+
+/* ---------- 批量导入（v3.8.2 能力，入口收进批量管理模式） ---------- */
 const importOpen = ref(false)
 
 function onImportChanged(): void {
@@ -121,8 +182,23 @@ function onImportChanged(): void {
               在读 {{ studentStore.activeStudents.length }} 人 · 已设置当前证件照
               {{ withCurrentCount }} 人
             </p>
-            <AppButton size="sm" variant="secondary" @click="importOpen = true">
-              批量导入
+            <template v-if="managing">
+              <p class="wall-selected" aria-live="polite">已选 {{ selectedCount }} 张照片</p>
+              <AppButton size="sm" variant="secondary" @click="importOpen = true">
+                批量导入
+              </AppButton>
+              <AppButton
+                size="sm"
+                variant="danger"
+                :disabled="!hasSelection || deleting"
+                @click="askDelete"
+              >
+                批量删除
+              </AppButton>
+              <AppButton size="sm" variant="ghost" @click="exitManage">退出管理</AppButton>
+            </template>
+            <AppButton v-else size="sm" variant="secondary" @click="enterManage">
+              批量管理
             </AppButton>
           </div>
         </div>
@@ -139,8 +215,23 @@ function onImportChanged(): void {
             <button
               type="button"
               class="wall-card"
-              :aria-label="`打开 ${row.student.name} 的照片管理`"
-              @click="openStudent(row.student)"
+              :class="{
+                'is-managing': managing,
+                'is-selected': managing && !!row.currentPhoto && isSelected(row.currentPhoto.id),
+                'is-static': managing && !row.currentPhoto,
+              }"
+              :aria-label="
+                managing
+                  ? row.currentPhoto
+                    ? `${isSelected(row.currentPhoto.id) ? '取消选中' : '选中'} ${row.student.name} 的证件照`
+                    : `${row.student.name} 还没有可选的照片`
+                  : `打开 ${row.student.name} 的照片管理`
+              "
+              :aria-pressed="
+                managing && row.currentPhoto ? isSelected(row.currentPhoto.id) : undefined
+              "
+              :aria-disabled="managing && !row.currentPhoto ? 'true' : undefined"
+              @click="onCardClick(row.student, row.currentPhoto?.id)"
             >
               <span class="wall-media">
                 <img
@@ -161,6 +252,10 @@ function onImportChanged(): void {
                       : '未设置证件照'
                   }}</span>
                 </span>
+                <!-- 管理模式的选中指示：选择对象是这张照片，不是学生 -->
+                <span v-if="managing && row.currentPhoto" class="wall-check" aria-hidden="true">
+                  <Check v-if="isSelected(row.currentPhoto.id)" :size="14" :stroke-width="3" />
+                </span>
               </span>
               <span class="wall-info">
                 <span class="wall-name">
@@ -171,18 +266,6 @@ function onImportChanged(): void {
                 }}</span>
               </span>
             </button>
-            <!-- 调整入口是卡片按钮的兄弟节点：避免 button 套 button，且阻止冒泡不触发照片管理 -->
-            <button
-              v-if="row.currentPhoto && urlOf(row.currentPhoto.id)"
-              type="button"
-              class="wall-adjust"
-              :aria-label="`调整 ${row.student.name} 的照片显示位置`"
-              title="调整照片显示位置"
-              @click.stop="openPosition(row.currentPhoto)"
-            >
-              <Move :size="12" :stroke-width="2" aria-hidden="true" />
-              调整位置
-            </button>
           </div>
         </div>
         <p v-else class="wall-empty">
@@ -191,19 +274,35 @@ function onImportChanged(): void {
 
         <p class="backup-notice">{{ PHOTO_BACKUP_NOTICE }}</p>
         <p class="privacy-notice">
-          学生照片属于未成年人个人信息：默认只保存在本机，请勿公开分享；删除为逻辑删除，云端文件按当前策略保留。
+          学生照片属于未成年人个人信息：默认只保存在本机，请勿公开分享；删除后照片会从照片墙与照片管理中
+          永久移除，本机缓存一并清理，应用内不提供恢复；云端文件暂按现有策略保留。
         </p>
       </div>
     </AppCard>
 
     <StudentPhotoManager v-if="managerStudent" v-model="managerOpen" :student="managerStudent" />
     <PhotoImportModal v-model="importOpen" @changed="onImportChanged" />
-    <PhotoPositionEditor
-      v-if="positionPhoto"
-      v-model="positionOpen"
-      :photo="positionPhoto"
-      :thumb-url="positionThumbUrl"
-    />
+
+    <!-- 批量永久删除确认：没有回收站，删掉就不再出现在照片墙与照片管理里 -->
+    <AppModal v-model="deleteOpen" title="批量删除照片" :width="440">
+      <p class="confirm-text">
+        即将永久删除已选中的 <strong>{{ selectedCount }}</strong> 张照片。
+      </p>
+      <p class="confirm-text">
+        删除后不可恢复：照片会从照片墙与该学生的照片管理中永久移除，本机缓存的图片文件一并清理，
+        应用内不提供恢复入口。
+      </p>
+      <p class="confirm-text">
+        已上传到云端的文件暂时保留（本次不会删除云端文件），但不会再出现在任何界面。
+        学生档案与未选中的照片不受影响。
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" :disabled="deleting" @click="deleteOpen = false">取消</AppButton>
+        <AppButton variant="danger" :loading="deleting" @click="confirmDelete">
+          {{ deleting ? '正在删除…' : `永久删除 ${selectedCount} 张` }}
+        </AppButton>
+      </template>
+    </AppModal>
   </div>
 </template>
 
@@ -272,40 +371,47 @@ function onImportChanged(): void {
   gap: var(--space-3);
 }
 
-/* 调整入口与卡片是兄弟节点：卡片本体保持单一 button，入口浮在图片右上角 */
+/* 批量管理模式：卡片本身成为「照片选择项」，选择对象是这张照片，不是学生 */
 .wall-cell {
   position: relative;
   min-width: 0;
 }
 
-.wall-adjust {
+.wall-selected {
+  font-size: var(--font-caption);
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wall-card.is-selected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
+}
+
+/* 没有照片的卡片在管理模式里不可选，但保留占位尺寸 */
+.wall-card.is-static {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.wall-check {
   position: absolute;
   top: var(--space-1);
-  right: var(--space-1);
-  display: inline-flex;
+  left: var(--space-1);
+  display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 3px 6px;
-  border: 1px solid var(--color-border-light);
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--color-border-medium);
   border-radius: var(--radius-full);
   background: var(--color-bg-white);
-  box-shadow: var(--shadow-sm);
-  color: var(--color-text-secondary);
-  font-size: var(--font-caption);
-  white-space: nowrap;
-  cursor: pointer;
-  opacity: 0.94;
+  color: var(--color-text-inverse);
 }
 
-.wall-adjust:hover {
-  color: var(--color-primary-strong);
-  border-color: var(--color-border-medium);
-  opacity: 1;
-}
-
-.wall-adjust:focus-visible {
-  outline: none;
-  box-shadow: var(--ring-focus);
+.wall-card.is-selected .wall-check {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
 }
 
 .wall-card {
@@ -336,6 +442,7 @@ function onImportChanged(): void {
 }
 
 .wall-media {
+  position: relative;
   display: block;
   /* v3.8.3：比例与默认取景改由共享令牌给出（原来写死 3 / 4） */
   aspect-ratio: var(--photo-thumb-ratio);
@@ -417,6 +524,21 @@ function onImportChanged(): void {
   font-size: var(--font-caption);
   line-height: var(--leading-relaxed);
   color: var(--color-text-secondary);
+}
+
+.confirm-text {
+  font-size: var(--font-secondary);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-secondary);
+}
+
+.confirm-text + .confirm-text {
+  margin-top: var(--space-2);
+}
+
+.confirm-text strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
 }
 
 @media (max-width: 640px) {

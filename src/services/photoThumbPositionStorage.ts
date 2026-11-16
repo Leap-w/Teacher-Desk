@@ -57,3 +57,17 @@ export function savePhotoThumbPosition(
 export function removePhotoThumbPosition(photoId: string): boolean {
   return commit(withoutPosition(loadPhotoThumbPositions(), photoId))
 }
+
+/**
+ * 批量删除多张照片的位置配置（照片被永久删除后清理，避免无效条目长期积累）。
+ *
+ * 一次读、一次写：批量操作不该为每张照片各写一遍盘。
+ * 只删传入的 id，其余条目原样保留；本来就没有则视为成功（无写入）。
+ */
+export function removePhotoThumbPositions(photoIds: readonly string[]): boolean {
+  const before = loadPhotoThumbPositions()
+  let next = before
+  for (const photoId of photoIds) next = withoutPosition(next, photoId)
+  if (next === before) return true
+  return commit(next)
+}

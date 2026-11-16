@@ -361,6 +361,25 @@ describe('当前证件照：手动指定 / 更换 / 删除安全', () => {
     expect(onDisk.find((photo) => photo.id === other.id)).toBeDefined()
   })
 
+  it('删除当前证件照时，同学生活照保留且不会被提升为当前', async () => {
+    const store = openStore()
+    const idPhoto = await store.addPhoto('s1', photoFile(), 'id-photo')
+    const life = await store.addPhoto('s1', photoFile(), 'life-photo')
+    expect(store.currentIdPhoto('s1')?.id).toBe(idPhoto.id)
+
+    await store.removePhoto(idPhoto.id)
+    await nextTick()
+
+    // 当前证件照为空；生活照仍在，且没有被自动「顶上」
+    expect(store.currentIdPhoto('s1')).toBeUndefined()
+    expect(store.listStudentPhotos('s1').map((photo) => photo.id)).toEqual([life.id])
+    expect(store.findPhoto(life.id)?.isCurrentIdPhoto).toBeUndefined()
+
+    const tombstone = diskPhotos().find((photo) => photo.id === idPhoto.id) ?? {}
+    expect(tombstone).toMatchObject({ deletedAt: expect.any(String) })
+    expect('isCurrentIdPhoto' in tombstone).toBe(false)
+  })
+
   it('同步采纳带多条"当前证件照"时收敛为一条（按最后指定）', async () => {
     seedStudents()
     browser.localStorage.seed(

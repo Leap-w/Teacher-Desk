@@ -10,6 +10,7 @@ import { ref, type Ref } from 'vue'
 import {
   loadPhotoThumbPositions,
   removePhotoThumbPosition,
+  removePhotoThumbPositions,
   savePhotoThumbPosition,
 } from '@/services/photoThumbPositionStorage'
 import {
@@ -57,10 +58,31 @@ export function usePhotoThumbPosition() {
     return true
   }
 
+  /**
+   * 批量清理（照片被永久删除后调用）：一次写盘。
+   * 返回 false 表示盘上没清掉——调用方据此区分「照片删除成功 / 本机偏好没清干净」。
+   */
+  function forgetPositions(photoIds: readonly string[]): boolean {
+    if (!photoIds.length) return true
+    if (!removePhotoThumbPositions(photoIds)) return false
+    let next = positions.value
+    for (const photoId of photoIds) next = withoutPosition(next, photoId)
+    positions.value = next
+    return true
+  }
+
   /** 重新从盘上读（测试与未来跨标签页刷新用） */
   function reload(): void {
     positions.value = loadPhotoThumbPositions()
   }
 
-  return { positions, positionOfPhoto, objectPositionOf, setPosition, resetPosition, reload }
+  return {
+    positions,
+    positionOfPhoto,
+    objectPositionOf,
+    setPosition,
+    resetPosition,
+    forgetPositions,
+    reload,
+  }
 }
