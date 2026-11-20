@@ -60,7 +60,15 @@ function baseInput(overrides: Partial<BuildSnapshotInput> = {}): BuildSnapshotIn
       }),
     ],
     seats: [seat(1, 1, 's1'), seat(1, 2, 's2'), seat(1, 9)],
-    photos: [{ studentId: 's1', studentName: '张三', dataUrl: 'data:image/jpeg;base64,AAAA' }],
+    photos: [
+      {
+        photoId: 'p1',
+        studentId: 's1',
+        studentName: '张三',
+        category: 'id-photo' as const,
+        dataUrl: 'data:image/jpeg;base64,AAAA',
+      },
+    ],
     className: '高一9班',
     generatedAt: fixedNow,
     ...overrides,
@@ -103,16 +111,85 @@ describe('单文件 HTML 导出 · 数据映射', () => {
     const snap = buildPortalSnapshot(
       baseInput({
         photos: [
-          { studentId: 's2', studentName: '李四', dataUrl: 'data:image/png;base64,BBBB' },
-          { studentId: 's1', studentName: '张三', dataUrl: 'data:image/jpeg;base64,AAAA' },
-          { studentId: 's2', studentName: '李四', dataUrl: '' },
-          { studentId: 'ghost', studentName: '幽灵', dataUrl: 'data:image/png;base64,CCCC' },
+          {
+            photoId: 'p2',
+            studentId: 's2',
+            studentName: '李四',
+            category: 'id-photo' as const,
+            dataUrl: 'data:image/png;base64,BBBB',
+          },
+          {
+            photoId: 'p1',
+            studentId: 's1',
+            studentName: '张三',
+            category: 'id-photo' as const,
+            dataUrl: 'data:image/jpeg;base64,AAAA',
+          },
+          {
+            photoId: 'p3',
+            studentId: 's2',
+            studentName: '李四',
+            category: 'life-photo' as const,
+            dataUrl: '',
+          },
+          {
+            photoId: 'p4',
+            studentId: 'ghost',
+            studentName: '幽灵',
+            category: 'id-photo' as const,
+            dataUrl: 'data:image/png;base64,CCCC',
+          },
         ],
       }),
     )
     // 与 Portal 云函数一致，按 zh-CN（拼音）排序：李四(li) 在 张三(zhang) 之前
     expect(snap.photos.map((p) => p.title)).toEqual(['李四', '张三'])
     expect(snap.photos[0]?.url).toContain('data:image/png;base64,')
+  })
+
+  it('一名学生的多张照片 id 唯一、类型据实保留（证件照 / 生活照）', () => {
+    const snap = buildPortalSnapshot(
+      baseInput({
+        photos: [
+          {
+            photoId: 'life-1',
+            studentId: 's1',
+            studentName: '张三',
+            category: 'life-photo',
+            dataUrl: 'data:image/png;base64,BBBB',
+          },
+          {
+            photoId: 'id-1',
+            studentId: 's1',
+            studentName: '张三',
+            category: 'id-photo',
+            dataUrl: 'data:image/jpeg;base64,AAAA',
+          },
+        ],
+      }),
+    )
+    expect(snap.photos).toHaveLength(2)
+    expect(new Set(snap.photos.map((photo) => photo.id)).size).toBe(2)
+    expect(snap.photos.map((photo) => photo.category)).toEqual(['id-photo', 'life-photo'])
+  })
+
+  it('学生投影保留班级职务，但内部备注 remark 不进入快照（bio 留空）', () => {
+    const snap = buildPortalSnapshot(
+      baseInput({
+        students: [
+          student({
+            id: 's1',
+            name: '张三',
+            cadreRole: '班长',
+            remark: '单亲，情绪不稳，注意家长沟通',
+          }),
+        ],
+      }),
+    )
+    expect(snap.students[0]).toMatchObject({ duty: '班长' })
+    expect(snap.students[0]?.bio).toBeUndefined()
+    expect(JSON.stringify(snap)).not.toContain('单亲')
+    expect(JSON.stringify(snap)).not.toContain('家长沟通')
   })
 
   it('班级推断：显式优先；否则取出现最多的 className', () => {
@@ -206,5 +283,47 @@ describe('门户 UI 已并入 TeacherDesk（不再依赖独立 Portal 项目）'
     for (const banned of ['密码', '登录', 'auth-screen', '退出全部设备', '/api', 'fetch(']) {
       expect(assets).not.toContain(banned)
     }
+  })
+
+  it('座位姓名完整显示：源码与固化资源都不含姓名截断', () => {
+    const source = stripComments(readRepoFile('portal-ui/src/components/SeatBoard.vue'))
+    expect(source).not.toMatch(/\.name\.slice\(/)
+    expect(source).not.toContain('text-overflow: ellipsis')
+    expect(source).toContain('seat-name')
+    // 全屏座格只有 30–40px：必须有独立的小字号规则，9 字姓名才不会溢出成 4 行。
+    expect(source).toContain('.seat-board.is-fullscreen .seat .seat-name')
+    expect(source).toContain('clamp(7px, calc(var(--seat-size) * 0.23), 11px)')
+    const css = stripComments(readRepoFile('src/utils/portalHtml/portalAssets.ts'))
+    expect(css).not.toContain('name.slice(0,3)')
+    expect(css).not.toContain('name.slice(0, 3)')
+  })
+
+  it('照片墙区分空数据与搜索无结果，且搜索与文案都只承诺姓名', () => {
+    const source = stripComments(readRepoFile('portal-ui/src/views/PhotosView.vue'))
+    expect(source).toContain('暂无学生照片')
+    expect(source).toContain('没有找到这位同学')
+    // 只按姓名搜索：源码里不得再匹配内部 ID。
+    expect(source).toContain('item.student.name.toLocaleLowerCase().includes(needle)')
+    expect(source).not.toContain('student.id.toLocaleLowerCase()')
+    // 占位提示、aria 标签与标题都不能承诺学号 / 当前证件照。
+    expect(source).not.toContain('搜索学生姓名或学号')
+    expect(source).not.toContain('学生证件照')
+    expect(source).toContain('placeholder="搜索学生姓名"')
+    expect(source).toContain('<h1>学生照片</h1>')
+  })
+
+  it('对外文档不再承诺照片墙支持学号搜索', () => {
+    const readme = readRepoFile('README.md')
+    const readme391 = readme.slice(readme.indexOf('**v3.9.1**'), readme.indexOf('**v3.9.0**'))
+    expect(readme391).toContain('仅按学生姓名搜索')
+    expect(readme391).not.toContain('按姓名或学号搜索')
+
+    const changelog = readRepoFile('docs/CHANGELOG.md')
+    const section391 = changelog.slice(
+      changelog.indexOf('## v3.9.1'),
+      changelog.indexOf('## v3.9.0'),
+    )
+    expect(section391).toContain('只按学生姓名')
+    expect(section391).not.toContain('搜索同时匹配姓名与学号')
   })
 })

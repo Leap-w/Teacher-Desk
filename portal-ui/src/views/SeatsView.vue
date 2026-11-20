@@ -330,7 +330,14 @@ onUnmounted(() => {
   min-height: 0;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  /* 极端窄/矮屏兜底：允许双向滚动，任何情况下都不裁掉座位或姓名 */
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.fs-stage > :deep(.seat-board) {
+  margin: auto;
+  padding: 4px 2px;
 }
 
 .rotate-hint {

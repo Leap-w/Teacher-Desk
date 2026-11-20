@@ -15,12 +15,21 @@ const active = ref<PhotoSubject | null>(null)
 const subjects = computed<PhotoSubject[]>(() =>
   portalData.photos
     .map((photo) => ({ photo, student: portalData.studentById(photo.studentId) }))
-    .filter((item): item is PhotoSubject => !!item.student),
+    .filter((item): item is PhotoSubject => !!item.student)
+    // 证件照优先、生活照在后；同组沿用快照里的姓名序。
+    .sort((a, b) => {
+      const categoryRank = (item: PhotoSubject) => (item.photo.category === 'id-photo' ? 0 : 1)
+      return categoryRank(a) - categoryRank(b)
+    }),
 )
 
+const query = computed(() => keyword.value.trim())
 const filtered = computed(() => {
-  const query = keyword.value.trim()
-  return query ? subjects.value.filter((item) => item.student.name.includes(query)) : subjects.value
+  const q = query.value
+  if (!q) return subjects.value
+  const needle = q.toLocaleLowerCase()
+  // 只按姓名搜索：快照不导出学号 / 内部 ID，文案也必须与实际能力一致。
+  return subjects.value.filter((item) => item.student.name.toLocaleLowerCase().includes(needle))
 })
 
 function clearSearch() {
@@ -31,10 +40,10 @@ function clearSearch() {
 <template>
   <div class="page photos">
     <header class="page-head">
-      <h1>学生证件照</h1>
+      <h1>学生照片</h1>
       <p class="muted">
         {{ portalData.classInfo.name }} ·
-        {{ portalData.mode === 'demo' ? '虚构演示照片' : '当前证件照' }}
+        {{ portalData.mode === 'demo' ? '虚构演示照片' : '证件照与生活照' }}
       </p>
     </header>
 
@@ -58,23 +67,33 @@ function clearSearch() {
         <span class="portrait">
           <img
             :src="portalData.photoUrl(item.photo)"
-            :alt="`${item.student.name} 的证件照`"
+            :alt="`${item.student.name} 的${item.photo.category === 'life-photo' ? '生活照' : '证件照'}`"
             loading="lazy"
             decoding="async"
           />
         </span>
-        <span class="name">{{ item.student.name }}</span>
+        <span class="name">
+          {{ item.student.name }}
+          <small v-if="item.photo.category === 'life-photo'" class="category">生活照</small>
+        </span>
       </button>
     </div>
 
+    <!-- 空搜索词 + 没有照片 ≠ 搜索无结果：两种状态必须分开，否则刚打开就误报「没有找到这位同学」。 -->
     <div v-else class="empty card">
       <div class="empty-portrait"><Icon name="users" :size="28" /></div>
-      <p>没有找到这位同学</p>
-      <button type="button" class="reset" @click="clearSearch">清空搜索</button>
+      <template v-if="query">
+        <p>没有找到这位同学</p>
+        <button type="button" class="reset" @click="clearSearch">清空搜索</button>
+      </template>
+      <template v-else>
+        <p>暂无学生照片</p>
+        <p class="empty-hint">照片会随 TeacherDesk 的导出快照一起打包，重新导出即可更新。</p>
+      </template>
     </div>
 
     <p v-if="portalData.mode === 'demo'" class="footnote muted">
-      <Icon name="info" :size="14" /> 均为虚构占位图，非真实学生证件照
+      <Icon name="info" :size="14" /> 均为虚构占位图，非真实学生照片
     </p>
 
     <Teleport to="body">
@@ -86,13 +105,13 @@ function clearSearch() {
           <span class="lightbox-portrait">
             <img
               :src="portalData.photoUrl(active.photo)"
-              :alt="`${active.student.name} 的证件照`"
+              :alt="`${active.student.name} 的${active.photo.category === 'life-photo' ? '生活照' : '证件照'}`"
             />
           </span>
           <figcaption>
             <strong>{{ active.student.name }}</strong>
             <span class="muted">{{
-              portalData.mode === 'demo' ? '演示证件照' : '当前证件照'
+              active.photo.category === 'life-photo' ? '生活照' : '证件照'
             }}</span>
           </figcaption>
         </figure>
@@ -194,12 +213,35 @@ function clearSearch() {
 }
 
 .name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   padding: var(--space-3) var(--space-2);
   font-size: 14px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.category {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.empty-hint {
+  max-width: 280px;
+  color: var(--text-sub);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .empty {

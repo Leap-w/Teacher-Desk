@@ -61,10 +61,14 @@ function studentOf(seat: Seat | undefined) {
               }"
               :data-seat-id="seatAtSlot(row, physicalCol) ? seatIdOf(row, physicalCol) : ''"
               :data-view-col="physicalCol"
+              :title="studentOf(seatAtSlot(row, physicalCol))?.name ?? '空位'"
               :aria-label="`第${row}排第${physicalCol}列 ${studentOf(seatAtSlot(row, physicalCol))?.name ?? '空位'}`"
               @click="seatAtSlot(row, physicalCol) && emit('select', seatAtSlot(row, physicalCol)!)"
             >
-              <span>{{ studentOf(seatAtSlot(row, physicalCol))?.name.slice(0, 3) ?? '空' }}</span>
+              <!-- 姓名完整显示：允许按字换行，不截断、不缩写、不裁剪 -->
+              <span class="seat-name">{{
+                studentOf(seatAtSlot(row, physicalCol))?.name ?? '空'
+              }}</span>
             </button>
           </div>
         </template>
@@ -138,7 +142,7 @@ function studentOf(seat: Seat | undefined) {
   place-items: center;
   width: var(--seat-size);
   height: var(--seat-size);
-  padding: 0 2px;
+  padding: 2px;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: var(--bg-card);
@@ -149,13 +153,16 @@ function studentOf(seat: Seat | undefined) {
     border-color 150ms ease;
 }
 
-.seat span {
+/* v3.9.1：姓名一律完整展示。按字节折行（中文一字一行也算完整），不省略、不裁剪。 */
+.seat .seat-name {
   display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: calc(var(--seat-size) * 0.25);
+  width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
+  text-align: center;
+  font-size: clamp(10px, calc(var(--seat-size) * 0.22), 13px);
+  line-height: 1.15;
 }
 
 .seat.empty {
@@ -170,10 +177,26 @@ function studentOf(seat: Seat | undefined) {
   color: var(--text-inverse);
 }
 
+/*
+ * v3.9.1：全屏尺寸同时受视口宽与高约束。
+ * 9 列 + 3 条过道 + 行号要放得下，7 排 + 讲台也要放得下；
+ * 只按 vh 算会在窄屏溢出，被 .fs-stage 的 overflow:hidden 裁掉。
+ */
 .seat-board.is-fullscreen {
-  --seat-size: clamp(26px, 7.2vh, 44px);
-  --aisle: clamp(10px, 2.5vw, 26px);
-  --row-gap: clamp(4px, 0.9vh, 9px);
+  --seat-size: clamp(30px, min(9.4vw, 9vh), 52px);
+  --aisle: clamp(8px, 2vw, 22px);
+  --row-gap: clamp(4px, 0.9vh, 10px);
+}
+
+/*
+ * 横屏全屏的座格只有 30–40px，普通视图的 10px 字号下限会把 8–9 字姓名
+ * 排成 4 行（约 46px）并溢出座格，被相邻一排遮住。
+ * 全屏专用更小的字号 / 行高，按座格等比缩放：3 字一行、3 行排完 9 字，
+ * 总高度仍小于座格内框。普通视图（桌面 / 平板 / 手机竖屏）保持原规格不变。
+ */
+.seat-board.is-fullscreen .seat .seat-name {
+  font-size: clamp(7px, calc(var(--seat-size) * 0.23), 11px);
+  line-height: 1.05;
 }
 
 .is-fullscreen .podium {

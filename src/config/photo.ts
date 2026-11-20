@@ -63,3 +63,21 @@ export const PHOTO_MEDIA_STORES = {
 
 /** 云端对象路径前缀（`teacherdesk-assets` 只是路径语义，不是独立 Bucket） */
 export const PHOTO_STORAGE_ROOT = 'student-photos'
+
+/**
+ * 单文件网页导出时内联照片的统一规格（v3.9.1）。
+ *
+ * **本地照片与云端照片走同一条规则**：先解码，再等比缩放到最长边 ≤640、JPEG q0.8，
+ * 然后才转 data URL。为什么必须统一：
+ * - 云端下载回来的是 1600px 原图（120–300KB），64 张直接内嵌会让 HTML 涨到 10MB+，
+ *   手机 `file://` 打开要等很久；
+ * - 本机命中时读到的可能是 320px 缩略图，与云端原图混在一起还会出现「同一面照片墙
+ *   有的清楚有的糊」。统一到 640 后两者观感一致，体积也可控（典型 30–60KB/张）。
+ *
+ * 640 而不是 320：网页照片墙在两列/三列布局与灯箱里都会放大显示，320 会糊。
+ * **不放大**（原图小于 640 时保持原样）由 `computeTargetSize` 保证。
+ */
+export const EXPORT_PHOTO_MAX_EDGE = 640
+
+/** 导出照片的 JPEG 质量：0.8 在 640px 下肉眼几乎无损，体积约为 0.92 的 60%。 */
+export const EXPORT_PHOTO_QUALITY = 0.8

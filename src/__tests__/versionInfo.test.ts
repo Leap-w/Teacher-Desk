@@ -22,9 +22,9 @@ import {
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.9.0', () => {
-    expect(appConfig.version).toBe('3.9.0')
-    expect(currentVersionLabel).toBe('V3.9.0')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.9.1', () => {
+    expect(appConfig.version).toBe('3.9.1')
+    expect(currentVersionLabel).toBe('V3.9.1')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -35,14 +35,14 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.9.0 的更新内容与实际交付一致（不夸大能力）', () => {
+  it('v3.9.1 的更新内容与实际交付一致（不夸大能力）', () => {
     expect(currentReleaseDate()).toBe('2026-11-20')
     const highlights = currentReleaseHighlights()
     expect(highlights).toEqual([
-      '新增「导出单文件网页」：在「我的 → 数据与同步」一键生成一个 HTML 文件，用手机浏览器直接打开就能看班级展示页——课表、学生、座位和证件照都在里面，无需安装、无需登录、无需联网。',
-      '导出的是当前数据的一份静态快照：生成后无论 TeacherDesk 里的数据怎么变、是否在线，这个 HTML 打开始终是导出那一刻的内容；想更新就重新导出一次。',
-      'HTML 不依赖任何网络服务，样式、脚本与照片都打包在同一个文件里，可随意复制、发送与保存。',
-      '班级门户已并入 TeacherDesk：展示页源码现在随主项目一起维护，导出不再需要另一个项目；页面内容、操作与外观保持不变。',
+      '修复导出网页照片墙：当前证件照与其它有效照片一并打包，之前导入但没标「当前证件照」的照片不再丢失；本机没有照片时会自动从云端读取（只读，不写本机）。',
+      '导出照片统一压到适合网页的尺寸（最长边 640），本地与云端同一规则：单文件更小，照片清晰度也更一致。',
+      '座位姓名不再截断，长姓名自动换行完整显示；横屏全屏视图按屏幕宽高自适应，不再裁掉座位。',
+      '班主任内部备注不再作为「学生介绍」导出；部分照片失败时会用中文说明原因与张数，不再显示内部错误码。',
     ])
     // 更新日志不能把尚未完成的云端真实链路写成已验收
     expect(highlights.every((item) => !item.includes('云端已'))).toBe(true)

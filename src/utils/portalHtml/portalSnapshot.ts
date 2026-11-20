@@ -5,7 +5,8 @@
  * 映射口径与 Portal 云函数 `projections.ts` / 前端 `apiSource.ts` 保持一致：
  * - 课表只保留目标班级、时段 id 从 CoursePeriodId 映射到 1..10；
  * - 座位固定空位 / 非活跃学生的 studentId 置空；
- * - 照片只取当前证件照，字节已由调用方转成 data URL 内联。
+ * - 照片取全部有效照片（v3.9.1：不再只认「当前证件照」），字节已由调用方缩放并转成 data URL 内联；
+ * - 学生只映射公开信息（姓名 / 性别 / 宿舍 / 班级职务）；**内部备注 `remark` 不进入快照**。
  *
  * 这里刻意不 import Portal 项目源码（两个工程独立），而是在本文件复刻其数据形状；
  * 界面资源由 portalAssets.ts 固化。改 Portal 契约时要同步这里。
@@ -21,6 +22,17 @@ export interface PortalStudent {
   name: string
   gender?: '男' | '女'
   dorm?: string
+  /** 班级职务（TeacherDesk Student.cadreRole）；参考门户学生卡片的职务徽章与档案「班级职务」都读它。 */
+  duty?: string
+  /**
+   * 学生公开介绍。
+   *
+   * **v3.9.1 起刻意留空、不做任何映射**：TeacherDesk 里没有「学生公开介绍」这个字段，
+   * 唯一的自由文本是 `Student.remark`（班主任内部备注，常写家庭情况、情绪、家长沟通要点）。
+   * 导出的 HTML 会被转发到学生/家长手里，把内部备注当介绍发出去属于隐私事故，
+   * 所以这里宁可空着，也不拿备注顶替。门户在 `bio` 为空时不渲染这一块。
+   */
+  bio?: string
   color?: string
 }
 export interface PortalPeriod {
@@ -42,9 +54,12 @@ export interface PortalDayCourses {
   items: PortalCourseItem[]
 }
 export interface PortalPhoto {
+  /** 照片自身的稳定 id（不是学生 id）：一名学生可能同时有证件照与生活照。 */
   id: string
   title: string
   studentId: string
+  /** 照片类型；参考门户只呈现「当前证件照」，生活照据实标记、不冒充证件照。 */
+  category: 'id-photo' | 'life-photo'
   ratio: number
   url: string
   color: string
@@ -75,8 +90,11 @@ export interface PortalSnapshotData {
 
 /** 调用方提供的、已读出字节的内联照片。 */
 export interface InlinePhotoInput {
+  /** 照片记录 id（不是学生 id），保证一名学生多张照片时 key 不冲突。 */
+  photoId: string
   studentId: string
   studentName: string
+  category: 'id-photo' | 'life-photo'
   dataUrl: string
 }
 
@@ -163,6 +181,8 @@ export function buildPortalSnapshot(input: BuildSnapshotInput): PortalSnapshotDa
         ? { gender: '女' as const }
         : {}),
     ...(student.dormitory ? { dorm: student.dormitory } : {}),
+    ...(student.cadreRole?.trim() ? { duty: student.cadreRole.trim() } : {}),
+    // 刻意不映射 student.remark：那是班主任内部备注，不是对外介绍（见 PortalStudent.bio 说明）。
     color: colorFor(student.id),
   }))
 
@@ -202,15 +222,22 @@ export function buildPortalSnapshot(input: BuildSnapshotInput): PortalSnapshotDa
   const photos: PortalPhoto[] = input.photos
     .filter((photo) => activeIds.has(photo.studentId) && photo.dataUrl)
     .map((photo) => ({
-      id: photo.studentId,
+      id: photo.photoId,
       title: photo.studentName,
       studentId: photo.studentId,
+      category: photo.category,
       ratio: 3 / 4,
       url: photo.dataUrl,
       color: colorFor(photo.studentId),
       available: true,
     }))
-    .sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+    // 与学生列表同口径：按姓名 zh-CN 排；同姓名按证件照优先、照片 id 稳定兜底。
+    .sort(
+      (a, b) =>
+        a.title.localeCompare(b.title, 'zh-CN') ||
+        Number(b.category === 'id-photo') - Number(a.category === 'id-photo') ||
+        a.id.localeCompare(b.id),
+    )
 
   const stamp = formatLocalDateTime(input.generatedAt)
   const displayName = DEFAULT_CLASSROOM_CONFIG.name

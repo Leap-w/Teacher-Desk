@@ -59,6 +59,8 @@ export interface Photo {
   id: string
   title: string
   studentId: string
+  /** 证件照 / 生活照；导出快照据实标记，不把生活照冒充证件照。 */
+  category?: 'id-photo' | 'life-photo'
   ratio: number
   url: string
   color: string

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Cloud, Download, FileCode2, Images, RefreshCw, Upload } from 'lucide-vue-next'
 
 import { AppButton, AppCard, AppModal } from '@/components/ui'
@@ -8,6 +8,7 @@ import { useLoginModal } from '@/composables/useLoginModal'
 import { usePhotoArchive } from '@/composables/usePhotoArchive'
 import { usePortalExport } from '@/composables/usePortalExport'
 import { useToast } from '@/composables/useToast'
+import { describePortalPhotoFailures } from '@/utils/portalHtml/collectPortalPhotos'
 import { appConfig } from '@/config'
 import { STUDENT_PHOTOS_KEY } from '@/repositories'
 import type { ConflictChoice } from '@/composables/useCloudSync'
@@ -194,24 +195,65 @@ function exportBackup(): void {
 /* ---------- 导出单文件 HTML（班级门户展示，v3.9.0） ---------- */
 
 const exportingPortal = ref(false)
+/** 真实进度：已经进入处理的照片张数 / 总张数；null = 还没开始处理照片。 */
+const portalExportProgress = ref<{ done: number; total: number } | null>(null)
+let portalExportAbort: AbortController | null = null
+
+// 页面关闭/卸载时中止进行中的导出：不写盘、不生成本地媒体。
+onUnmounted(() => portalExportAbort?.abort())
+
+/** 导出进行中的副标题：先「正在整理数据」，进入照片阶段后显示真实张数。 */
+const exportPortalProgressText = computed(() => {
+  if (!exportingPortal.value) return ''
+  const progress = portalExportProgress.value
+  return progress ? `正在处理照片 ${progress.done}/${progress.total}` : '正在整理数据…'
+})
 
 async function exportPortal(): Promise<void> {
   if (exportingPortal.value) return
   exportingPortal.value = true
+  portalExportProgress.value = null
+  const controller = new AbortController()
+  portalExportAbort = controller
   try {
-    const result = await usePortalExport().exportPortalHtml()
+    const result = await usePortalExport().exportPortalHtml({
+      signal: controller.signal,
+      onProgress: (done, total) => {
+        portalExportProgress.value = { done, total }
+      },
+    })
     if (!result.ok) {
       toast.danger(`导出失败：${result.error ?? '未知错误'}`)
       return
     }
-    const photoTip = result.photoCount > 0 ? `，含 ${result.photoCount} 张证件照` : ''
-    toast.success(
-      `已导出班级门户 HTML（${result.studentCount} 位同学${photoTip}），可在手机浏览器打开`,
-    )
+    const base = `已导出班级门户 HTML（${result.studentCount} 位同学，内嵌 ${result.photoCount} 张照片）`
+    if (result.failedPhotoCount === 0) {
+      toast.success(`${base}，可在手机浏览器打开`)
+      return
+    }
+    // 有失败绝不伪装完整成功：报清成功 / 本机 / 云端 / 失败四类数量，原因用中文。
+    const detail = `本机 ${result.localPhotoCount} 张、云端 ${result.cloudPhotoCount} 张`
+    const reasons = describePortalPhotoFailures(result.failureReasons)
+    const reasonText = reasons ? `；${reasons}` : ''
+    if (result.photoCount === 0) {
+      toast.danger(
+        `${base}，但 ${result.failedPhotoCount} 张照片全部读取失败（${detail}）${reasonText}。请确认已登录云端后重试`,
+      )
+    } else {
+      toast.warning(
+        `${base}；${result.failedPhotoCount}/${result.photoMetaCount} 张照片未打包（${detail}${reasonText}）。HTML 仍可打开，缺的照片不会显示`,
+      )
+    }
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      toast.warning('导出已取消，未生成文件')
+      return
+    }
     toast.danger('导出失败：浏览器没能生成文件，请重试')
-    console.warn('[portal] 导出失败：', error)
+    console.warn('[portal] 导出失败：', error instanceof Error ? error.message : 'unknown')
   } finally {
+    if (portalExportAbort === controller) portalExportAbort = null
+    portalExportProgress.value = null
     exportingPortal.value = false
   }
 }
@@ -566,7 +608,7 @@ onMounted(() => {
         icon-tone="neutral"
         title="导出单文件网页"
         :subtitle="exportPortalHint"
-        :value="exportingPortal ? '正在生成…' : ''"
+        :value="exportPortalProgressText"
         :chevron="false"
         @click="exportPortal"
       />
