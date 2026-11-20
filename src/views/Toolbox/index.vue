@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Cloud, Download, Images, RefreshCw, Upload } from 'lucide-vue-next'
+import { Cloud, Download, FileCode2, Images, RefreshCw, Upload } from 'lucide-vue-next'
 
 import { AppButton, AppCard, AppModal } from '@/components/ui'
 import { useCloudSync } from '@/composables/useCloudSync'
 import { useLoginModal } from '@/composables/useLoginModal'
 import { usePhotoArchive } from '@/composables/usePhotoArchive'
+import { usePortalExport } from '@/composables/usePortalExport'
 import { useToast } from '@/composables/useToast'
 import { appConfig } from '@/config'
 import { STUDENT_PHOTOS_KEY } from '@/repositories'
@@ -93,6 +94,8 @@ const broken = computed(() => snapshot.value.broken)
 const exportHint = '导出 JSON：文字记录与照片信息，不含照片文件。'
 /** 「导出完整备份（含照片）」那一行的小字 */
 const exportArchiveHint = '导出 ZIP：JSON 数据 + 照片文件，用于换设备 / 重装后的完整恢复。'
+/** 「导出单文件 HTML」那一行的小字 */
+const exportPortalHint = '导出单个 HTML：班级展示网页，可用手机直接打开，无需安装或联网。'
 
 /* ---------- 云同步（Phase 9B / 9C） ---------- */
 
@@ -185,6 +188,31 @@ function exportBackup(): void {
   toast.success('已导出备份文件（浏览器下载目录）')
   if (brokenLabels.length > 0) {
     toast.warning(`${brokenLabels.join('、')}读取异常，未包含在备份中；建议刷新页面后重新导出`)
+  }
+}
+
+/* ---------- 导出单文件 HTML（班级门户展示，v3.9.0） ---------- */
+
+const exportingPortal = ref(false)
+
+async function exportPortal(): Promise<void> {
+  if (exportingPortal.value) return
+  exportingPortal.value = true
+  try {
+    const result = await usePortalExport().exportPortalHtml()
+    if (!result.ok) {
+      toast.danger(`导出失败：${result.error ?? '未知错误'}`)
+      return
+    }
+    const photoTip = result.photoCount > 0 ? `，含 ${result.photoCount} 张证件照` : ''
+    toast.success(
+      `已导出班级门户 HTML（${result.studentCount} 位同学${photoTip}），可在手机浏览器打开`,
+    )
+  } catch (error) {
+    toast.danger('导出失败：浏览器没能生成文件，请重试')
+    console.warn('[portal] 导出失败：', error)
+  } finally {
+    exportingPortal.value = false
   }
 }
 
@@ -532,6 +560,15 @@ onMounted(() => {
         :value="exportingArchive ? '正在打包…' : ''"
         :chevron="false"
         @click="exportArchiveBackup"
+      />
+      <SettingsCell
+        :icon="FileCode2"
+        icon-tone="neutral"
+        title="导出单文件网页"
+        :subtitle="exportPortalHint"
+        :value="exportingPortal ? '正在生成…' : ''"
+        :chevron="false"
+        @click="exportPortal"
       />
       <SettingsCell
         :icon="Upload"

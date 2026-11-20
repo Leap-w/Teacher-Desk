@@ -5,6 +5,8 @@ node_modules
 dist
 dist-ssr
 dev-dist
+# 内置门户 UI 的 Vite 中间产物（scripts/build-portal-assets.cjs 用完即删）
+portal-ui/.build
 
 # 本地文件
 *.local

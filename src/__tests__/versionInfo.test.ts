@@ -3,7 +3,7 @@
  *
  * 这不是「真的检查更新」：不调 GitHub API、不请求远程版本、不接 Releases。
  * 测试要钉住三件事：
- *  ① 版本号来自 package.json，弹窗显示当前版本（v3.8.3 为 `V3.8.3`）；
+ *  ① 版本号来自 package.json，弹窗显示当前版本（v3.9.0 为 `V3.9.0`）；
  *  ② 更新日志集中在 `config/releaseNotes.ts`，当前版本有 2～4 条、与版本号对齐；
  *  ③ 品牌卡片用「检查更新」替换了 GitHub 链接，弹窗复用 AppModal 且没有网络请求。
  */
@@ -22,9 +22,9 @@ import {
 const read = (path: string) => readFileSync(path, 'utf8')
 
 describe('版本信息：当前版本与本地更新日志', () => {
-  it('当前版本来自 package.json，弹窗显示口径为 V3.8.3', () => {
-    expect(appConfig.version).toBe('3.8.3')
-    expect(currentVersionLabel).toBe('V3.8.3')
+  it('当前版本来自 package.json，弹窗显示口径为 V3.9.0', () => {
+    expect(appConfig.version).toBe('3.9.0')
+    expect(currentVersionLabel).toBe('V3.9.0')
   })
 
   it('当前版本在更新日志里有记录，且条目数在 2～4 条之间', () => {
@@ -35,13 +35,14 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(currentReleaseHighlights()).toEqual(note!.highlights)
   })
 
-  it('v3.8.3 的三条更新内容与实际交付一致（不夸大能力）', () => {
-    expect(currentReleaseDate()).toBe('2026-11-17')
+  it('v3.9.0 的更新内容与实际交付一致（不夸大能力）', () => {
+    expect(currentReleaseDate()).toBe('2026-11-20')
     const highlights = currentReleaseHighlights()
     expect(highlights).toEqual([
-      '照片墙统一按竖版比例排列：横图、竖图、方图进同一种卡片大小，未上传照片的学生也占满一格，整面墙对齐不再参差。',
-      '照片可以自己调显示位置：点卡片上的「调整位置」拖动照片，选择缩略图中露出哪一部分（比如别把头顶切掉），保存后立刻生效，随时可恢复默认；只影响这台设备上的缩略图，原图不动，点开大图仍是完整照片。',
-      '修复在横屏手机等较矮屏幕上调整照片位置时，预览框被压扁、与卡片实际效果不一致的问题。',
+      '新增「导出单文件网页」：在「我的 → 数据与同步」一键生成一个 HTML 文件，用手机浏览器直接打开就能看班级展示页——课表、学生、座位和证件照都在里面，无需安装、无需登录、无需联网。',
+      '导出的是当前数据的一份静态快照：生成后无论 TeacherDesk 里的数据怎么变、是否在线，这个 HTML 打开始终是导出那一刻的内容；想更新就重新导出一次。',
+      'HTML 不依赖任何网络服务，样式、脚本与照片都打包在同一个文件里，可随意复制、发送与保存。',
+      '班级门户已并入 TeacherDesk：展示页源码现在随主项目一起维护，导出不再需要另一个项目；页面内容、操作与外观保持不变。',
     ])
     // 更新日志不能把尚未完成的云端真实链路写成已验收
     expect(highlights.every((item) => !item.includes('云端已'))).toBe(true)
@@ -50,7 +51,7 @@ describe('版本信息：当前版本与本地更新日志', () => {
     expect(all).not.toContain('已核验')
     expect(all).not.toContain('已解决')
     expect(all).not.toContain('去重')
-    // 本版是「手动拖动」，不能写成识别人脸 / 自动定位正脸
+    // 不能把离线静态快照写成云端同步 / 人脸识别之类的能力
     expect(all).not.toContain('人脸')
     expect(all).not.toContain('自动定位')
     expect(all).not.toContain('自动识别')

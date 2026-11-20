@@ -225,6 +225,22 @@ decideKey(本地原文, 云端文档, 对齐记账, now, 本机是否为播种�
 > 各弹窗仍直接 import 各模块的**纯解析函数**（`parseSeatRows` / `parseStudentRows` / …）——
 > 那是把它们自己的业务规则接进来，与「谁碰数据源」无关。
 
+## 班级门户展示页（v3.9.0 起并入主项目）
+
+原独立项目 `TeacherDesk-Class-Portal` 已正式并入 TeacherDesk，不再是第二个需要打开或维护的工程。
+
+- **源码**：`portal-ui/` 是自带的 Vue 3 展示页工程（五页签 + 组件 + 设计令牌 + 座位视角换算）。
+  只保留 `window.__PORTAL_SNAPSHOT__` 静态快照一条数据路径；登录 / 鉴权 / 云函数 / 后端 fetch
+  与演示数据都没有迁进来，也不需要单独部署或运行。
+- **产物**：`node scripts/build-portal-assets.cjs` 用主项目自带的 Vite 构建 `portal-ui/`，把自包含
+  JS/CSS 固化为 `src/utils/portalHtml/portalAssets.ts`；这条命令只读本仓库，不再依赖任何外部
+  Portal 目录（常驻测试 `src/__tests__/portalExport.test.ts` 有源码级守卫）。
+- **导出**：`usePortalExport.ts`（汇聚 store）→ `portalSnapshot.ts`（纯数据投影）→
+  `buildPortalHtml.ts`（内联 CSS/JS/快照，`<` 转义防 `</script>`）→ 下载单个 HTML。
+  产物零外链、零凭据，断网可直接打开。
+- **验收基线**：合并前后五个页签的 DOM、文案、计算样式逐页对比一致，首页截图哈希相同；
+  后续改 UI 只需改 `portal-ui/` 后重跑固化脚本并做一次真实导出核对。
+
 ## 下一步
 
 - **CloudBase 真机验证**：`docs/release-checklist.md` 第 3、10 节是上线当天的人工步骤。

@@ -1,6 +1,6 @@
 {
   "name": "teacherdesk",
-  "version": "3.8.3",
+  "version": "3.9.0",
   "private": true,
   "type": "module",
   "description": "TeacherDesk —— 面向高中班主任的综合工作台",
@@ -13,6 +13,8 @@
     "deploy": "tcb deploy",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit",
+    "type-check:portal-ui": "vue-tsc -p portal-ui/tsconfig.json --noEmit",
+    "build:portal-assets": "node scripts/build-portal-assets.cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --fix",

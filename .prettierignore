@@ -2,6 +2,10 @@ dist
 dev-dist
 node_modules
 package-lock.json
+# 内置门户 UI 的 Vite 中间产物（用完即删；prettier 不读嵌套 .gitignore）
+portal-ui/.build
+# 单文件 HTML 导出用的门户 UI 资源：由 scripts/build-portal-assets.cjs 生成的内联压缩字符串
+src/utils/portalHtml/portalAssets.ts
 # macOS Widget 工程的构建产物（macos/Tools/verify.sh 生成；git 由 macos/.gitignore 忽略，
 # 而 prettier 不读嵌套 .gitignore —— 不排除的话 `prettier --check .` 会去检查 .appex 里的 JSON）
 macos/.build
